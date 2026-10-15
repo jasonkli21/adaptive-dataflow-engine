@@ -1,4 +1,5 @@
-//! Reproducible Phase 0 benchmark infrastructure; contains no ADE execution engine.
+//! Reproducible benchmark infrastructure and adapters; execution lives in engine crates.
+pub mod ade_local;
 pub mod cli;
 pub mod compare;
 pub mod dataset;
@@ -12,6 +13,8 @@ pub mod stats;
 /// Structured failures at benchmark boundaries.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("ADE local execution: {0}")]
+    AdeLocal(#[from] ade_exec::Error),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON schema: {0}")]

@@ -1,4 +1,4 @@
-//! Public `DataFusion` adapter and independent correctness oracles.
+//! Engine dispatch, public adapters, and independent correctness oracles.
 use crate::{
     Error, Result,
     dataset::{self, DatasetManifest},
@@ -112,6 +112,7 @@ pub struct EngineRequest {
 #[derive(Debug)]
 pub enum ResolvedEngine {
     DataFusion(DataFusionConfig),
+    AdeLocal(crate::ade_local::AdeLocalConfig),
 }
 
 impl EngineRequest {
@@ -124,6 +125,9 @@ impl EngineRequest {
             "datafusion" => Ok(ResolvedEngine::DataFusion(DataFusionEngine::parse_config(
                 &self.options,
             )?)),
+            "ade-local" => Ok(ResolvedEngine::AdeLocal(
+                crate::ade_local::AdeLocalEngine::parse_config(&self.options)?,
+            )),
             name => Err(Error::UnsupportedEngine(name.into())),
         }
     }
@@ -135,6 +139,7 @@ impl ResolvedEngine {
     pub fn info(&self) -> EngineInfo {
         match self {
             Self::DataFusion(config) => config.info(),
+            Self::AdeLocal(config) => config.info(),
         }
     }
 }
@@ -517,6 +522,9 @@ pub async fn execute_validated_request(
 ) -> Result<ExecutionOutcome> {
     let resolved = request.resolve()?;
     match resolved {
+        ResolvedEngine::AdeLocal(config) => {
+            execute_validated_with::<crate::ade_local::AdeLocalEngine>(root, m, case, &config).await
+        }
         ResolvedEngine::DataFusion(config) => {
             execute_validated_with::<DataFusionEngine>(root, m, case, &config).await
         }

@@ -10,8 +10,9 @@ build = "build.rs"
 workspace = true
 
 [dependencies]
-arrow = { version = "59.3.1", default-features = false }
-parquet = { version = "59.3.1", default-features = false, features = ["arrow", "snap", "zstd"] }
+ade-exec = { path = "../ade-exec" }
+arrow.workspace = true
+parquet.workspace = true
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet", "sql"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1", features = ["derive"] }

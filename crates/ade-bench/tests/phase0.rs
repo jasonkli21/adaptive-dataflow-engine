@@ -439,7 +439,7 @@ fn cli_process_roundtrip_and_comparison_integrity() {
         !cli(&[
             "run",
             "--engine",
-            "ade-local",
+            "missing-engine",
             "--spec",
             s.to_str().unwrap(),
             "--dataset",

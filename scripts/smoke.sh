@@ -8,7 +8,11 @@ trap 'rm -rf "$work"' EXIT
 "$bin" data inspect "$work/data" > "$work/inspect.json"
 for name in scan scan-filter-project aggregate-low-cardinality aggregate-high-cardinality aggregate-skew; do
   "$bin" validate --spec "benchmarks/specs/$name.toml" --dataset "$work/data" > "$work/$name-validation.json"
+  "$bin" validate --engine ade-local --spec "benchmarks/specs/$name.toml" --dataset "$work/data" > "$work/$name-ade-validation.json"
 done
 "$bin" run --spec benchmarks/specs/aggregate-skew.toml --dataset "$work/data" --verify-data full --warmups 1 --iterations 1 --output "$work/result.json"
 "$bin" check-result "$work/result.json"
 "$bin" compare "$work/result.json" "$work/result.json" --format json
+"$bin" run --engine ade-local --spec benchmarks/specs/aggregate-skew.toml --dataset "$work/data" --verify-data full --warmups 0 --iterations 1 --output "$work/ade-result.json"
+"$bin" check-result "$work/ade-result.json"
+"$bin" compare "$work/result.json" "$work/ade-result.json" --format json

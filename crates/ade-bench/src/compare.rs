@@ -19,6 +19,36 @@ pub struct Comparison {
     pub rows_output: u64,
     pub warnings: Vec<String>,
 }
+
+fn compatibility_warnings(a: &BenchmarkResultV1, b: &BenchmarkResultV1) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if a.environment != b.environment {
+        warnings.push("hardware/OS differs".into());
+    }
+    if a.workload != b.workload {
+        warnings.push("workload description/tags differ".into());
+    }
+    if a.build != b.build {
+        warnings.push("compiler/build differs".into());
+    }
+    if a.run_config != b.run_config {
+        warnings.push("run configuration/verification policy differs".into());
+    }
+    if a.engine != b.engine {
+        warnings.push("engine version/configuration differs".into());
+    }
+    if a.repository.git_dirty == Some(true) || b.repository.git_dirty == Some(true) {
+        warnings.push("dirty source tree".into());
+    }
+    if a.repository.git_commit.is_none() || b.repository.git_commit.is_none() {
+        warnings.push("source commit unavailable".into());
+    }
+    if a.dataset_manifest_fingerprint != b.dataset_manifest_fingerprint {
+        warnings.push("physical dataset/manifest differs".into());
+    }
+    warnings
+}
+
 /// Compares validated compatible runs using median query time.
 ///
 /// # Errors
@@ -34,7 +64,7 @@ pub fn compare(a: &BenchmarkResultV1, b: &BenchmarkResultV1) -> Result<Compariso
     if !a.valid || !b.valid {
         return incompatible("required validation failed");
     }
-    if a.workload != b.workload {
+    if !a.workload.semantically_equivalent(&b.workload) {
         return incompatible("semantic workload differs");
     }
     if a.dataset.dataset_id != b.dataset.dataset_id
@@ -56,28 +86,7 @@ pub fn compare(a: &BenchmarkResultV1, b: &BenchmarkResultV1) -> Result<Compariso
     {
         return incompatible("canonical validated outputs differ");
     }
-    let mut warnings = Vec::new();
-    if a.environment != b.environment {
-        warnings.push("hardware/OS differs".into());
-    }
-    if a.build != b.build {
-        warnings.push("compiler/build differs".into());
-    }
-    if a.run_config != b.run_config {
-        warnings.push("run configuration/verification policy differs".into());
-    }
-    if a.engine != b.engine {
-        warnings.push("engine version/configuration differs".into());
-    }
-    if a.repository.git_dirty == Some(true) || b.repository.git_dirty == Some(true) {
-        warnings.push("dirty source tree".into());
-    }
-    if a.repository.git_commit.is_none() || b.repository.git_commit.is_none() {
-        warnings.push("source commit unavailable".into());
-    }
-    if a.dataset_manifest_fingerprint != b.dataset_manifest_fingerprint {
-        warnings.push("physical dataset/manifest differs".into());
-    }
+    let warnings = compatibility_warnings(a, b);
     let x = a
         .summary
         .as_ref()

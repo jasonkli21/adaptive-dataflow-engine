@@ -1,7 +1,7 @@
 //! Sequential parent/child process orchestration; each child executes exactly once.
 use crate::{
     Error, Result,
-    engine::{EngineConfig, ExecutionOutcome},
+    engine::{EngineRequest, ExecutionOutcome},
     environment::{BuildInfo, EnvironmentInfo, RepositoryInfo},
     result::{BenchmarkResultV1, IterationResult, RunConfig},
     spec::BenchmarkCase,
@@ -75,11 +75,11 @@ pub fn run(
     executable: &Path,
     spec_path: &Path,
     root: &Path,
-    engine_config: &EngineConfig,
+    engine_request: &EngineRequest,
     config: RunConfig,
 ) -> Result<BenchmarkResultV1> {
     crate::require(config.iterations > 0, "iterations must be positive")?;
-    engine_config.validate()?;
+    let engine = engine_request.resolve()?.info();
     let case = BenchmarkCase::load(spec_path)?;
     let manifest = crate::dataset::inspect(
         root,
@@ -89,7 +89,6 @@ pub fn run(
         case.dataset.required_schema == manifest.required_schema,
         "dataset/spec mismatch",
     )?;
-    let engine = engine_config.info();
     let time_flags = resource_time_flags();
     let mut expected_output = None;
     let mut warmups = Vec::new();
@@ -100,7 +99,7 @@ pub fn run(
                 executable,
                 spec_path,
                 root,
-                engine_config,
+                engine_request,
                 time_flags.as_deref(),
             );
             let mut it = invoke(&mut command, index, warmup)?;
@@ -173,7 +172,7 @@ fn child_command(
     executable: &Path,
     spec_path: &Path,
     root: &Path,
-    engine_config: &EngineConfig,
+    engine_request: &EngineRequest,
     time_flags: Option<&[&str]>,
 ) -> Command {
     let mut command = if let Some(flags) = time_flags {
@@ -185,22 +184,15 @@ fn child_command(
     };
     command
         .arg("__child-run")
+        .arg("--engine")
+        .arg(&engine_request.name)
         .arg("--spec")
         .arg(spec_path)
         .arg("--dataset")
-        .arg(root)
-        .arg("--engine-option")
-        .arg(format!(
-            "target_partitions={}",
-            engine_config.target_partitions
-        ))
-        .arg("--engine-option")
-        .arg(format!("batch_size={}", engine_config.batch_size))
-        .arg("--engine-option")
-        .arg(format!(
-            "collect_statistics={}",
-            engine_config.collect_statistics
-        ));
+        .arg(root);
+    for option in &engine_request.options {
+        command.arg("--engine-option").arg(option);
+    }
     command
 }
 
@@ -221,6 +213,44 @@ mod tests {
         }
         let it = invoke(&mut Command::new("/nonexistent/ade-child"), 0, false).unwrap();
         assert!(it.error.is_some());
+    }
+
+    #[test]
+    fn child_command_forwards_engine_and_raw_options() {
+        let request = EngineRequest {
+            name: "datafusion".into(),
+            options: vec![
+                "target_partitions=4".into(),
+                "adapter_specific=value with spaces".into(),
+            ],
+        };
+        let command = child_command(
+            Path::new("/tmp/ade-bench"),
+            Path::new("case.toml"),
+            Path::new("dataset"),
+            &request,
+            None,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            [
+                "__child-run",
+                "--engine",
+                "datafusion",
+                "--spec",
+                "case.toml",
+                "--dataset",
+                "dataset",
+                "--engine-option",
+                "target_partitions=4",
+                "--engine-option",
+                "adapter_specific=value with spaces",
+            ]
+        );
     }
 }
 

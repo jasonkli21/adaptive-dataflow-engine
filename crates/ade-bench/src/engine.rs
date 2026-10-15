@@ -6,7 +6,7 @@ use crate::{
     spec::{BenchmarkCase, Query},
 };
 use arrow::{
-    array::{Array, Float64Array, Int64Array, UInt64Array},
+    array::{Array, Date32Array, Float64Array, Int64Array, UInt64Array},
     compute::cast,
     datatypes::DataType,
     record_batch::RecordBatch,
@@ -17,15 +17,15 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs::File, path::Path, time::Instant};
 
-/// Explicit baseline configuration, separate from workload semantics.
+/// DataFusion-owned configuration, separate from workload semantics.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct EngineConfig {
+pub struct DataFusionConfig {
     pub target_partitions: usize,
     pub batch_size: usize,
     pub collect_statistics: bool,
 }
-impl Default for EngineConfig {
+impl Default for DataFusionConfig {
     fn default() -> Self {
         Self {
             target_partitions: 2,
@@ -34,7 +34,7 @@ impl Default for EngineConfig {
         }
     }
 }
-impl EngineConfig {
+impl DataFusionConfig {
     /// Parses a whitelist of explicit engine options.
     ///
     /// # Errors
@@ -97,6 +97,47 @@ impl EngineConfig {
         }
     }
 }
+
+/// Compatibility alias for callers that used the Phase 0 `DataFusion` baseline type.
+pub type EngineConfig = DataFusionConfig;
+
+/// Engine selection and raw adapter options carried unchanged through the child protocol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineRequest {
+    pub name: String,
+    pub options: Vec<String>,
+}
+
+/// The small, explicit set of adapters currently compiled into the benchmark binary.
+#[derive(Debug)]
+pub enum ResolvedEngine {
+    DataFusion(DataFusionConfig),
+}
+
+impl EngineRequest {
+    /// Resolves a known adapter and lets that adapter parse its own options.
+    ///
+    /// # Errors
+    /// Returns an actionable unsupported-engine or adapter-configuration error.
+    pub fn resolve(&self) -> Result<ResolvedEngine> {
+        match self.name.as_str() {
+            "datafusion" => Ok(ResolvedEngine::DataFusion(DataFusionEngine::parse_config(
+                &self.options,
+            )?)),
+            name => Err(Error::UnsupportedEngine(name.into())),
+        }
+    }
+}
+
+impl ResolvedEngine {
+    /// Returns generic result metadata for the selected adapter.
+    #[must_use]
+    pub fn info(&self) -> EngineInfo {
+        match self {
+            Self::DataFusion(config) => config.info(),
+        }
+    }
+}
 /// Metadata accepts future engine names and configuration keys.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -108,6 +149,15 @@ pub struct EngineInfo {
 /// Small adapter boundary. Canonical validation remains owned by the harness.
 #[allow(async_fn_in_trait)]
 pub trait BenchmarkEngine: Sized {
+    /// Configuration owned and interpreted by this engine adapter.
+    type Config;
+
+    /// Parses adapter-specific raw CLI options.
+    ///
+    /// # Errors
+    /// Rejects options not supported by this adapter.
+    fn parse_config(options: &[String]) -> Result<Self::Config>;
+
     /// Prepares exactly one engine session for the semantic case.
     ///
     /// # Errors
@@ -116,7 +166,7 @@ pub trait BenchmarkEngine: Sized {
         root: &Path,
         manifest: &DatasetManifest,
         case: &BenchmarkCase,
-        config: &EngineConfig,
+        config: &Self::Config,
     ) -> Result<Self>;
     /// Executes and collects the prepared query.
     ///
@@ -137,11 +187,17 @@ fn is_lineitem(path: &str) -> bool {
         || p.file_stem().is_some_and(|s| s == "lineitem")
 }
 impl BenchmarkEngine for DataFusionEngine {
+    type Config = DataFusionConfig;
+
+    fn parse_config(options: &[String]) -> Result<Self::Config> {
+        DataFusionConfig::from_options(options)
+    }
+
     async fn prepare(
         root: &Path,
         m: &DatasetManifest,
         case: &BenchmarkCase,
-        config: &EngineConfig,
+        config: &Self::Config,
     ) -> Result<Self> {
         case.validate()?;
         config.validate()?;
@@ -313,6 +369,7 @@ fn expected_synthetic(case: &BenchmarkCase, c: &dataset::SyntheticConfig) -> Can
 }
 fn expected_q1(root: &Path, m: &DatasetManifest) -> Result<Canonical> {
     let mut groups: BTreeMap<Vec<String>, [f64; 8]> = BTreeMap::new();
+    let cutoff_days = q1_cutoff_date32_days()?;
     for file in m.files.iter().filter(|f| is_lineitem(&f.relative_path)) {
         let reader =
             ParquetRecordBatchReaderBuilder::try_new(File::open(root.join(&file.relative_path))?)?
@@ -327,9 +384,14 @@ fn expected_q1(root: &Path, m: &DatasetManifest) -> Result<Canonical> {
                 .iter()
                 .map(|n| Ok(cast(column(n)?, &DataType::Float64)?))
                 .collect::<Result<Vec<_>>>()?;
+            let ship_dates = cast(column("l_shipdate")?, &DataType::Date32)?;
+            let ship_dates = ship_dates
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .ok_or_else(|| Error::Validation("TPC-H ship date cast to Date32".into()))?;
             for r in 0..b.num_rows() {
-                let date = array_value_to_string(column("l_shipdate")?.as_ref(), r)?;
-                if date.as_str() > "1998-09-02" {
+                require(!ship_dates.is_null(r), "TPC-H reference null ship date")?;
+                if ship_dates.value(r) > cutoff_days {
                     continue;
                 }
                 let key = ["l_returnflag", "l_linestatus"]
@@ -376,6 +438,15 @@ fn expected_q1(root: &Path, m: &DatasetManifest) -> Result<Canonical> {
             })
             .collect(),
     ))
+}
+
+fn q1_cutoff_date32_days() -> Result<i32> {
+    let cutoff = chrono::NaiveDate::from_ymd_opt(1998, 9, 2)
+        .ok_or_else(|| Error::Invalid("invalid Q1 cutoff date".into()))?;
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
+        .ok_or_else(|| Error::Invalid("invalid Unix epoch date".into()))?;
+    i32::try_from(cutoff.signed_duration_since(epoch).num_days())
+        .map_err(|_| Error::Invalid("Q1 cutoff date is outside Date32 range".into()))
 }
 fn validate_equal(actual: &Canonical, expected: &Canonical) -> Result<()> {
     let equal = match (actual, expected) {
@@ -429,9 +500,27 @@ pub async fn execute_validated(
     root: &Path,
     m: &DatasetManifest,
     case: &BenchmarkCase,
-    config: &EngineConfig,
+    config: &DataFusionConfig,
 ) -> Result<ExecutionOutcome> {
     execute_validated_with::<DataFusionEngine>(root, m, case, config).await
+}
+
+/// Resolves and executes the explicitly selected engine adapter.
+///
+/// # Errors
+/// Returns unsupported engine, adapter option, setup, query, canonicalization or validation errors.
+pub async fn execute_validated_request(
+    root: &Path,
+    m: &DatasetManifest,
+    case: &BenchmarkCase,
+    request: &EngineRequest,
+) -> Result<ExecutionOutcome> {
+    let resolved = request.resolve()?;
+    match resolved {
+        ResolvedEngine::DataFusion(config) => {
+            execute_validated_with::<DataFusionEngine>(root, m, case, &config).await
+        }
+    }
 }
 
 /// Applies the same timing and correctness contract to any baseline adapter.
@@ -442,7 +531,7 @@ pub async fn execute_validated_with<E: BenchmarkEngine>(
     root: &Path,
     m: &DatasetManifest,
     case: &BenchmarkCase,
-    config: &EngineConfig,
+    config: &E::Config,
 ) -> Result<ExecutionOutcome> {
     case.validate()?;
     m.validate()?;
@@ -478,6 +567,158 @@ pub async fn execute_validated_with<E: BenchmarkEngine>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::{
+        array::{ArrayRef, Int64Array, UInt64Array},
+        datatypes::{Field, Schema},
+    };
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct StubConfig {
+        label: String,
+    }
+
+    struct StubEngine {
+        rows: u64,
+        seed: u64,
+        label: String,
+    }
+
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "The test adapter intentionally implements the async contract synchronously."
+    )]
+    impl BenchmarkEngine for StubEngine {
+        type Config = StubConfig;
+
+        fn parse_config(options: &[String]) -> Result<Self::Config> {
+            let mut label = None;
+            for option in options {
+                let (key, value) = option
+                    .split_once('=')
+                    .ok_or_else(|| Error::Invalid("stub option must be key=value".into()))?;
+                if key != "stub_label" || value.is_empty() {
+                    return Err(Error::Invalid(format!("unsupported stub option: {key}")));
+                }
+                label = Some(value.to_owned());
+            }
+            Ok(StubConfig {
+                label: label.unwrap_or_else(|| "default".into()),
+            })
+        }
+
+        async fn prepare(
+            _root: &Path,
+            manifest: &DatasetManifest,
+            case: &BenchmarkCase,
+            config: &Self::Config,
+        ) -> Result<Self> {
+            require(case.query == Query::Scan, "stub supports scan only")?;
+            let synthetic = manifest
+                .synthetic
+                .as_ref()
+                .ok_or_else(|| Error::Invalid("stub requires synthetic input".into()))?;
+            Ok(Self {
+                rows: synthetic.rows,
+                seed: synthetic.seed,
+                label: config.label.clone(),
+            })
+        }
+
+        async fn execute(&self) -> Result<Vec<RecordBatch>> {
+            let config = dataset::SyntheticConfig {
+                rows: self.rows,
+                seed: self.seed,
+                ..Default::default()
+            };
+            let mut ids = Vec::new();
+            let mut keys = Vec::new();
+            let mut values = Vec::new();
+            for id in 0..self.rows {
+                let (key, _, value) = dataset::row(&config, id);
+                ids.push(id);
+                keys.push(key);
+                values.push(value);
+            }
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("row_id", DataType::UInt64, false),
+                Field::new("key", DataType::UInt64, false),
+                Field::new("value_i64", DataType::Int64, false),
+            ]));
+            let columns: Vec<ArrayRef> = vec![
+                Arc::new(UInt64Array::from(ids)),
+                Arc::new(UInt64Array::from(keys)),
+                Arc::new(Int64Array::from(values)),
+            ];
+            Ok(vec![RecordBatch::try_new(schema, columns)?])
+        }
+
+        fn info(&self) -> EngineInfo {
+            EngineInfo {
+                name: "test-stub".into(),
+                version: "1".into(),
+                configuration: BTreeMap::from([("stub_label".into(), self.label.clone())]),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_harness_accepts_adapter_owned_configuration() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = dataset::SyntheticConfig {
+            rows: 7,
+            files: 1,
+            ..Default::default()
+        };
+        let manifest = dataset::generate(&directory.path().join("data"), "stub", &config).unwrap();
+        let case = BenchmarkCase::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmarks/specs/scan.toml")
+                .as_path(),
+        )
+        .unwrap();
+        let options = ["stub_label=isolated-config".to_owned()];
+        let stub_config = StubEngine::parse_config(&options).unwrap();
+        let outcome = execute_validated_with::<StubEngine>(
+            &directory.path().join("data"),
+            &manifest,
+            &case,
+            &stub_config,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.engine.name, "test-stub");
+        assert_eq!(
+            outcome.engine.configuration["stub_label"],
+            "isolated-config"
+        );
+        assert!(DataFusionConfig::from_options(&options).is_err());
+        assert!(StubEngine::parse_config(&["target_partitions=4".into()]).is_err());
+    }
+
+    #[test]
+    fn engine_dispatch_rejects_unsupported_names() {
+        let error = EngineRequest {
+            name: "missing-engine".into(),
+            options: Vec::new(),
+        }
+        .resolve()
+        .unwrap_err();
+        assert!(matches!(error, Error::UnsupportedEngine(name) if name == "missing-engine"));
+    }
+
+    #[test]
+    fn q1_cutoff_is_a_date32_day_value() {
+        let cutoff = q1_cutoff_date32_days().unwrap();
+        let date = chrono::NaiveDate::from_ymd_opt(1998, 9, 2).unwrap();
+        let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+        assert_eq!(
+            cutoff,
+            i32::try_from(date.signed_duration_since(epoch).num_days()).unwrap()
+        );
+        assert_eq!(cutoff, 10_471);
+    }
+
     #[test]
     fn q1_tolerance_requires_exact_counts_and_finite_values() {
         let expected = Canonical::Q1(vec![Q1Row {

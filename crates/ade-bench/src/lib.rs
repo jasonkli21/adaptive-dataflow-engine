@@ -24,6 +24,8 @@ pub enum Error {
     Parquet(#[from] parquet::errors::ParquetError),
     #[error("engine setup/query execution: {0}")]
     Engine(#[from] datafusion::error::DataFusionError),
+    #[error("unsupported benchmark engine: {0}")]
+    UnsupportedEngine(String),
     #[error("engine setup failed: {0}")]
     EngineSetup(datafusion::error::DataFusionError),
     #[error("query execution failed: {0}")]

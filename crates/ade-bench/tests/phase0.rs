@@ -25,6 +25,13 @@ fn cli(args: &[&str]) -> Output {
         .output()
         .unwrap()
 }
+fn cli_at(args: &[&str], cwd: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_ade-bench"))
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap()
+}
 fn success(output: Output) -> Output {
     assert!(
         output.status.success(),
@@ -303,6 +310,8 @@ fn cli_process_roundtrip_and_comparison_integrity() {
     ]));
     success(cli(&[
         "run",
+        "--engine",
+        "datafusion",
         "--spec",
         s.to_str().unwrap(),
         "--dataset",
@@ -367,6 +376,33 @@ fn cli_process_roundtrip_and_comparison_integrity() {
             .any(|w| w == "hardware/OS differs")
     );
     changed = result.clone();
+    changed.build.rustc.push_str(" changed");
+    assert!(
+        ade_bench::compare::compare(&result, &changed)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|warning| warning == "compiler/build differs")
+    );
+    changed = result.clone();
+    changed.workload.description.push_str(" (wording update)");
+    let comparison = ade_bench::compare::compare(&result, &changed).unwrap();
+    assert!(
+        comparison
+            .warnings
+            .iter()
+            .any(|warning| warning == "workload description/tags differ")
+    );
+    changed = result.clone();
+    changed
+        .workload
+        .tags
+        .insert("note".into(), "informational".into());
+    assert!(ade_bench::compare::compare(&result, &changed).is_ok());
+    changed = result.clone();
+    changed.workload.query = ade_bench::spec::Query::Scan;
+    assert!(ade_bench::compare::compare(&result, &changed).is_err());
+    changed = result.clone();
     changed.schema_version = 99;
     assert!(changed.validate().is_err());
     changed = result.clone();
@@ -398,6 +434,23 @@ fn cli_process_roundtrip_and_comparison_integrity() {
         .status
         .success()
     );
+    let unsupported_output = d.path().join("unsupported.json");
+    assert!(
+        !cli(&[
+            "run",
+            "--engine",
+            "ade-local",
+            "--spec",
+            s.to_str().unwrap(),
+            "--dataset",
+            root.to_str().unwrap(),
+            "--output",
+            unsupported_output.to_str().unwrap()
+        ])
+        .status
+        .success()
+    );
+    assert!(!unsupported_output.exists());
     // Exercise parent diagnostics for an actual failed child, preserving an immutable invalid result.
     let mut manifest = dataset::inspect(&root, false).unwrap();
     manifest.synthetic.as_mut().unwrap().key_cardinality = 1;
@@ -428,6 +481,44 @@ fn cli_process_roundtrip_and_comparison_integrity() {
     assert!(!invalid.valid);
     assert!(invalid.summary.is_none());
     assert!(invalid.iterations[0].error.is_some());
+}
+
+#[test]
+fn source_provenance_is_independent_of_runtime_git_repository() {
+    let directory = tempfile::tempdir().unwrap();
+    let unrelated = directory.path().join("unrelated-repo");
+    fs::create_dir(&unrelated).unwrap();
+    if !Command::new("git")
+        .arg("--version")
+        .status()
+        .is_ok_and(|s| s.success())
+    {
+        return;
+    }
+    let run_git = |args: &[&str]| {
+        let status = Command::new("git")
+            .current_dir(&unrelated)
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run_git(&["init", "--quiet"]);
+    run_git(&["config", "user.name", "ADE test"]);
+    run_git(&["config", "user.email", "ade-test@example.invalid"]);
+    fs::write(unrelated.join("input.txt"), "unrelated source\n").unwrap();
+    run_git(&["add", "input.txt"]);
+    run_git(&["commit", "--quiet", "-m", "unrelated repository"]);
+
+    let local = serde_json::from_slice::<serde_json::Value>(
+        &success(cli(&["env", "--format", "json"])).stdout,
+    )
+    .unwrap();
+    let from_other = serde_json::from_slice::<serde_json::Value>(
+        &success(cli_at(&["env", "--format", "json"], &unrelated)).stdout,
+    )
+    .unwrap();
+    assert_eq!(local["repository"], from_other["repository"]);
 }
 
 #[tokio::test]

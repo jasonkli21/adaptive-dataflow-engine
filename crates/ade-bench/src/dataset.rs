@@ -73,7 +73,7 @@ impl SyntheticConfig {
             "rows must be in 1..=10^12",
         )?;
         require(
-            self.files > 0 && self.files as u64 <= self.rows,
+            self.files > 0 && u64::try_from(self.files).is_ok_and(|files| files <= self.rows),
             "files must be in 1..=rows",
         )?;
         require(
@@ -98,6 +98,31 @@ impl SyntheticConfig {
         compression(&self.compression)?;
         Ok(())
     }
+}
+
+/// Returns the contiguous row interval assigned to one file without overflow.
+///
+/// Remainder rows are assigned to the first files, so file lengths differ by at most one.
+///
+/// # Errors
+/// Rejects invalid dimensions or indices; checked arithmetic reports any impossible overflow.
+pub fn file_range(rows: u64, files: u64, index: u64) -> Result<(u64, u64)> {
+    require(
+        rows > 0 && files > 0 && files <= rows,
+        "files must be in 1..=rows",
+    )?;
+    require(index < files, "file index must be less than file count")?;
+    let base = rows / files;
+    let remainder = rows % files;
+    let start = base
+        .checked_mul(index)
+        .and_then(|offset| offset.checked_add(index.min(remainder)))
+        .ok_or_else(|| crate::Error::Invalid("file range start overflow".into()))?;
+    let length = base + u64::from(index < remainder);
+    let end = start
+        .checked_add(length)
+        .ok_or_else(|| crate::Error::Invalid("file range end overflow".into()))?;
+    Ok((start, end))
 }
 fn compression(s: &str) -> Result<Compression> {
     match s {
@@ -357,6 +382,8 @@ pub fn generate(output: &Path, dataset_id: &str, c: &SyntheticConfig) -> Result<
     let generated = (|| {
         let mut hash = blake3::Hasher::new();
         let mut files = Vec::new();
+        let file_count = u64::try_from(c.files)
+            .map_err(|_| crate::Error::Invalid("file count exceeds u64".into()))?;
         for index in 0..c.files {
             let name = format!("part-{index:05}.parquet");
             let props = WriterProperties::builder()
@@ -365,8 +392,9 @@ pub fn generate(output: &Path, dataset_id: &str, c: &SyntheticConfig) -> Result<
                 .build();
             let mut writer =
                 ArrowWriter::try_new(File::create(output.join(&name))?, schema(), Some(props))?;
-            let start = c.rows * index as u64 / c.files as u64;
-            let end = c.rows * (index + 1) as u64 / c.files as u64;
+            let index = u64::try_from(index)
+                .map_err(|_| crate::Error::Invalid("file index exceeds u64".into()))?;
+            let (start, end) = file_range(c.rows, file_count, index)?;
             let mut cursor = start;
             while cursor < end {
                 let next = (cursor + 8192).min(end);
@@ -559,4 +587,53 @@ pub fn register_tpch(root: &Path, scale: f64, version: String) -> Result<Dataset
     m.validate()?;
     crate::result::write_atomic(&root.join("manifest.json"), &m)?;
     Ok(m)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_partition(rows: u64, files: u64) {
+        let ranges = (0..files)
+            .map(|index| file_range(rows, files, index).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(ranges.first().unwrap().0, 0);
+        assert_eq!(ranges.last().unwrap().1, rows);
+        for pair in ranges.windows(2) {
+            assert_eq!(pair[0].1, pair[1].0);
+        }
+        let min = ranges.iter().map(|(start, end)| end - start).min().unwrap();
+        let max = ranges.iter().map(|(start, end)| end - start).max().unwrap();
+        assert!(max - min <= 1);
+    }
+
+    #[test]
+    fn row_ranges_cover_ordinary_and_degenerate_partitions() {
+        assert_eq!(
+            (0..3)
+                .map(|index| file_range(10, 3, index).unwrap())
+                .collect::<Vec<_>>(),
+            [(0, 4), (4, 7), (7, 10)]
+        );
+        assert_partition(10, 3);
+        assert_eq!(
+            file_range(1_000_000_000_000, 1, 0).unwrap(),
+            (0, 1_000_000_000_000)
+        );
+        assert_partition(10, 10);
+        assert_eq!(file_range(10, 10, 9).unwrap(), (9, 10));
+    }
+
+    #[test]
+    fn row_ranges_are_safe_at_the_accepted_domain_limit() {
+        let rows = 1_000_000_000_000;
+        let files = rows - 1;
+        let second_last = file_range(rows, files, files - 2).unwrap();
+        let last = file_range(rows, files, files - 1).unwrap();
+        assert_eq!(second_last.1, last.0);
+        assert_eq!(last.1, rows);
+        assert!(second_last.1 - second_last.0 <= 2);
+        assert!(last.1 - last.0 <= 2);
+        assert!(file_range(rows, files, files).is_err());
+    }
 }

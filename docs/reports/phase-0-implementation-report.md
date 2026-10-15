@@ -12,7 +12,7 @@ Implemented the Architecture Lab and Benchmark Harness in the existing `ade-benc
 - Strict typed/versioned workload, manifest, child protocol and result schemas. Unknown versions/fields are rejected.
 - Deterministic eight-column synthetic Parquet generation, uniform and precisely controlled hot-key distributions, configurable cardinality/payload/compression/file/row-group shape and logical/physical fingerprints.
 - Six engine-independent specs: scan, filter/project, low/high/skew aggregation and TPC-H-derived Q1.
-- DataFusion public-API baseline with explicit configuration, canonicalization and independent correctness checks. A generic adapter execution function shares the correctness contract with future adapters.
+- DataFusion public-API baseline with explicit configuration, canonicalization and independent correctness checks. The shared validation harness is generic over an adapter's associated configuration type.
 - Fresh child per warmup/measured iteration; status/error recording, setup/query/process timing, best-effort peak RSS and invalid diagnostic results.
 - Atomic no-clobber JSON artifacts, all measured samples, R-7 min/max/mean/median/population standard deviation/p90/p95; compatible comparisons and warnings.
 - TPC-H-derived external generation/registration/Q1, Criterion BLAKE3 microbenchmark, CI smoke script, tests and methodology documentation.
@@ -25,7 +25,7 @@ Result validity is explicit at run and child level rather than a separate duplic
 
 Q1 uses explicit DOUBLE input arithmetic and an independent Parquet reference with exact counts and finite, tolerance-aware sums/averages. Its canonical comparison fingerprint comes from the deterministic reference after output validation.
 
-The source directory arrived without `.git` metadata, and the system had no Rust executable on PATH. Git fields correctly remain null. A temporary stable Rust toolchain was installed under `/private/tmp`, without changing shell startup files.
+The initial source archive had no `.git` metadata, and the system had no Rust executable on PATH. Git fields in that original acceptance artifact were null. A temporary stable Rust toolchain was installed under `/private/tmp`, without changing shell startup files. Post-review remediation below moves repository identity to build-time provenance and validates the declared MSRV.
 
 ## ADRs resolved and API decisions
 
@@ -34,7 +34,7 @@ The source directory arrived without `.git` metadata, and the system had no Rust
 - ADR-0003: independent logical dataset identity and complete physical manifest identity; recorded metadata/full verification choice, child metadata checks.
 - ADR-0004: DataFusion 55.2.0 with Arrow/Parquet 59.3.1; Cargo.lock pins resolved dependencies. Workspace MSRV is 1.94, required by DataFusion. Current public source/API signatures were inspected.
 
-Release/bench use thin LTO, one codegen unit, debug information level 1, portable CPU defaults and the system allocator. Build metadata captures rustc/profile/target/assertions plus a whitelist of explicit codegen overrides; arbitrary environment variables and paths are excluded.
+Release/bench use thin LTO, one codegen unit, debug information level 1, portable CPU defaults and the system allocator. Post-review build metadata captures rustc/profile/target/assertions plus known effective profile/codegen settings and whitelisted explicit target settings; arbitrary environment variables and paths are excluded.
 
 ## Commands run
 
@@ -71,7 +71,7 @@ The release preparation ran with system queries available so hardware metadata c
 
 ## Test results
 
-Final format, all-target check, Clippy with warnings denied, and tests pass. Tests: 8 unit and 4 integration scenarios, including all synthetic distributions/specs, exact row read-back across Snappy/Zstandard/uncompressed encoding, Q1 boundary/tolerance checks, schema integrity, child success/crash/nonzero/malformed/unvalidated responses, real correctness failure diagnostics, atomic output/no-clobber/cleanup and comparison incompatibility/improvement/regression/neutral/warnings.
+Initial acceptance ran 8 unit tests and 4 integration scenarios, including all synthetic distributions/specs, exact row read-back across Snappy/Zstandard/uncompressed encoding, Q1 boundary/tolerance checks, schema integrity, child success/crash/nonzero/malformed/unvalidated responses, real correctness failure diagnostics, atomic output/no-clobber/cleanup and comparison incompatibility/improvement/regression/neutral/warnings. The post-review run and its expanded test count are recorded below.
 
 Initial validation exposed and resolved a test borrowing error, build-metadata changes requiring a rebuild, style/numeric-conversion lint findings, sandbox resource-query failures, and a test seed perturbation that preserved the aggregate by permutation. The final failure fixture forces different expected aggregates instead.
 
@@ -90,7 +90,7 @@ Release correctness evidence:
 
 The external generator produced all eight tables, 8,695 total rows. Repeated skew generation matched logical fingerprint `07669f106031f3b2d3dcdb9b0f493bd05b1d955c6a5246c76c52527c23b1f920`.
 
-Release environment: macOS, kernel 27.0.0, aarch64, Apple M3, 8 physical/logical cores, 25,769,803,776 bytes RAM. Rust 1.99.0 (b940084d7, 2026-09-28), release profile, aarch64-apple-darwin, debug assertions false, system allocator, no explicit codegen overrides; Git fields null.
+Release environment: macOS, kernel 27.0.0, aarch64, Apple M3, 8 physical/logical cores, 25,769,803,776 bytes RAM. Rust 1.99.0 (b940084d7, 2026-09-28), release profile, aarch64-apple-darwin, debug assertions false, system allocator, no explicit codegen overrides. This original acceptance artifact predates build-time Git provenance, so its Git fields are null.
 
 Criterion smoke completed successfully: `Testing blake3-4k` / `Success` under the optimized bench profile. All timed release runs used one isolated warmup and five isolated measured iterations, `--verify-data full`, batch size 8192 and statistics collection disabled. Skew configurations used target partitions 2 and 4; Q1 used 2. Compilation had finished before timed runs. These are tiny, uncontrolled development-machine samples shortly after compilation, not product performance claims.
 
@@ -131,7 +131,7 @@ Choose new output paths when repeating; existing artifacts are immutable. Debug 
 - Query outputs and synthetic canonical/reference rows are collected in memory. Large scans/high-cardinality validation can dominate memory; peak RSS includes validation, not just the engine.
 - Metadata-only verification assumes immutable inputs and cannot detect same-size changes; full verification is available and used for acceptance.
 - CPU time is null. RSS is recorded only after a successful resource probe. The managed macOS sandbox denies the `time -l` system query; the runner falls back to null RSS and still runs correctly.
-- Git identity is unavailable in this source archive. The minimum Rust 1.94 toolchain was not separately tested; validation uses stable Rust 1.99.0.
+- Source archives without Git metadata report null repository identity by design. The declared Rust 1.94 toolchain passed a local check and is also checked in CI; details are recorded below.
 - External TPC-H registration uses conservative file-checksum identity; physical encoding changes prevent direct logical comparison across encodings. Synthetic logical identity is independent of file shape.
 - Remote GitHub Actions was not triggered; its configured smoke workflow is exercised locally.
 
@@ -165,7 +165,7 @@ The implementation plan remains the normative checklist. All 28 section 29 crite
 | Functional | CI tiny smoke | current scripts/smoke.sh passes locally with full verification; no timing gate |
 | Quality | formatting | cargo fmt --all --check passes |
 | Quality | Clippy | all targets/features with -D warnings passes |
-| Quality | tests | 8 unit + 4 integration scenarios pass |
+| Quality | tests | final post-review suite: 18 unit + 5 integration tests pass; initial acceptance had 8 unit + 4 scenarios |
 | Quality | no generated large data committed | generated inputs/results under ignored directories; intentional 7,575-byte schema example |
 | Quality | no personal paths in canonical artifacts | whitelisted metadata and relative input paths; canonical example checked for personal paths/host identifiers |
 | Quality | noise/limitations documented | methodology, benchmark README and report |
@@ -177,3 +177,45 @@ The implementation plan remains the normative checklist. All 28 section 29 crite
 | Architecture | stable/versioned identity | generator v1, canonical logical hash and physical manifest hash |
 | Architecture | explicit engine configuration | partitions/batch size/statistics recorded on each result |
 | Architecture | correctness gates validity | failed children invalidate runs, suppress summary and prevent comparison |
+
+## Post-review remediation
+
+The review fixes below are part of the completed Phase 0 state. They do not implement any Phase 1 execution operators.
+
+### Findings addressed
+
+- **Engine adapter boundary:** introduced an explicit engine request and dispatcher. The parent forwards the selected `--engine` and every raw option to each isolated child. Each adapter parses its own options and owns its associated configuration type. A test adapter with a non-DataFusion config exercises the shared correctness harness. DataFusion remains the only production adapter; unknown names fail before a valid result can be recorded.
+- **Build/source provenance:** Git commit and dirty status now come from `build.rs` at the ADE workspace root, and are embedded into the executable. Nested source archives do not inherit an enclosing Git repository. Build metadata records the selected profile and known effective optimization/debug/LTO/codegen settings plus whitelisted rustflags without paths or arbitrary environment values. Cargo watches source/profile inputs and Git refs/index for provenance changes.
+- **Comparison semantics:** semantic identity includes schema version, case ID/version, dataset requirement, query and validation contract. Description/tag-only changes remain comparable and produce a warning.
+- **MSRV:** CI now has a dedicated Rust 1.94 locked workspace check; local validation status is recorded below.
+- **Synthetic ranges:** file row intervals use quotient/remainder partitioning with checked arithmetic and boundary coverage tests.
+- **TPC-H Q1:** the independent reference casts ship dates to Arrow `Date32` and compares typed day values to the cutoff.
+
+ADR-0002 and ADR-0004 were clarified. The result JSON structure did not change, so schema version 1 remains appropriate. The canonical example now includes the effective release-profile settings.
+
+### Remediation verification
+
+Final local verification passed:
+
+```text
+cargo fmt --all --check                                  passed
+cargo check --workspace --all-targets --locked           passed
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+                                                         passed
+cargo test --workspace --all-features --locked           passed (18 unit, 5 integration)
+cargo +1.94.0 check --workspace --all-targets --locked   passed
+cargo build --release --workspace --locked               passed
+bash scripts/smoke.sh                                    passed
+cargo bench --locked -p ade-bench --bench smoke -- --test
+                                                         passed (blake3-4k)
+```
+
+The smoke script validated each of the five synthetic cases, ran one isolated measured skew iteration with 9,930 output groups, checked the result, and self-compared it as neutral. The Criterion smoke reported `Testing blake3-4k` / `Success`. The declared Rust 1.94 toolchain was installed in a temporary rustup home and the locked all-target check passed locally; CI now repeats that check on Ubuntu.
+
+A fresh release artifact was generated under `/private/tmp` from a 12,000-row, three-file hot-key fixture. It passed `check-result` and self-comparison as neutral, with 998 output groups. Its build metadata recorded `codegen-units=1`, `debug-assertions=false`, `debug-info=1`, `lto=thin`, and `opt-level=3`. Its repository identity was the executable's build-time commit (`7772246b63fd78ec710fad34d0ea84503eeaaac8`) with dirty state true. A scan of the artifact found no local paths or hostname. These one-iteration smoke timings are correctness evidence only, not performance claims. An earlier artifact attempt exposed the build-profile parsing issue; the corrected fresh artifact above verifies the repaired settings.
+
+Remote GitHub Actions was not triggered in this local pass. The workflow now has a dedicated Rust 1.94 job alongside the existing stable checks.
+
+### Remaining limitations
+
+DataFusion remains the only compiled production adapter. The adapter dispatcher is intentionally static. Source archives report null Git identity. The harness continues to collect canonical outputs/oracles in memory, and benchmark timing remains unsuitable for absolute CI performance gating.

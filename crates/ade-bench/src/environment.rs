@@ -68,6 +68,18 @@ pub struct BuildInfo {
 }
 impl Default for BuildInfo {
     fn default() -> Self {
+        let mut codegen_overrides = env!("ADE_BUILD_SETTINGS")
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if !codegen_overrides
+            .iter()
+            .any(|setting| setting.starts_with("debug-assertions="))
+        {
+            codegen_overrides.push(format!("debug-assertions={}", cfg!(debug_assertions)));
+        }
+        codegen_overrides.sort();
         Self {
             harness_version: env!("CARGO_PKG_VERSION").into(),
             rustc: env!("ADE_RUSTC").into(),
@@ -75,11 +87,7 @@ impl Default for BuildInfo {
             target: env!("ADE_TARGET").into(),
             debug_assertions: cfg!(debug_assertions),
             allocator: "system-default".into(),
-            codegen_overrides: env!("ADE_CODEGEN_OVERRIDES")
-                .split(';')
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .collect(),
+            codegen_overrides,
         }
     }
 }
@@ -93,11 +101,17 @@ pub struct RepositoryInfo {
 impl RepositoryInfo {
     #[must_use]
     pub fn collect() -> Self {
+        Self::from_build_values(option_env!("ADE_GIT_COMMIT"), option_env!("ADE_GIT_DIRTY"))
+    }
+
+    fn from_build_values(commit: Option<&str>, dirty: Option<&str>) -> Self {
         Self {
-            git_commit: command("git", &["rev-parse", "HEAD"]),
-            git_dirty: command("git", &["status", "--porcelain"])
-                .map(|s| !s.is_empty())
-                .or_else(|| command("git", &["rev-parse", "--is-inside-work-tree"]).map(|_| false)),
+            git_commit: commit.filter(|value| !value.is_empty()).map(str::to_owned),
+            git_dirty: dirty.and_then(|value| match value {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            }),
         }
     }
 }
@@ -110,5 +124,56 @@ mod tests {
         assert!(value.get("hostname").is_none());
         assert!(value.get("os").is_some());
         serde_json::to_string(&RepositoryInfo::collect()).unwrap();
+    }
+
+    #[test]
+    fn build_provenance_stays_unknown_for_source_archives() {
+        let repository = RepositoryInfo::from_build_values(None, None);
+        assert_eq!(repository.git_commit, None);
+        assert_eq!(repository.git_dirty, None);
+    }
+
+    #[test]
+    fn repository_info_uses_compiled_values_not_runtime_git_context() {
+        let repository = RepositoryInfo::collect();
+        assert_eq!(
+            repository.git_commit.as_deref(),
+            option_env!("ADE_GIT_COMMIT").filter(|value| !value.is_empty())
+        );
+        assert_eq!(
+            repository.git_dirty,
+            option_env!("ADE_GIT_DIRTY").and_then(|value| match value {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            })
+        );
+    }
+
+    #[test]
+    fn build_metadata_includes_effective_known_settings() {
+        let build = BuildInfo::default();
+        assert!(
+            build
+                .codegen_overrides
+                .iter()
+                .any(|s| s.starts_with("opt-level="))
+        );
+        assert!(
+            build
+                .codegen_overrides
+                .iter()
+                .any(|s| s.starts_with("debug-assertions="))
+        );
+        if matches!(build.profile.as_str(), "release" | "bench") {
+            assert!(build.codegen_overrides.iter().any(|s| s == "lto=thin"));
+            assert!(
+                build
+                    .codegen_overrides
+                    .iter()
+                    .any(|s| s == "codegen-units=1")
+            );
+            assert!(build.codegen_overrides.iter().any(|s| s == "debug-info=1"));
+        }
     }
 }

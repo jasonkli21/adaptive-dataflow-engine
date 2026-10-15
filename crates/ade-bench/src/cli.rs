@@ -2,7 +2,7 @@
 use crate::{
     Result,
     dataset::{self, SyntheticConfig},
-    engine::{self, EngineConfig},
+    engine::{self, EngineRequest},
     environment::{BuildInfo, EnvironmentInfo, RepositoryInfo},
     result::{BenchmarkResultV1, DatasetVerification, RunConfig},
     spec::BenchmarkCase,
@@ -58,11 +58,11 @@ pub enum Commands {
         path: PathBuf,
     },
     #[command(name = "__child-run", hide = true)]
-    ChildRun(CaseArgs),
+    ChildRun(ChildRunArgs),
 }
 #[derive(Debug, Args)]
 pub struct CaseArgs {
-    #[arg(long, default_value = "datafusion", value_parser = ["datafusion"])]
+    #[arg(long, default_value = "datafusion")]
     pub engine: String,
     #[arg(long)]
     pub spec: PathBuf,
@@ -70,6 +70,30 @@ pub struct CaseArgs {
     pub dataset: PathBuf,
     #[arg(long = "engine-option")]
     pub engine_options: Vec<String>,
+}
+
+/// Child protocol arguments require an explicit engine to prevent fallback dispatch.
+#[derive(Debug, Args)]
+pub struct ChildRunArgs {
+    #[arg(long)]
+    pub engine: String,
+    #[arg(long)]
+    pub spec: PathBuf,
+    #[arg(long)]
+    pub dataset: PathBuf,
+    #[arg(long = "engine-option")]
+    pub engine_options: Vec<String>,
+}
+
+impl From<ChildRunArgs> for CaseArgs {
+    fn from(child: ChildRunArgs) -> Self {
+        Self {
+            engine: child.engine,
+            spec: child.spec,
+            dataset: child.dataset,
+            engine_options: child.engine_options,
+        }
+    }
 }
 #[derive(Debug, Subcommand)]
 pub enum DataCommand {
@@ -154,7 +178,7 @@ pub async fn execute(cli: Cli) -> Result<()> {
             DataCommand::Inspect { path } => json(&dataset::inspect(&path, true)?)?,
         },
         Commands::Validate(case) => execute_case(&case, true).await?,
-        Commands::ChildRun(case) => execute_case(&case, false).await?,
+        Commands::ChildRun(case) => execute_case(&case.into(), false).await?,
         Commands::Run {
             case,
             warmups,
@@ -166,12 +190,12 @@ pub async fn execute(cli: Cli) -> Result<()> {
                 !output.exists(),
                 "result output exists; choose a new artifact path",
             )?;
-            let config = EngineConfig::from_options(&case.engine_options)?;
+            let engine = engine_request(&case);
             let result = crate::runner::run(
                 &std::env::current_exe()?,
                 &case.spec,
                 &case.dataset,
-                &config,
+                &engine,
                 RunConfig {
                     warmups,
                     iterations,
@@ -251,10 +275,19 @@ pub async fn execute(cli: Cli) -> Result<()> {
     Ok(())
 }
 async fn execute_case(case: &CaseArgs, full_inspection: bool) -> Result<()> {
-    let config = EngineConfig::from_options(&case.engine_options)?;
+    let request = engine_request(case);
+    // Resolve before touching the dataset so unsupported adapters fail clearly and early.
+    request.resolve()?;
     let manifest = dataset::inspect(&case.dataset, full_inspection)?;
     let spec = BenchmarkCase::load(&case.spec)?;
-    json(&engine::execute_validated(&case.dataset, &manifest, &spec, &config).await?)
+    json(&engine::execute_validated_request(&case.dataset, &manifest, &spec, &request).await?)
+}
+
+fn engine_request(case: &CaseArgs) -> EngineRequest {
+    EngineRequest {
+        name: case.engine.clone(),
+        options: case.engine_options.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -266,5 +299,29 @@ mod tests {
         Cli::command().debug_assert();
         assert!(Cli::try_parse_from(["ade-bench", "env", "--format", "json"]).is_ok());
         assert!(Cli::try_parse_from(["ade-bench", "run"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "ade-bench",
+                "__child-run",
+                "--spec",
+                "case.toml",
+                "--dataset",
+                "data"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "ade-bench",
+                "__child-run",
+                "--engine",
+                "datafusion",
+                "--spec",
+                "case.toml",
+                "--dataset",
+                "data"
+            ])
+            .is_ok()
+        );
     }
 }

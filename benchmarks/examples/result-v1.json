@@ -22,7 +22,13 @@
     "target": "aarch64-apple-darwin",
     "debug_assertions": false,
     "allocator": "system-default",
-    "codegen_overrides": []
+    "codegen_overrides": [
+      "codegen-units=1",
+      "debug-assertions=false",
+      "debug-info=1",
+      "lto=thin",
+      "opt-level=3"
+    ]
   },
   "engine": {
     "name": "datafusion",

@@ -3,7 +3,7 @@ use crate::{Result, require};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::Path};
 /// Explicit semantic operation; SQL translation belongs to the adapter.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Query {
     Scan,
@@ -12,13 +12,13 @@ pub enum Query {
     TpchQ1,
 }
 /// Required dataset schema, independent of engine configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DatasetRequirement {
     pub required_schema: String,
 }
 /// Canonical validation method, mandatory for every case.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationSpec {
     pub kind: String,
@@ -37,6 +37,18 @@ pub struct BenchmarkCase {
     #[serde(default)]
     pub tags: BTreeMap<String, String>,
 }
+
+/// Fields that define whether two recorded workloads have the same semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkloadSemanticIdentity<'a> {
+    pub schema_version: u32,
+    pub id: &'a str,
+    pub version: u32,
+    pub dataset: &'a DatasetRequirement,
+    pub query: &'a Query,
+    pub validation: &'a ValidationSpec,
+}
+
 impl BenchmarkCase {
     /// Loads and validates a strict TOML semantic specification.
     ///
@@ -77,6 +89,25 @@ impl BenchmarkCase {
             "unsupported required validation",
         )
     }
+
+    /// Returns the stable identity used to determine semantic comparability.
+    #[must_use]
+    pub fn semantic_identity(&self) -> WorkloadSemanticIdentity<'_> {
+        WorkloadSemanticIdentity {
+            schema_version: self.schema_version,
+            id: &self.id,
+            version: self.version,
+            dataset: &self.dataset,
+            query: &self.query,
+            validation: &self.validation,
+        }
+    }
+
+    /// Tests semantic compatibility while ignoring description and tags.
+    #[must_use]
+    pub fn semantically_equivalent(&self, other: &Self) -> bool {
+        self.semantic_identity() == other.semantic_identity()
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -95,5 +126,34 @@ mod tests {
         let mut bad = c;
         bad.schema_version = 99;
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn semantic_identity_includes_contract_and_excludes_description_and_tags() {
+        let source = include_str!("../../../benchmarks/specs/aggregate-skew.toml");
+        let case: BenchmarkCase = toml::from_str(source).unwrap();
+        let mut changed = case.clone();
+        changed.description.push_str(" (clarified)");
+        changed.tags.insert("note".into(), "informational".into());
+        assert!(case.semantically_equivalent(&changed));
+
+        changed = case.clone();
+        changed.query = Query::Scan;
+        assert!(!case.semantically_equivalent(&changed));
+        changed = case.clone();
+        changed.validation.kind = "different-validation".into();
+        assert!(!case.semantically_equivalent(&changed));
+        changed = case.clone();
+        changed.dataset.required_schema = "different-schema".into();
+        assert!(!case.semantically_equivalent(&changed));
+        changed = case.clone();
+        changed.version += 1;
+        assert!(!case.semantically_equivalent(&changed));
+        changed = case;
+        changed.id.push_str("-different");
+        assert!(!changed.semantically_equivalent(&BenchmarkCase {
+            id: "aggregate-skew".into(),
+            ..changed.clone()
+        }));
     }
 }

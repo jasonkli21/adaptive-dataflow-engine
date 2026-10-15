@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "run_id": "b5a1464b-6c6e-4a9d-861f-5fa2aa346949",
+  "created_at": "2026-10-15T18:09:20.950253Z",
+  "repository": {
+    "git_commit": null,
+    "git_dirty": null
+  },
+  "environment": {
+    "os": "macos",
+    "arch": "aarch64",
+    "kernel": "27.0.0",
+    "cpu_model": "Apple M3",
+    "physical_cores": 8,
+    "logical_cores": 8,
+    "memory_bytes": 25769803776
+  },
+  "build": {
+    "harness_version": "0.1.0",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "profile": "release",
+    "target": "aarch64-apple-darwin",
+    "debug_assertions": false,
+    "allocator": "system-default",
+    "codegen_overrides": []
+  },
+  "engine": {
+    "name": "datafusion",
+    "version": "55.2.0",
+    "configuration": {
+      "batch_size": "8192",
+      "collect_statistics": "false",
+      "target_partitions": "2"
+    }
+  },
+  "workload": {
+    "schema_version": 1,
+    "id": "aggregate-skew",
+    "version": 1,
+    "description": "aggregate-skew baseline semantics.",
+    "dataset": {
+      "required_schema": "synthetic-events-v1"
+    },
+    "query": {
+      "kind": "group_by_sum"
+    },
+    "validation": {
+      "kind": "canonical_integer_rows_v1"
+    },
+    "tags": {
+      "category": "skew"
+    }
+  },
+  "dataset": {
+    "schema_version": 1,
+    "dataset_id": "skew-v1",
+    "dataset_version": 1,
+    "required_schema": "synthetic-events-v1",
+    "schema_fingerprint": "66e6cb590dcb1670bcb9a2cdc704c80dea32406664fe0bcfc7f4a3b110293604",
+    "generator": "synthetic-events",
+    "generator_version": "1",
+    "encoding_version": "parquet-59.3.1",
+    "format": "parquet",
+    "row_count": 100000,
+    "logical_fingerprint": "07669f106031f3b2d3dcdb9b0f493bd05b1d955c6a5246c76c52527c23b1f920",
+    "synthetic": {
+      "rows": 100000,
+      "files": 3,
+      "row_group_rows": 8192,
+      "compression": "snappy",
+      "key_cardinality": 10000,
+      "distribution": "hot-key",
+      "hot_key_fraction": 0.5,
+      "hot_key_count": 1,
+      "payload_size": 16,
+      "seed": 42
+    },
+    "scale_factor": null,
+    "files": [
+      {
+        "relative_path": "part-00000.parquet",
+        "bytes": 746074,
+        "rows": 33333,
+        "row_groups": 5,
+        "fingerprint": "4a556afb1fe71098456e0223a7af6bd7872512e3e8fa3463e24121d54a4931b8"
+      },
+      {
+        "relative_path": "part-00001.parquet",
+        "bytes": 746227,
+        "rows": 33333,
+        "row_groups": 5,
+        "fingerprint": "ebf13a6d1f39c1a8f14ec2067c95d135be20d22549ddda327adacb24cad8f58d"
+      },
+      {
+        "relative_path": "part-00002.parquet",
+        "bytes": 746283,
+        "rows": 33334,
+        "row_groups": 5,
+        "fingerprint": "6436e5cefe256d36fc6923da7fd8e7fb6f2b1bef6891bcfbf66f05da98f66854"
+      }
+    ]
+  },
+  "dataset_manifest_fingerprint": "70b1bb64f57d122619fbe53ce0433866828e5080e899b633973af0d985cda555",
+  "run_config": {
+    "warmups": 1,
+    "iterations": 5,
+    "cache_policy": "warm",
+    "log_level": "warn",
+    "dataset_verification": "full"
+  },
+  "valid": true,
+  "warmups": [
+    {
+      "index": 0,
+      "warmup": true,
+      "process_time_ns": 39274584,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 5006250,
+        "query_time_ns": 13626792,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35438592
+    }
+  ],
+  "iterations": [
+    {
+      "index": 0,
+      "warmup": false,
+      "process_time_ns": 26812584,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 1051583,
+        "query_time_ns": 4551000,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35536896
+    },
+    {
+      "index": 1,
+      "warmup": false,
+      "process_time_ns": 26319250,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 1114375,
+        "query_time_ns": 4377125,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35553280
+    },
+    {
+      "index": 2,
+      "warmup": false,
+      "process_time_ns": 26675083,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 1051333,
+        "query_time_ns": 4616833,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35602432
+    },
+    {
+      "index": 3,
+      "warmup": false,
+      "process_time_ns": 26492708,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 1057833,
+        "query_time_ns": 4387667,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35373056
+    },
+    {
+      "index": 4,
+      "warmup": false,
+      "process_time_ns": 25603834,
+      "exit_code": 0,
+      "outcome": {
+        "schema_version": 1,
+        "validated": true,
+        "engine": {
+          "name": "datafusion",
+          "version": "55.2.0",
+          "configuration": {
+            "batch_size": "8192",
+            "collect_statistics": "false",
+            "target_partitions": "2"
+          }
+        },
+        "setup_time_ns": 971333,
+        "query_time_ns": 4376583,
+        "rows_output": 9930,
+        "result_fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063"
+      },
+      "error": null,
+      "cpu_time_ns": null,
+      "peak_rss_bytes": 35454976
+    }
+  ],
+  "summary": {
+    "count": 5,
+    "min": 4376583.0,
+    "max": 4616833.0,
+    "mean": 4461841.6,
+    "median": 4387667.0,
+    "stddev": 101901.28246415744,
+    "p90": 4590499.8,
+    "p95": 4603666.4
+  }
+}

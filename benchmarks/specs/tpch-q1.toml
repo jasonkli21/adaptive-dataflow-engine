@@ -1,0 +1,16 @@
+schema_version = 1
+id = "tpch-q1"
+version = 1
+description = "tpch-q1 baseline semantics."
+
+[dataset]
+required_schema = "tpch-v1"
+
+[query]
+kind = "tpch_q1"
+
+[validation]
+kind = "q1_tolerance_v1"
+
+[tags]
+category = "tpch-derived"

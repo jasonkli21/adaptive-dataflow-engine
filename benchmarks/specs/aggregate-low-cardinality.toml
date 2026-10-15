@@ -1,0 +1,16 @@
+schema_version = 1
+id = "aggregate-low-cardinality"
+version = 1
+description = "aggregate-low-cardinality baseline semantics."
+
+[dataset]
+required_schema = "synthetic-events-v1"
+
+[query]
+kind = "group_by_sum"
+
+[validation]
+kind = "canonical_integer_rows_v1"
+
+[tags]
+category = "low-cardinality"

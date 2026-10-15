@@ -1,0 +1,17 @@
+schema_version = 1
+id = "scan-filter-project"
+version = 1
+description = "scan-filter-project baseline semantics."
+
+[dataset]
+required_schema = "synthetic-events-v1"
+
+[query]
+kind = "scan_filter_project"
+threshold = 250
+
+[validation]
+kind = "canonical_integer_rows_v1"
+
+[tags]
+category = "filter"

@@ -1,0 +1,49 @@
+# Architecture Decision Records
+
+Use ADRs for concrete technical decisions that matter beyond one function or file.
+
+## Numbering
+
+Use monotonically increasing four-digit IDs:
+
+```text
+0001-phase-0-workspace.md
+0002-benchmark-result-schema.md
+```
+
+Phase 0 is expected to create ADR-0001 through ADR-0004 described in the implementation plan.
+
+## Template
+
+```md
+# ADR-NNNN: Title
+
+**Status:** Proposed | Accepted | Superseded
+**Date:** YYYY-MM-DD
+
+## Context
+
+What problem/constraint requires a decision?
+
+## Decision
+
+What are we choosing?
+
+## Alternatives considered
+
+What credible alternatives were rejected and why?
+
+## Consequences
+
+What becomes easier/harder? What new constraints exist?
+
+## Architecture impact
+
+Which PRD/architecture sections or invariants are affected?
+
+## Follow-up
+
+What work or future validation does this decision require?
+```
+
+An ADR should not duplicate a large plan. Keep it focused on the decision and rationale.

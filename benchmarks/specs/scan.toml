@@ -1,0 +1,16 @@
+schema_version = 1
+id = "scan"
+version = 1
+description = "scan baseline semantics."
+
+[dataset]
+required_schema = "synthetic-events-v1"
+
+[query]
+kind = "scan"
+
+[validation]
+kind = "canonical_integer_rows_v1"
+
+[tags]
+category = "scan"

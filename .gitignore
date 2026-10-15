@@ -1,0 +1,15 @@
+/target/
+.DS_Store
+.idea/
+.vscode/
+
+# Generated benchmark data and local results.
+/benchmarks/datasets/*
+!/benchmarks/datasets/.gitkeep
+/benchmarks/results/*
+!/benchmarks/results/.gitkeep
+
+# Temporary benchmark artifacts.
+*.tmp
+*.profraw
+perf.data*

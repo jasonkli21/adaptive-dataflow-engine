@@ -1,0 +1,16 @@
+schema_version = 1
+id = "aggregate-skew"
+version = 1
+description = "aggregate-skew baseline semantics."
+
+[dataset]
+required_schema = "synthetic-events-v1"
+
+[query]
+kind = "group_by_sum"
+
+[validation]
+kind = "canonical_integer_rows_v1"
+
+[tags]
+category = "skew"

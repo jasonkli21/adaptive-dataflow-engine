@@ -51,6 +51,10 @@ pub enum Request {
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "TaskMetrics are returned as one bounded diagnostic control message."
+)]
 pub enum Reply {
     Pong(WorkerEndpoint),
     Ready,

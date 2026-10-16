@@ -542,6 +542,10 @@ Requirements:
 
 - a fixed configured memory threshold;
 - spill is execution-scoped and worker-local;
+- spill file reads/writes run outside the shared queue/accounting mutex;
+- callers can cancel/deadline a spill operation without waiting for the file call;
+- if the underlying file call cannot stop, poison the worker, release task/receiver
+  ownership, reject later `PrepareJob`, and do not join the blocked helper at shutdown;
 - spill uses bounded Arrow IPC or another already justified bounded format;
 - no whole-exchange memory retention;
 - per-transfer sequence/completeness is preserved across memory and disk;
@@ -595,11 +599,16 @@ producer transfer
 Requirements:
 
 - object keys include sufficient job/exchange/partition/producer/attempt identity;
+- object-store backend ownership is injectable at worker/session setup;
+- job configuration and effective metrics identify the backend and its declared
+  durability capability; the default local fixture is explicitly ephemeral;
 - stale job data cannot be mistaken for current data;
 - partial/in-progress upload is not treated as completed;
 - completion metadata is explicit;
 - upload/download is bounded and does not read the whole object into memory;
 - backend errors fail the job;
+- put/get operations race session cancellation and a finite operation deadline;
+- if a provider operation cannot stop, poison the worker and prevent reuse;
 - object-store read/write/object counts are observable;
 - cleanup/retention behavior is explicit.
 
@@ -636,6 +645,8 @@ payload bytes
 peak frame bytes
 
 peak managed exchange-buffer bytes
+current retained-buffer bytes
+current spill backlog bytes
 producer blocked/wait time
 consumer wait time
 
@@ -857,9 +868,13 @@ Required high-value cases:
 - direct backpressure;
 - bounded-buffer capacity enforcement;
 - spill threshold and exact-once readback;
+- cancellation while a spill write and a spill read are blocked, including worker
+  poisoning and task/receiver return;
 - local materialization completeness;
 - object-store complete-object visibility;
 - cancellation unblocks producer/consumer;
+- hanging object-store put/get futures terminate on cancellation/deadline and poison
+  a worker that may still own non-preemptible work;
 - cleanup after error.
 
 Prefer table-driven tests where the same correctness contract applies to all mechanisms.
@@ -1012,6 +1027,8 @@ Phase 4 is complete only if all of the following hold.
 - Final consumers can start before producers.
 - Each worker has bounded producer/final concurrency.
 - Cancellation/error unblocks all relevant roles.
+- A worker with an operation that may outlive cancellation is explicitly poisoned
+  and cannot accept a larger `JobId`.
 - First required failure prevents partial success.
 - Cleanup is bounded and does not reuse stale job state.
 
@@ -1034,6 +1051,8 @@ Phase 4 is complete only if all of the following hold.
 
 - Selected mode is recorded.
 - Mechanism-specific bytes/counts/peaks are visible.
+- A live snapshot reports current retained-buffer and spill-backlog bytes; successful
+  final completion verifies both return to zero.
 - Row and transfer/segment conservation are testable.
 - A test can distinguish direct, spill, local-materialized, and object-store paths by metrics.
 

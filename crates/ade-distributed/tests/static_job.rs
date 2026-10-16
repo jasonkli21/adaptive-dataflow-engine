@@ -206,6 +206,11 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
                 assert!(m.object_count > 2);
                 assert_eq!(m.object_write_bytes, m.object_read_bytes);
                 assert!(m.object_write_bytes > 0);
+                assert_eq!(m.object_store_backend.as_deref(), Some("local_filesystem"));
+                assert_eq!(
+                    m.object_store_durability,
+                    Some(ade_distributed::ObjectStoreDurability::Ephemeral)
+                );
             }
         }
     }

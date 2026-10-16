@@ -32,6 +32,8 @@ version = "0.1.0"
 dependencies = [
  "ade-exec",
  "arrow",
+ "async-trait",
+ "futures",
  "object_store",
  "parquet",
  "serde",

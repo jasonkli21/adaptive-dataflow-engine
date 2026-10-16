@@ -172,9 +172,14 @@ bounded frame transients (1 MiB, 1024 rows) are separate from the local ledger;
 this is not a process RSS cap. Direct uses rendezvous handoff, buffered uses a
 byte-bounded FIFO, spill uses that FIFO plus a fixed-threshold local disk log,
 and materialized modes wait for every producer to finish. Local storage is lossy.
-Object-store mode uses the public provider-neutral API with an ephemeral local
-filesystem backend: this does not demonstrate cloud/multi-host durability or
-recovery. All storage is execution-scoped. Gather stays fixed and bounded in
+Object-store mode defaults to the public provider-neutral API with an ephemeral
+local filesystem backend. Embedded worker callers can install an
+`ObjectStoreBackend` through `worker::serve_with_object_store`; job configuration
+names the backend and its declared durability capability. ADE reports that
+capability but does not verify it. The default does not demonstrate
+cloud/multi-host durability or recovery. A retention operation that outlives its
+deadline poisons the worker, which then rejects new jobs. All storage is
+execution-scoped. Gather stays fixed and bounded in
 transit; coordinator gathering/oracle validation collect the final result. See
 [Phase 4 report](docs/reports/phase-4-implementation-report.md) and
 [unified exchange ADR](docs/adr/0010-static-unified-exchange.md).

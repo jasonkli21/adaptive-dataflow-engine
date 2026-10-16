@@ -34,8 +34,10 @@ struct State {
     last_job_id: Mutex<Option<JobId>>,
     producer_busy: AtomicBool,
     final_busy: AtomicBool,
+    poisoned: AtomicBool,
     stop: AtomicBool,
     parent: PathBuf,
+    object_backend: Option<crate::ObjectStoreBackend>,
 }
 struct TaskGuard<'a>(&'a AtomicBool);
 impl Drop for TaskGuard<'_> {
@@ -177,6 +179,7 @@ fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetric
                 .map_err(local_sink_error)
         },
     )?;
+    job.store.validate_retention_drained()?;
     let mut metrics = task_metrics(start, &output, 0);
     let sender = match sender {
         Some(sender) => sender,
@@ -209,6 +212,10 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             )?;
             let mut current = state.job.lock().expect("job lock");
             require(
+                !state.poisoned.load(Ordering::Acquire),
+                "worker is poisoned after an uncontained retention I/O operation",
+            )?;
+            require(
                 current.is_none()
                     && !state.producer_busy.load(Ordering::Acquire)
                     && !state.final_busy.load(Ordering::Acquire),
@@ -222,11 +229,12 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             let expected = (0..spec.workers.len())
                 .map(|p| transfer(spec.job, 0, state.endpoint.id.0, p as u64))
                 .collect();
-            let store = Arc::new(Store::configured(
+            let store = Arc::new(Store::configured_with_backend(
                 &state.parent,
                 expected,
                 CancellationToken::default(),
                 spec.config.exchange.clone(),
+                state.object_backend.as_ref(),
             )?);
             let accepted_job_id = spec.job;
             *current = Some(Arc::new(Job {
@@ -243,6 +251,9 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             let mut current = state.job.lock().expect("job lock");
             if current.as_ref().is_some_and(|j| j.spec.job == id) {
                 let old = current.take().expect("job");
+                if old.store.is_poisoned() {
+                    state.poisoned.store(true, Ordering::Release);
+                }
                 old.store.cancellation.cancel();
             }
             Ok(Reply::Ready)
@@ -300,11 +311,14 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             if result.is_err() {
                 job.store.cancellation.cancel();
             }
+            if job.store.is_poisoned() {
+                state.poisoned.store(true, Ordering::Release);
+            }
             result.map(Reply::Task)
         }
     }
 }
-/// Serve until Shutdown. Readiness is emitted only after both sockets are bound.
+/// Serve with the deterministic ephemeral local object-store fixture until Shutdown.
 /// The caller owns the parent directory and may remove it after killing/waiting a child.
 /// # Errors
 /// Returns binding, readiness, listener or socket setup errors.
@@ -313,6 +327,32 @@ pub fn serve(
     control: SocketAddr,
     exchange: SocketAddr,
     parent: &Path,
+    ready: impl Write,
+) -> Result<()> {
+    serve_inner(id, control, exchange, parent, None, ready)
+}
+
+/// Serve with a caller-installed object-store backend for object-store exchange mode.
+/// The backend name and durability capability must match each job's exchange config.
+/// # Errors
+/// Returns binding, readiness, listener or socket setup errors.
+pub fn serve_with_object_store(
+    id: crate::ids::WorkerId,
+    control: SocketAddr,
+    exchange: SocketAddr,
+    parent: &Path,
+    backend: crate::ObjectStoreBackend,
+    ready: impl Write,
+) -> Result<()> {
+    serve_inner(id, control, exchange, parent, Some(backend), ready)
+}
+
+fn serve_inner(
+    id: crate::ids::WorkerId,
+    control: SocketAddr,
+    exchange: SocketAddr,
+    parent: &Path,
+    object_backend: Option<crate::ObjectStoreBackend>,
     mut ready: impl Write,
 ) -> Result<()> {
     let listener = TcpListener::bind(control)?;
@@ -329,8 +369,10 @@ pub fn serve(
         last_job_id: Mutex::new(None),
         producer_busy: AtomicBool::new(false),
         final_busy: AtomicBool::new(false),
+        poisoned: AtomicBool::new(false),
         stop: AtomicBool::new(false),
         parent: parent.into(),
+        object_backend,
     });
     let receiving = state.clone();
     let receiver = Receiver::start(exchange_listener, move |header| {
@@ -349,7 +391,7 @@ pub fn serve(
                 i += 1;
             }
         }
-        // At most one task plus a small bounded set of control operations.
+        // One producer and one final task may overlap, plus bounded control operations.
         if handlers.len() < 8 {
             match listener.accept() {
                 Ok((mut socket, _)) => {
@@ -438,8 +480,10 @@ mod tests {
             last_job_id: Mutex::new(None),
             producer_busy: AtomicBool::new(false),
             final_busy: AtomicBool::new(false),
+            poisoned: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             parent: parent.path().into(),
+            object_backend: None,
         });
         let receiving = state.clone();
         let receiver = Receiver::start(exchange_listener, move |header: &Header| {
@@ -494,5 +538,9 @@ mod tests {
         assert_eq!(metrics.transfers, 1);
         assert_eq!(metrics.batches, 0);
         assert_eq!(current.store.metrics().unwrap().transfers, 1);
+        current.store.poison();
+        handle(&state, Request::CancelJob { job: JobId(43) }).unwrap();
+        assert!(state.poisoned.load(Ordering::Acquire));
+        assert!(handle(&state, Request::PrepareJob(spec(JobId(44)))).is_err());
     }
 }

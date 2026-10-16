@@ -1,11 +1,11 @@
-//! Bounded TCP frames and ephemeral IPC retention. ACK follows file finalization.
+//! Bounded segment protocol with mechanism-specific retention and common completion checks.
 use crate::{
     Error, ExchangeConfig, ExchangeMode, Result,
     ids::TransferId,
     metrics::NetworkMetrics,
     partition::HASH_VERSION,
     protocol, require,
-    retention::{Buffer, Objects, RetentionMetrics},
+    retention::{Buffer, ObjectStoreBackend, Objects, RetentionMetrics},
 };
 use ade_exec::CancellationToken;
 use arrow::{
@@ -88,7 +88,7 @@ impl Write for BoundedBuffer {
     }
 }
 // Check advertised IPC allocations against the already bounded frame before Arrow's
-// streaming decoder allocates metadata/body buffers. Compression is outside Phase 3.
+// streaming decoder allocates metadata/body buffers. Compression is outside this wire contract.
 fn validate_ipc_envelope(encoded: &[u8]) -> Result<()> {
     let mut offset = 0usize;
     let mut messages = 0;
@@ -236,6 +236,7 @@ pub struct Store {
     config: ExchangeConfig,
     buffer: Buffer,
     objects: Option<Objects>,
+    poisoned: Arc<AtomicBool>,
     pub cancellation: CancellationToken,
 }
 impl Store {
@@ -257,6 +258,18 @@ impl Store {
         cancellation: CancellationToken,
         config: ExchangeConfig,
     ) -> Result<Self> {
+        Self::configured_with_backend(parent, expected, cancellation, config, None)
+    }
+    /// Create a destination session with an optional worker-installed object backend.
+    /// # Errors
+    /// Returns configuration, backend or temporary storage errors.
+    pub(crate) fn configured_with_backend(
+        parent: &Path,
+        expected: BTreeSet<TransferId>,
+        cancellation: CancellationToken,
+        config: ExchangeConfig,
+        object_backend: Option<&ObjectStoreBackend>,
+    ) -> Result<Self> {
         config.validate()?;
         require(
             !expected.is_empty() && expected.len() <= 16,
@@ -265,9 +278,15 @@ impl Store {
         let root = tempfile::Builder::new()
             .prefix("ade-exchange-")
             .tempdir_in(parent)?;
-        let buffer = Buffer::new(config.clone(), root.path())?;
+        let poisoned = Arc::new(AtomicBool::new(false));
+        let buffer = Buffer::new_with_poison(config.clone(), root.path(), poisoned.clone())?;
         let objects = if config.mode == ExchangeMode::ObjectStoreMaterialized {
-            Some(Objects::local(parent)?)
+            Some(Objects::configured(
+                parent,
+                config.object_store.clone(),
+                object_backend,
+                poisoned.clone(),
+            )?)
         } else {
             None
         };
@@ -276,6 +295,7 @@ impl Store {
             config,
             buffer,
             objects,
+            poisoned,
             expected,
             registry: Mutex::new(Registry {
                 completed: BTreeMap::new(),
@@ -341,6 +361,8 @@ impl Store {
             m.object_count = objects.object_count;
             m.object_write_bytes = objects.object_write_bytes;
             m.object_read_bytes = objects.object_read_bytes;
+            m.object_store_backend = objects.object_store_backend;
+            m.object_store_durability = objects.object_store_durability;
             return Ok(m);
         }
         if self.config.mode == ExchangeMode::LocalMaterialized {
@@ -354,6 +376,22 @@ impl Store {
             }
         }
         Ok(m)
+    }
+    /// Require all live retention accounting to drain before a successful task reply.
+    pub(crate) fn validate_retention_drained(&self) -> Result<()> {
+        let metrics = self.retention_metrics()?;
+        require(
+            metrics.current_buffer_bytes == 0 && metrics.current_spill_backlog_bytes == 0,
+            "successful exchange ended with retained backlog",
+        )
+    }
+    pub(crate) fn is_poisoned(&self) -> bool {
+        self.poisoned.load(Ordering::Acquire)
+    }
+    #[cfg(test)]
+    pub(crate) fn poison(&self) {
+        self.poisoned.store(true, Ordering::Release);
+        self.cancellation.cancel();
     }
     fn complete(&self) -> bool {
         self.registry.lock().expect("registry lock").completed.len() == self.expected.len()
@@ -414,7 +452,7 @@ impl Store {
             if let Some(writer) = &mut writer {
                 writer.write(&batch)?;
             } else if let Some(objects) = &self.objects {
-                objects.put(header.id, metrics.batches, encoded)?;
+                objects.put(header.id, metrics.batches, encoded, &self.cancellation)?;
             } else {
                 drop(batch);
                 self.buffer.push(encoded, &self.cancellation)?;
@@ -497,12 +535,17 @@ impl Source {
             token.check()?;
             self.store.cancellation.check()?;
             if self.store.config.mode.live() {
-                if let Some(encoded) = self.store.buffer.take()? {
+                if let Some(encoded) = self.store.buffer.take(&self.store.cancellation)? {
                     return Ok(Some(decode(&encoded)?));
                 }
                 // Recheck after completion: the last segment may have arrived between checks.
                 if self.store.complete() {
-                    return self.store.buffer.take()?.map(|e| decode(&e)).transpose();
+                    return self
+                        .store
+                        .buffer
+                        .take(&self.store.cancellation)?
+                        .map(|e| decode(&e))
+                        .transpose();
                 }
             } else if self.store.complete() {
                 break;
@@ -533,7 +576,7 @@ impl Source {
                 if let Some((id, sequence, count)) = &mut self.object
                     && *sequence < *count
                 {
-                    let bytes = objects.get(*id, *sequence)?;
+                    let bytes = objects.get(*id, *sequence, &self.store.cancellation)?;
                     *sequence += 1;
                     return Ok(Some(decode(&bytes)?));
                 }
@@ -697,6 +740,26 @@ mod tests {
     use super::*;
     use crate::ids::{JobId, transfer};
     use arrow::array::{Int64Array, UInt64Array};
+    use std::sync::mpsc;
+
+    struct StalledSpillLog {
+        started: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl crate::retention::SpillLog for StalledSpillLog {
+        fn write_frame(&mut self, _bytes: &[u8]) -> std::io::Result<()> {
+            let _ = self.started.send(());
+            self.release
+                .lock()
+                .expect("spill release lock")
+                .recv()
+                .expect("spill release signal");
+            Ok(())
+        }
+        fn read_frame(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+    }
     fn batch() -> RecordBatch {
         RecordBatch::try_new(
             schema(),
@@ -766,6 +829,95 @@ mod tests {
         assert!(sender.finish().is_err());
     }
     #[test]
+    fn retention_snapshot_reports_live_buffer_and_spill_backlog_then_drains() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(3), 0, 0, 0);
+        let store = Store::configured(
+            parent.path(),
+            [id].into(),
+            CancellationToken::default(),
+            ExchangeConfig {
+                mode: ExchangeMode::Spill,
+                buffer_bytes: 4,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        store
+            .buffer
+            .push(vec![1, 2, 3], &store.cancellation)
+            .unwrap();
+        let live = store.retention_metrics().unwrap();
+        assert_eq!(live.current_buffer_bytes, 3);
+        assert_eq!(live.current_spill_backlog_bytes, 0);
+        store
+            .buffer
+            .push(vec![4, 5, 6, 7, 8], &store.cancellation)
+            .unwrap();
+        let live = store.retention_metrics().unwrap();
+        assert_eq!(live.current_buffer_bytes, 3);
+        assert_eq!(live.current_spill_backlog_bytes, 5);
+        assert_eq!(
+            store.buffer.take(&store.cancellation).unwrap().unwrap(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            store.buffer.take(&store.cancellation).unwrap().unwrap(),
+            vec![4, 5, 6, 7, 8]
+        );
+        store.validate_retention_drained().unwrap();
+    }
+    #[test]
+    fn receiver_shutdown_returns_while_spill_io_is_stalled() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(4), 0, 0, 0);
+        let mut store = Store::configured(
+            parent.path(),
+            [id].into(),
+            CancellationToken::default(),
+            ExchangeConfig {
+                mode: ExchangeMode::Spill,
+                buffer_bytes: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let (started, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        store.buffer.replace_spill_log_for_test(StalledSpillLog {
+            started,
+            release: Mutex::new(release_rx),
+        });
+        let store = Arc::new(store);
+        let receiving = store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        let address = receiver.address;
+        let producer = thread::spawn(move || {
+            let mut sender = Sender::new(address, id, CancellationToken::default()).unwrap();
+            sender
+                .batch(&batch())
+                .and_then(|()| sender.finish().map(|_| ()))
+        });
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let (stopped, stopped_rx) = mpsc::channel();
+        thread::spawn(move || {
+            drop(receiver);
+            let _ = stopped.send(());
+        });
+        let shutdown = stopped_rx.recv_timeout(Duration::from_secs(1));
+        // Release the isolated helper even if the regression returns, so the test
+        // process can clean up its detached test thread.
+        let _ = release_tx.send(());
+        assert!(shutdown.is_ok(), "receiver shutdown waited on spill I/O");
+        assert!(store.cancellation.check().is_err());
+        assert!(store.is_poisoned());
+        assert!(producer.join().unwrap().is_err());
+    }
+    #[test]
     fn mechanism_roundtrips_include_empty_transfer_and_metrics() {
         for mode in [
             ExchangeMode::Direct,
@@ -788,6 +940,7 @@ mod tests {
                         } else {
                             MAX_FRAME_BYTES
                         },
+                        ..Default::default()
                     },
                 )
                 .unwrap(),
@@ -937,7 +1090,7 @@ mod tests {
                 writer.write(&batch()).unwrap();
                 writer.finish().unwrap();
                 drop(writer);
-                objects.put(id, 0, bytes.0).unwrap();
+                objects.put(id, 0, bytes.0, &store.cancellation).unwrap();
             }
             let reading = store.clone();
             let reader = thread::spawn(move || reading.reader().next_batch(&reading.cancellation));

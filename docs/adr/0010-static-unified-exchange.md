@@ -50,7 +50,7 @@ and benchmark artifacts are unchanged; this private wire is intentionally strict
 |---|---|
 | `direct` | Single encoded frame rendezvous slot, only filled while a consumer waits; writer waits until taken. No normal disk/object retention. TCP/kernel buffering and bounded receiver frames remain. |
 | `buffered` | Destination-wide byte-accounted FIFO of encoded frames. Writers block at capacity; taking a frame releases its accounting. Capacity must fit a maximum legal frame. |
-| `spill` | Same finite FIFO, with new arrivals appended to an anonymous execution-local disk log when they do not fit or a disk backlog exists. Drain memory before log; later arrivals cannot overtake the log. Two offsets track disk backlog, avoiding a per-segment in-memory file index. Truncate the log whenever drained. |
+| `spill` | Same finite FIFO, with new arrivals appended to an anonymous execution-local disk log when they do not fit or a disk backlog exists. A private serialized I/O owner keeps file calls outside the queue/accounting mutex. Drain memory before log; later arrivals cannot overtake the log. Two offsets track disk backlog, avoiding a per-segment in-memory file index. Truncate the log whenever drained. |
 | `local_materialized` | Phase 3 transfer IPC files, incrementally written, finalized and persisted without clobber before registry completion/ACK. Reader waits for all producers. Default. |
 | `object_store` | One bounded IPC object per segment through public `object_store::ObjectStore` APIs. Full job/exchange/partition/producer/attempt/sequence keys. Reader waits for all transfer completions, then lazily enumerates sequences using O(producer count) metadata. Head/range reads reject objects over the frame cap. |
 
@@ -62,20 +62,23 @@ fixed property of the statically selected mechanism, not Phase 5 policy.
 
 ## Durability and object visibility
 
-The provider-neutral backend is an `Arc<dyn ObjectStore>`. Phase 4 provisions a
-filesystem-backed instance in a unique execution-scoped sibling directory,
-separate from worker-local IPC/spill files. Each bounded put completes atomically
-according to the backend before the transfer can complete. Completed segment
-objects alone do not establish transfer completion: the session registry must
-validate the terminal count and all required identities before readers yield.
-No per-exchange payload collection or whole-transfer upload buffer exists.
+The provider-neutral backend is an `Arc<dyn ObjectStore>`. The default worker
+provisions a filesystem-backed instance in a unique execution-scoped sibling
+directory, separate from worker-local IPC/spill files. A worker-session caller
+can inject another public `ObjectStore` implementation; job config and effective
+metrics name that backend and its declared durability capability. Each bounded
+put completes according to the selected backend before the transfer can
+complete. Completed segment objects alone do not establish transfer completion:
+the session registry must validate the terminal count and all required identities
+before readers yield. No per-exchange payload collection or whole-transfer
+upload buffer exists.
 
 This filesystem fixture proves API behavior, not cloud/multi-host durability.
-Durability is exactly that of the configured backend. Objects and registry are
-execution-scoped and removed on teardown; there is no cross-job reuse or recovery
-manifest. A future externally configured provider requires an explicit lifecycle
-and credential contract, not a claim that ephemeral local storage is durable.
-Backend errors fail the job. Blocking filesystem operations are not preemptible.
+Durability is exactly the caller-declared capability of the configured backend;
+ADE does not verify that claim. Objects and registry are execution-scoped and
+removed on teardown; there is no cross-job reuse or recovery manifest. Backend
+errors fail the job. Object calls have cancellation/deadline handling; a
+non-preemptible operation poisons the worker. See ADR-0011.
 
 ## Resources and observations
 
@@ -89,8 +92,10 @@ No total worker/process RSS limit is claimed. Spill/object/local disk volume is
 proportional to unconsumed/materialized input, not given a quota in Phase 4.
 
 Metrics expose mode, completed transfer/frame/row/payload counts, frame peak,
-retention peak, local files/bytes, spill writes/reads, object writes/reads/count,
-and handoff/capacity wait and reader polling wait nanoseconds. Wait counters are
+current/peak in-memory retention, current spill backlog, local files/bytes, spill
+writes/reads, object writes/reads/count and backend capability metadata, plus
+handoff/capacity wait and reader polling wait nanoseconds. A successful final task
+requires current buffer and spill backlog counters to be zero. Wait counters are
 observations, not exact CPU/transport attribution. Coordinator success requires
 sent/received transfer, segment, row and byte conservation plus final-input rows.
 Rejected transfer behavior fails the session rather than disappearing into success.

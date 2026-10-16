@@ -4,13 +4,11 @@ Date: 2026-10-16 (America/Los_Angeles).
 
 ## Baseline and final commit
 
-Baseline: `2fa71e372d64323e499ece3421c6cd2ef5c74bfa`, `Fix Phase 3 review findings`.
-The current repository matched the supplied prompt's baseline. The final commit
-is the single commit containing this report, subject `Implement Phase 4 static
-unified exchange`; resolve its exact hash using
-`git log -1 --format=%H -- docs/reports/phase-4-implementation-report.md`.
-Embedding its own hash in the committed file is self-referential. The final chat
-response supplies the hash. No push is part of this task.
+Phase 4 baseline: `2fa71e372d64323e499ece3421c6cd2ef5c74bfa`, `Fix Phase 3 review
+findings`. Phase 4 implementation commit: `e1ba957095464347946e5173f7c7b249813cedb1`,
+`Implement Phase 4 static unified exchange`. The independent review remediation
+uses that implementation commit as its baseline and is committed as one follow-up;
+the final chat response supplies the follow-up hash. No push is part of this task.
 
 The user's explicit instruction authorizes Phase 4 and supersedes AGENTS' Phase 3
 stop boundary. The initially untracked Phase 4 plan is included, with status and
@@ -61,10 +59,10 @@ operation deadlines remain. Benchmark child/result schema v1 is unchanged.
 | Object store | Bounded per-segment put through provider-neutral public APIs; completion gate checks every transfer terminal; lazy sequence enumeration and bounded head/range read. | Object count equals segments and object write/read bytes equal received payload. |
 
 Spill metadata is constant-sized: one spool plus read/write offsets, rather than
-an unbounded queue of spill-file paths. Mutex ownership prevents partial log
-records from being read. A write error cancels the session. Per-transfer sequence
-order is preserved; cross-producer ordering is unspecified. Disk volume is not
-quota-managed in this phase.
+an unbounded queue of spill-file paths. A private I/O owner serializes log
+records outside the shared queue/accounting mutex. A write error cancels the
+session. Per-transfer sequence order is preserved; cross-producer ordering is
+unspecified. Disk volume is not quota-managed in this phase.
 
 Object keys include job/exchange/partition/producer/attempt/segment identity.
 Successful segment uploads alone are insufficient for visibility: final readers
@@ -94,10 +92,12 @@ receiver cancellation registrations are removed when the handler leaves; metadat
 does not grow with connection history. Receiver drop cancels active sessions
 before joining, including blocked direct/buffered handoffs. Reader polling checks
 cancellation every 2 ms; producer capacity/handoff waits check it at most every
-10 ms. These are cooperative boundaries, not real-time latency promises.
-Blocking filesystem calls cannot be preempted; finite network waits and task RPC
-deadlines retain explicit cleanup bounds. Local parents kill/wait worker children
-before removing their shared temp root, including process loss. No retry/recovery.
+10 ms. Spill/object-store operations add cancellation polling and a five-second
+operation deadline. If an underlying blocking helper remains active, its worker
+is marked poisoned, task/receiver ownership returns, later `PrepareJob` is
+rejected, and shutdown does not join the helper. Local parents kill/wait worker
+children before removing their shared temp root, including process loss. No
+retry/recovery.
 
 ## Memory and durability statements
 
@@ -110,34 +110,39 @@ scan transients are outside that payload counter and the local ledger. None of
 these limits is a total process/worker RSS cap. Gather/oracle output remains
 collected at the harness boundary, as in Phase 3.
 
-Object storage is an `Arc<dyn object_store::ObjectStore>` backed, for this phase,
-by `LocalFileSystem` in a unique execution-scoped sibling directory independent
-of local exchange IPC/spill files. Public API behavior is tested with no cloud
-credentials. This demonstrates neither cloud nor multi-host durability.
-Durability is exactly that of the selected backend. Filesystem objects and
-completion metadata are ephemeral and cleaned with the session/parent root;
-there is no recovery, durable manifest or cross-job reuse claim.
+Object storage is an `Arc<dyn object_store::ObjectStore>`. The default worker
+uses `LocalFileSystem` in a unique execution-scoped sibling directory independent
+of local exchange IPC/spill files. Embedded callers can install a backend at
+worker-session setup and specify its name and declared durability capability in
+job configuration; task metrics report both. The capability is caller supplied
+and not verified by ADE. Public API behavior is tested with no cloud credentials.
+The default demonstrates neither cloud nor multi-host durability. Filesystem
+objects and completion metadata are ephemeral and cleaned with the session/parent
+root; there is no recovery, durable manifest or cross-job reuse claim.
 
 ## Deviations and dependency reconciliation
 
 - Keep `exchange.rs` plus internal `retention.rs`, rather than a speculative module
-  hierarchy. Worker task code knows neither filesystem nor object implementation.
+  hierarchy. Worker code accepts an opaque object-store backend; storage
+  implementation details remain behind the public `ObjectStore` trait.
 - Add a narrow merge-source sink entrypoint and an internal-use provisional plan
   placeholder, retaining cloneable existing local plans and their drive loop.
 - Spill uses a single bounded-record spool rather than per-segment path metadata.
 - Object mode uses one bounded object per segment and a completion registry rather
   than multipart whole-transfer objects. This keeps uploads/downloads bounded and
   completion sequence explicit without an unbounded object index.
-- Local object backend is worker-provisioned in a sibling execution directory;
-  external cloud/backend configuration and credentials remain deferred. No cloud
-  durability is implied by the provider-neutral interface.
+- The local object backend remains the default fixture. An embedded worker caller
+  may inject another implementation; cloud-specific bootstrap and credentials
+  remain deployment responsibilities. No cloud durability is implied by the
+  provider-neutral interface.
 - Source polling is a small synchronous bridge instead of a general async runtime
   or new scheduler. Wait counters are observations, not a precise lag/cost model.
 - A rejected transfer cancels its session, so older rejection tests now use fresh
   sessions instead of expecting valid traffic to continue after rejection.
-- `object_store` 0.13.2 (`fs`, default features off) and Tokio runtime/time are new
-  direct edges to already locked packages. Cargo.lock changes only those two
-  dependency entries; no package upgrades. Public locked source APIs were inspected.
+- `object_store` 0.13.2 (`fs`, default features off) and Tokio remain the runtime
+  integration. The remediation adds locked `async-trait`/`futures` test helpers
+  for a hanging provider double and Tokio sync for release gates; no package
+  upgrades. Public locked source APIs were inspected.
 
 ## Commands and test results
 
@@ -265,6 +270,42 @@ partitions. Filesystem capacity/latency and OS scheduling are not hard bounded b
 ADE; cleanup after filesystem failure is best effort. Object segment request
 counts may be expensive for cloud providers; no cloud performance or durability
 claim was measured. Consumer polling and rendezvous overhead have no speedup claim.
+
+## Independent review remediation
+
+The attached Phase 4 review identified five findings. The implementation and
+verification updates below address them without expanding Phase 4 scope:
+
+| Finding | Resolution |
+|---|---|
+| Spill filesystem I/O held the retention mutex | A private spill I/O owner now performs log reads/writes outside the shared queue/accounting lock. Waiters poll cancellation and enforce a five-second operation deadline. If the underlying operation remains in flight, the session fails and the worker is poisoned; the task/receiver can return without joining the helper. Failure-injection tests cover stalled writes, reads, and receiver shutdown. |
+| Object-store `put`/`get` could outlive cancellation | Provider operations race cancellation and a five-second timeout. A timed-out operation fails and poisons the worker, and Tokio runtime teardown does not wait indefinitely for blocking helpers. Injected hanging-store tests cover both `put` and `get`. |
+| Object backend was not configurable | Added `worker::serve_with_object_store` for embedding callers to inject an `Arc<dyn ObjectStore>`. `ExchangeConfig` names the backend and carries a caller-declared durability capability. The value is reported but is not validated by ADE; the built-in worker still defaults to ephemeral local filesystem storage. |
+| Current retained bytes were not exposed | Retention metrics expose live in-memory buffer bytes and spill-backlog payload bytes. Successful completion requires both to drain to zero. |
+| Comments still described Phase 3 topology | Updated stale module/topology/overlap comments to describe Phase 4. |
+
+The remediation was checked with the following commands (using the provisioned
+offline toolchain described above):
+
+| Command | Result |
+|---|---|
+| `cargo fmt --all -- --check` | Passed. |
+| `cargo check --workspace --all-targets --locked --offline` | Passed. |
+| `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | Passed. |
+| `cargo test --workspace --all-features --locked --offline` | Passed: 69 tests; all doc-test targets passed. |
+| `cargo build --release --workspace --locked --offline` | Passed. The Apple linker emitted the existing oversized debug unwind section warning. |
+| `bash scripts/phase4-acceptance.sh` | Passed all seven acceptance cases: five modes at two workers, Direct and Object Store at four workers. Each mode shared fingerprint `f89c88f70119ffaed5780864029c66eac3d2b3701247fa3fddb3a434109b9c82`; transfer, segment, row, and payload totals matched. |
+| `bash scripts/smoke.sh` | Passed result integrity and smoke execution. Its one-iteration comparator emitted a regression classification with configuration/source mismatch warnings; this is not comparable performance evidence. |
+| `git diff --check` | Passed before commit. |
+
+The refreshed release acceptance observed 4 transfers / 32 segments and 19,877
+partial rows at two workers (508,544 payload bytes), and 16 transfers / 64
+segments and 36,786 partial rows at four workers (946,432 payload bytes). Spill
+and object-store read/write byte totals matched. Results and generated data were
+kept under `/tmp/ade-phase4-remediation-results` and
+`/tmp/ade-phase4-remediation-data`, outside the repository. The only untracked
+repository file unrelated to this remediation was preserved and excluded from
+the commit.
 
 ## Phase 5 handoff
 

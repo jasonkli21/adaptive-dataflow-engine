@@ -139,6 +139,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let exchange = ExchangeConfig {
             mode: exchange_mode.unwrap_or_default(),
             buffer_bytes: exchange_buffer.unwrap_or(ExchangeConfig::default().buffer_bytes),
+            object_store: ExchangeConfig::default().object_store,
         };
         exchange.validate()?;
         Ok(AdeDistributedConfig {

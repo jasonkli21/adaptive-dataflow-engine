@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 5 adaptive exchange v1 implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
+**Phase 6 lineage recovery v1 implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified lineage replay on a survivor. Other failures cancel the job.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-5-implementation-plan.md`](docs/plans/phase-5-implementation-plan.md) — Phase 5 implementation contract.
+4. [`docs/plans/phase-6-implementation-plan.md`](docs/plans/phase-6-implementation-plan.md) — Phase 6 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -166,7 +166,8 @@ The Rust coordinator API also accepts static endpoints. `ade-worker WORKER_ID
 TEMP_PARENT` binds loopback control/exchange ports and writes a framed readiness
 record to stdout; logs use stderr. Gather currently binds loopback, so this is a
 local multi-process deployment. Final consumers and producers overlap, with at
-most one task of each role per worker and no retry/recovery. The local memory
+most one original task of each role per worker. Recovery runs sequentially on a
+quiescent survivor after those roles finish. The local memory
 limit applies per task; two task budgets may coexist. Exchange retention and
 bounded frame transients (1 MiB, 1024 rows) are separate from the local ledger;
 this is not a process RSS cap. Direct uses rendezvous handoff, buffered uses a
@@ -210,4 +211,36 @@ validated iterations and checks the local 1.25× normal median guard plus the
 narrow adversarial win over direct; these timing checks do not run in CI.
 See [ADR-0012](docs/adr/0012-adaptive-exchange-v1.md) and the
 [Phase 5 report](docs/reports/phase-5-implementation-report.md).
-Phase 6 requires a new explicit instruction.
+
+Phase 6 recovery is enabled by default in the benchmark adapter
+(`recovery_enabled=true`), which supplies verified manifest/file lineage. The Rust
+`StaticAggregateJob.snapshot` is optional; an absent or non-replayable snapshot
+refuses recovery. With every original producer complete, exactly one unavailable
+final worker, and every other final successful, the planner chooses the lowest
+eligible survivor. It replays original producer file closures emitting only the
+missing partition, validates terminal counts and BLAKE3 fingerprints, and runs the
+existing final merge aggregate. Original logical IDs and JobId remain unchanged;
+attempt 1 replaces the incomplete attempt 0 in a separate gather store. Successful
+unaffected finals are reused. One recovery episode is allowed.
+
+This supports a narrow final-worker-loss window. Incomplete producers, multiple
+losses, source drift, replay mismatch, poisoning, ambiguous gather state or failed
+recovery return no partial output. File morsels are whole manifest files; there
+is no row-group replay, durable object restore, worker replacement, coordinator HA
+or Phase 7 cost model. Inputs must remain immutable during the job.
+
+The research build accepts `research_exit_final_partition=0` (default off), which
+exits that real process after complete final input consumption and partial gather
+writes, before terminal completion. The coordinator releases the exit only after
+all original producers succeed. The default distributed library has no hook.
+Effective metadata records the hook and recovery policy. Debug metrics expose
+lost ranges, replay closures/manifests, host, committed attempts and elapsed time.
+Missing-worker adaptive history is unavailable; summaries retain surviving
+observations and recovered finals report their actual local materialization.
+
+After a release workspace build on a clean checkout, run
+`bash scripts/phase6-acceptance.sh`. It checks normal/recovered/unrecoverable
+execution, five static modes and limited adaptive two/four-worker regressions,
+with independent oracle validation and source/build provenance. There is no
+recovery timing threshold. See [ADR-0013](docs/adr/0013-lineage-recovery-v1.md) and
+the [Phase 6 report](docs/reports/phase-6-implementation-report.md).

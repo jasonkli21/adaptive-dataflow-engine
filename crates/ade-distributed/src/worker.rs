@@ -26,6 +26,9 @@ struct Job {
     producer_done: AtomicBool,
     producer_started: AtomicBool,
     final_started: AtomicBool,
+    recovery_started: AtomicBool,
+    #[cfg(feature = "research-hooks")]
+    release_final: AtomicBool,
 }
 struct State {
     endpoint: WorkerEndpoint,
@@ -80,18 +83,20 @@ fn task_metrics(
         ..Default::default()
     }
 }
-fn producer(state: &State, job: &Job, files: &[PathBuf]) -> Result<TaskMetrics> {
-    require(
-        !job.producer_done.load(Ordering::Acquire),
-        "producer already completed",
-    )?;
+fn producer(
+    job: &Job,
+    files: &[PathBuf],
+    task: TaskId,
+    attempt: AttemptId,
+    target: Option<(usize, SocketAddr)>,
+) -> Result<TaskMetrics> {
     let start = Instant::now();
     let token = job.store.cancellation.clone();
     // Do not hold idle receiver connections while a blocking aggregate builds.
     let open = |p: usize| {
         Sender::new(
-            job.spec.workers[p].exchange,
-            transfer(job.spec.job, 0, p as u64, state.endpoint.id.0),
+            target.map_or(job.spec.workers[p].exchange, |(_, address)| address),
+            transfer(job.spec.job, 0, p as u64, task.0).with_attempt(attempt),
             token.clone(),
         )
     };
@@ -114,6 +119,9 @@ fn producer(state: &State, job: &Job, files: &[PathBuf]) -> Result<TaskMetrics> 
         let output =
             ade_exec::execute_to_sink(plan, job.spec.config.execution(), token.clone(), |batch| {
                 for (p, sender) in senders.iter_mut().enumerate() {
+                    if target.is_some_and(|(partition, _)| partition != p) {
+                        continue;
+                    }
                     let selected = partition::select(&batch, p, count).map_err(local_sink_error)?;
                     if selected.num_rows() > 0 {
                         if sender.is_none() {
@@ -131,20 +139,29 @@ fn producer(state: &State, job: &Job, files: &[PathBuf]) -> Result<TaskMetrics> 
         task_metrics(start, &output, files.len())
     };
     for (p, sender) in senders.into_iter().enumerate() {
+        if target.is_some_and(|(partition, _)| partition != p) {
+            continue;
+        }
         let sender = match sender {
             Some(sender) => sender,
             None => open(p)?,
         };
-        let sent = sender.finish()?;
+        let (sent, manifest) = sender.finish_manifest()?;
+        metrics.manifests.insert(p as u64, manifest);
         metrics.sent.add(&sent);
         metrics.destinations.insert(p as u64, sent);
     }
     token.check()?;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
-    job.producer_done.store(true, Ordering::Release);
+
     Ok(metrics)
 }
-fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetrics> {
+fn final_task(
+    job: &Job,
+    gather: SocketAddr,
+    task: TaskId,
+    attempt: AttemptId,
+) -> Result<TaskMetrics> {
     require(
         !job.final_started.swap(true, Ordering::AcqRel),
         "final task already started",
@@ -154,12 +171,7 @@ fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetric
     let open = || {
         Sender::new(
             gather,
-            transfer(
-                job.spec.job,
-                1,
-                0,
-                job.spec.workers.len() as u64 + state.endpoint.id.0,
-            ),
+            transfer(job.spec.job, 1, 0, task.0).with_attempt(attempt),
             token.clone(),
         )
     };
@@ -185,11 +197,146 @@ fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetric
         Some(sender) => sender,
         None => open()?,
     };
+    #[cfg(feature = "research-hooks")]
+    if attempt == AttemptId(0)
+        && job.spec.config.research_exit_final_partition
+            == Some(task.0 - job.spec.workers.len() as u64)
+    {
+        // The coordinator releases this gate only after receiving every producer ACK/RPC.
+        let deadline = Instant::now() + crate::TASK_TIMEOUT;
+        while !job.release_final.load(Ordering::Acquire) {
+            token.check()?;
+            require(Instant::now() < deadline, "failure boundary gate timed out")?;
+            thread::sleep(Duration::from_millis(2));
+        }
+        eprintln!(
+            "ADE research worker process exit job={:?} final={task:?} attempt=0 complete_input=true",
+            job.spec.job
+        );
+        std::process::exit(86);
+    }
     metrics.sent = sender.finish()?;
     metrics.received = job.store.metrics()?;
     metrics.retention = job.store.retention_metrics()?;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     Ok(metrics)
+}
+// A single RPC owns the whole bounded episode. Cancellation uses the original job token.
+fn recover(
+    state: &State,
+    plan: &crate::recovery::RecoveryPlan,
+    gather: SocketAddr,
+) -> Result<Reply> {
+    let original = job(state, plan.job)?;
+    require(
+        !state.poisoned.load(Ordering::Acquire) && !original.store.is_poisoned(),
+        "recovery host poisoned",
+    )?;
+    require(
+        !state.producer_busy.load(Ordering::Acquire)
+            && !state.final_busy.load(Ordering::Acquire)
+            && original.producer_done.load(Ordering::Acquire)
+            && original.final_started.load(Ordering::Acquire),
+        "recovery host not quiescent",
+    )?;
+    require(
+        !original.recovery_started.swap(true, Ordering::AcqRel),
+        "recovery already attempted",
+    )?;
+    let result = recover_inner(state, &original, plan, gather);
+    if result.is_err() {
+        original.store.cancellation.cancel();
+    }
+    result
+}
+fn recover_inner(
+    state: &State,
+    original: &Job,
+    plan: &crate::recovery::RecoveryPlan,
+    gather: SocketAddr,
+) -> Result<Reply> {
+    let snapshot = original
+        .spec
+        .snapshot
+        .as_ref()
+        .ok_or_else(|| Error::Unrecoverable("missing source snapshot".into()))?;
+    let count = original.spec.workers.len();
+    require(
+        snapshot.replayable
+            && plan.host == state.endpoint.id
+            && plan.partition.0 < count as u64
+            && plan.partition.0 != state.endpoint.id.0
+            && plan.closures.len() == count
+            && plan.ranges.len() == count,
+        "invalid recovery plan/lineage",
+    )?;
+    let expected = (0..count)
+        .map(|p| transfer(plan.job, 0, plan.partition.0, p as u64).with_attempt(AttemptId(1)))
+        .collect();
+    let store = Arc::new(Store::new(
+        &state.parent,
+        expected,
+        original.store.cancellation.clone(),
+    )?);
+    let receiving = store.clone();
+    let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0")?, move |_| {
+        Ok(receiving.clone())
+    })?;
+    let replay = Job {
+        spec: original.spec.clone(),
+        store,
+        producer_done: AtomicBool::new(false),
+        producer_started: AtomicBool::new(false),
+        final_started: AtomicBool::new(false),
+        recovery_started: AtomicBool::new(true),
+        #[cfg(feature = "research-hooks")]
+        release_final: AtomicBool::new(false),
+    };
+    let mut manifests = Vec::with_capacity(count);
+    for (p, closure) in plan.closures.iter().enumerate() {
+        require(
+            closure.producer == TaskId(p as u64)
+                && closure.original.logical
+                    == transfer(plan.job, 0, plan.partition.0, p as u64).logical()
+                && closure.morsels == snapshot.producer_morsels(closure.producer, count),
+            "recovery closure/source mismatch",
+        )?;
+        plan.ranges[p].validate(&closure.original)?;
+        require(
+            plan.ranges[p].start == 0 && plan.ranges[p].end_exclusive == closure.original.segments,
+            "recovery requires full transfer range",
+        )?;
+        crate::lineage::SourceSnapshot::verify(&closure.morsels)?;
+        let files = closure
+            .morsels
+            .iter()
+            .map(|m| m.path.clone())
+            .collect::<Vec<_>>();
+        let metrics = producer(
+            &replay,
+            &files,
+            closure.producer,
+            AttemptId(1),
+            Some((
+                usize::try_from(plan.partition.0).expect("validated partition"),
+                receiver.address,
+            )),
+        )?;
+        let manifest = metrics.manifests[&plan.partition.0].clone();
+        closure.original.validate_replay(&manifest)?;
+        manifests.push(manifest);
+    }
+    let final_metrics = final_task(
+        &replay,
+        gather,
+        TaskId(count as u64 + plan.partition.0),
+        AttemptId(1),
+    )?;
+    drop(receiver);
+    Ok(Reply::Recovered {
+        final_metrics,
+        manifests,
+    })
 }
 #[allow(
     clippy::too_many_lines,
@@ -209,6 +356,22 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                     .target_partition
                     .is_none_or(|p| p < spec.workers.len() as u64),
                 "research pressure target outside topology",
+            )?;
+            if let Some(snapshot) = &spec.snapshot {
+                snapshot.validate(
+                    &snapshot
+                        .morsels
+                        .iter()
+                        .map(|m| m.path.clone())
+                        .collect::<Vec<_>>(),
+                )?;
+            }
+            #[cfg(feature = "research-hooks")]
+            require(
+                spec.config
+                    .research_exit_final_partition
+                    .is_none_or(|p| p < spec.workers.len() as u64),
+                "failure target outside topology",
             )?;
             let own = spec
                 .workers
@@ -252,10 +415,19 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 producer_done: AtomicBool::new(false),
                 producer_started: AtomicBool::new(false),
                 final_started: AtomicBool::new(false),
+                recovery_started: AtomicBool::new(false),
+                #[cfg(feature = "research-hooks")]
+                release_final: AtomicBool::new(false),
             }));
             *last_job_id = Some(accepted_job_id);
             Ok(Reply::Ready)
         }
+        #[cfg(feature = "research-hooks")]
+        Request::ReleaseFinal { job: id } => {
+            let _ = job(state, id)?;
+            Ok(Reply::Ready)
+        }
+        Request::RecoverFinal { plan, gather } => recover(state, &plan, gather),
         Request::CancelJob { job: id } => {
             let mut current = state.job.lock().expect("job lock");
             if current.as_ref().is_some_and(|j| j.spec.job == id) {
@@ -312,9 +484,21 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                         !job.producer_started.swap(true, Ordering::AcqRel),
                         "producer task already started",
                     )?;
-                    producer(state, &job, &files)
+                    if let Some(snapshot) = &job.spec.snapshot {
+                        let morsels = snapshot.producer_morsels(task_id, job.spec.workers.len());
+                        require(
+                            morsels.iter().map(|m| &m.path).eq(files.iter()),
+                            "producer source assignment mismatch",
+                        )?;
+                        crate::lineage::SourceSnapshot::verify(&morsels)?;
+                    }
+                    let result = producer(&job, &files, task_id, attempt, None);
+                    if result.is_ok() {
+                        job.producer_done.store(true, Ordering::Release);
+                    }
+                    result
                 }
-                Request::RunFinalTask { gather, .. } => final_task(state, &job, gather),
+                Request::RunFinalTask { gather, .. } => final_task(&job, gather, task_id, attempt),
                 _ => unreachable!(),
             };
             if result.is_err() {
@@ -354,6 +538,50 @@ pub fn serve_with_object_store(
     ready: impl Write,
 ) -> Result<()> {
     serve_inner(id, control, exchange, parent, Some(backend), ready)
+}
+
+fn handle_socket(state: &State, socket: &mut std::net::TcpStream) {
+    if socket.set_read_timeout(Some(crate::IO_TIMEOUT)).is_err()
+        || socket.set_write_timeout(Some(crate::IO_TIMEOUT)).is_err()
+    {
+        return;
+    }
+    if let Ok(envelope) = protocol::read_message::<Envelope<Request>>(
+        &mut protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT),
+    ) {
+        #[cfg(feature = "research-hooks")]
+        let release_job = match &envelope.body {
+            Request::ReleaseFinal { job } => Some(*job),
+            _ => None,
+        };
+        let body = handle(state, envelope.body).unwrap_or_else(|error| Reply::Error {
+            code: match &error {
+                Error::Exec(_) => "execution",
+                Error::Io(_) => "io",
+                _ => "protocol",
+            }
+            .into(),
+            message: error.to_string(),
+        });
+        let written = protocol::write_message(
+            &mut protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT),
+            &Envelope {
+                request_id: envelope.request_id,
+                body,
+            },
+        );
+        // Publish only after the complete reply is on the socket;
+        // process exit must not truncate the gate-release response.
+        #[cfg(feature = "research-hooks")]
+        if written.is_ok()
+            && let Some(id) = release_job
+            && let Ok(job) = job(state, id)
+        {
+            job.release_final.store(true, Ordering::Release);
+        }
+        #[cfg(not(feature = "research-hooks"))]
+        let _ = written;
+    }
 }
 
 fn serve_inner(
@@ -409,35 +637,7 @@ fn serve_inner(
                         continue;
                     }
                     let state = state.clone();
-                    handlers.push(thread::spawn(move || {
-                        if socket.set_read_timeout(Some(crate::IO_TIMEOUT)).is_err()
-                            || socket.set_write_timeout(Some(crate::IO_TIMEOUT)).is_err()
-                        {
-                            return;
-                        }
-                        if let Ok(envelope) = protocol::read_message::<Envelope<Request>>(
-                            &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
-                        ) {
-                            let body = handle(&state, envelope.body).unwrap_or_else(|error| {
-                                Reply::Error {
-                                    code: match &error {
-                                        Error::Exec(_) => "execution",
-                                        Error::Io(_) => "io",
-                                        _ => "protocol",
-                                    }
-                                    .into(),
-                                    message: error.to_string(),
-                                }
-                            });
-                            let _ = protocol::write_message(
-                                &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
-                                &Envelope {
-                                    request_id: envelope.request_id,
-                                    body,
-                                },
-                            );
-                        }
-                    }));
+                    handlers.push(thread::spawn(move || handle_socket(&state, &mut socket)));
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(e) => {
@@ -472,6 +672,10 @@ mod tests {
     use crate::{exchange::Header, ids::transfer};
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "One worker fixture verifies watermark, stale attempts and poisoned recovery rejection together."
+    )]
     fn cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected() {
         let parent = tempfile::tempdir().unwrap();
         let control_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -513,6 +717,7 @@ mod tests {
             job: id,
             workers: workers.clone(),
             config: crate::TaskConfig::default(),
+            snapshot: None,
         };
 
         assert!(matches!(
@@ -547,7 +752,29 @@ mod tests {
         assert_eq!(metrics.transfers, 1);
         assert_eq!(metrics.batches, 0);
         assert_eq!(current.store.metrics().unwrap().transfers, 1);
+        assert!(
+            handle(
+                &state,
+                Request::RunProducerTask {
+                    job: JobId(43),
+                    task: TaskId(0),
+                    attempt: AttemptId(1),
+                    files: Vec::new()
+                }
+            )
+            .is_err()
+        );
         current.store.poison();
+        let plan = crate::recovery::RecoveryPlan {
+            job: JobId(43),
+            host: state.endpoint.id,
+            partition: crate::ids::PartitionId(1),
+            ranges: Vec::new(),
+            closures: Vec::new(),
+            reused_partitions: vec![0],
+        };
+        // Poisoning also cancels the session; either guard must refuse recovery.
+        assert!(recover(&state, &plan, control_address).is_err());
         handle(&state, Request::CancelJob { job: JobId(43) }).unwrap();
         assert!(state.poisoned.load(Ordering::Acquire));
         assert!(handle(&state, Request::PrepareJob(spec(JobId(44)))).is_err());

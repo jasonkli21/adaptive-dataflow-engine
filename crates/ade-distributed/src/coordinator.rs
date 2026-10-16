@@ -1,8 +1,7 @@
 //! Static stage barriers, gather completeness and owned localhost process lifecycle.
 use crate::{
     Error, Result, TaskConfig, WorkerEndpoint,
-    exchange::{self, Receiver, Store},
-    ids::{AttemptId, JobId, TaskId, WorkerId, transfer},
+    ids::{AttemptId, JobId, TaskId, WorkerId},
     metrics::{DistributedMetrics, TaskMetrics},
     protocol::{self, JobSpec, Reply, Request},
     require,
@@ -10,10 +9,9 @@ use crate::{
 use arrow::record_batch::RecordBatch;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Arc, mpsc},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -33,6 +31,7 @@ pub struct StaticAggregateJob {
     pub workers: Vec<WorkerEndpoint>,
     pub config: TaskConfig,
     pub task_timeout: Duration,
+    pub snapshot: Option<crate::lineage::SourceSnapshot>,
 }
 pub struct JobOutput {
     pub batches: Vec<RecordBatch>,
@@ -63,12 +62,6 @@ pub fn validate_topology(workers: &[WorkerEndpoint]) -> Result<()> {
     }
     Ok(())
 }
-struct CancelOnDrop(ade_exec::CancellationToken);
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.0.cancel();
-    }
-}
 fn control(
     job: &StaticAggregateJob,
     worker: &WorkerEndpoint,
@@ -91,11 +84,16 @@ fn cancel(workers: &[WorkerEndpoint], job: JobId) {
         }
     });
 }
+struct TaskResults {
+    producers: BTreeMap<u64, TaskMetrics>,
+    finals: BTreeMap<u64, TaskMetrics>,
+    lost: Vec<u64>,
+}
 fn tasks(
     job: &StaticAggregateJob,
     producers: Vec<Request>,
     finals: Vec<Request>,
-) -> Result<(BTreeMap<u64, TaskMetrics>, BTreeMap<u64, TaskMetrics>)> {
+) -> Result<TaskResults> {
     let deadline = Instant::now() + job.task_timeout;
     thread::scope(|scope| {
         let (tx, rx) = mpsc::sync_channel(2 * job.workers.len());
@@ -117,6 +115,9 @@ fn tasks(
         drop(tx);
         let mut producers = BTreeMap::new();
         let mut finals = BTreeMap::new();
+        let mut lost = Vec::new();
+        #[cfg(feature = "research-hooks")]
+        let mut released = false;
         for _ in 0..2 * job.workers.len() {
             let (worker, is_final, response) =
                 match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
@@ -139,6 +140,20 @@ fn tasks(
                         producers.insert(worker.0, m);
                     }
                 }
+                Err(Error::Io(error))
+                    if is_final
+                        && lost.is_empty()
+                        && matches!(
+                            error.kind(),
+                            std::io::ErrorKind::UnexpectedEof
+                                | std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                                | std::io::ErrorKind::BrokenPipe
+                        ) =>
+                {
+                    // Transport loss is only a candidate. Confirm unavailability below.
+                    lost.push(worker.0);
+                }
                 Err(e) => {
                     cancel(&job.workers, job.id);
                     return Err(Error::Task {
@@ -149,8 +164,23 @@ fn tasks(
                     });
                 }
             }
+            #[cfg(feature = "research-hooks")]
+            if producers.len() == job.workers.len() && !released {
+                released = true;
+                if let Some(p) = job.config.research_exit_final_partition {
+                    protocol::rpc_until(
+                        &job.workers[usize::try_from(p).expect("validated partition")],
+                        Request::ReleaseFinal { job: job.id },
+                        deadline,
+                    )?;
+                }
+            }
         }
-        Ok((producers, finals))
+        Ok(TaskResults {
+            producers,
+            finals,
+            lost,
+        })
     })
 }
 /// Execute one complete static graph; errors never return partial output.
@@ -171,6 +201,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     require(!job.files.is_empty(), "job requires manifest files")?;
     let unique: BTreeSet<_> = job.files.iter().collect();
     require(unique.len() == job.files.len(), "duplicate source path")?;
+    if let Some(snapshot) = &job.snapshot {
+        snapshot.validate(&job.files)?;
+    }
     let mut state = JobState::Prepared;
     let result = (|| {
         for worker in &job.workers {
@@ -189,6 +222,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 job: job.id,
                 workers: job.workers.clone(),
                 config: job.config.clone(),
+                snapshot: job.snapshot.clone(),
             };
             require(
                 matches!(
@@ -199,16 +233,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             )?;
         }
         let parent = tempfile::tempdir()?;
-        let token = ade_exec::CancellationToken::default();
-        let expected = (0..job.workers.len())
-            .map(|p| transfer(job.id, 1, 0, (job.workers.len() + p) as u64))
-            .collect();
-        let store = Arc::new(Store::new(parent.path(), expected, token.clone())?);
-        let receiving = store.clone();
-        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0")?, move |_| {
-            Ok(receiving.clone())
-        })?;
-        let _cancel_gather = CancelOnDrop(token.clone());
+        let mut gather = crate::gather::Gather::new(parent.path(), job.id, job.workers.len())?;
         let mut assignments = vec![Vec::new(); job.workers.len()];
         for (i, file) in job.files.iter().enumerate() {
             assignments[i % job.workers.len()].push(file.clone());
@@ -231,10 +256,87 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 job: job.id,
                 task: TaskId(job.workers.len() as u64 + w.id.0),
                 attempt: AttemptId(0),
-                gather: receiver.address,
+                gather: gather.address(),
             })
             .collect();
-        let (producers, finals) = tasks(job, producers, finals)?;
+        let TaskResults {
+            producers,
+            mut finals,
+            lost,
+        } = tasks(job, producers, finals)?;
+        crate::recovery::validate_producers(job.id, job.workers.len(), &producers)?;
+        for (p, metrics) in &finals {
+            gather.commit(*p, AttemptId(0), &metrics.sent)?;
+        }
+        let mut recovery = crate::recovery::RecoveryMetrics::default();
+        if !lost.is_empty() {
+            let recovery_start = Instant::now();
+            let plan = crate::recovery::plan(
+                job.id,
+                job.workers.len(),
+                job.snapshot.as_ref(),
+                &producers,
+                &finals.keys().copied().collect::<Vec<_>>(),
+                &lost,
+            )?;
+            require(
+                protocol::rpc(
+                    &job.workers[usize::try_from(lost[0])
+                        .map_err(|_| Error::Invalid("invalid lost partition".into()))?],
+                    Request::Ping,
+                    Duration::from_millis(250),
+                )
+                .is_err(),
+                "final task error without confirmed worker unavailability",
+            )?;
+            let address = gather.start_recovery(parent.path(), plan.partition.0)?;
+            let reply = protocol::rpc(
+                &job.workers[usize::try_from(plan.host.0)
+                    .map_err(|_| Error::Invalid("invalid recovery host".into()))?],
+                Request::RecoverFinal {
+                    plan: plan.clone(),
+                    gather: address,
+                },
+                job.task_timeout,
+            )
+            .map_err(|e| Error::Unrecoverable(format!("recovery episode failed: {e}")))?;
+            let Reply::Recovered {
+                final_metrics,
+                manifests,
+            } = reply
+            else {
+                return Err(Error::Unrecoverable("invalid recovery response".into()));
+            };
+            require(
+                manifests.len() == plan.closures.len(),
+                "replay manifest coverage mismatch",
+            )?;
+            for (closure, manifest) in plan.closures.iter().zip(&manifests) {
+                closure.original.validate_replay(manifest)?;
+            }
+            gather.commit(plan.partition.0, AttemptId(1), &final_metrics.sent)?;
+            finals.insert(plan.partition.0, final_metrics);
+            recovery = crate::recovery::RecoveryMetrics {
+                worker_failures_detected: 1,
+                recovery_attempts: 1,
+                recovered_partitions: 1,
+                replayed_producer_tasks: plan.closures.len() as u64,
+                replayed_morsels: plan.closures.iter().map(|c| c.morsels.len() as u64).sum(),
+                lost_segments: plan.closures.iter().map(|c| c.original.segments).sum(),
+                lost_payload_bytes: plan.closures.iter().map(|c| c.original.payload_bytes).sum(),
+                recomputed_segments: manifests.iter().map(|m| m.segments).sum(),
+                recomputed_payload_bytes: manifests.iter().map(|m| m.payload_bytes).sum(),
+                recovery_elapsed_ms: u64::try_from(recovery_start.elapsed().as_millis())
+                    .unwrap_or(u64::MAX),
+                full_job_restart_avoided: true,
+                planner_reason: "single_final_worker_loss_recompute_file_lineage_no_durable_copy"
+                    .into(),
+                plan: Some(plan),
+                replay_manifests: manifests,
+                committed_attempts: BTreeMap::new(),
+            };
+        }
+        recovery.committed_attempts = gather.attempts();
         // Validate conservation before any successful result can escape.
         let sent =
             producers
@@ -259,11 +361,14 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 && accepted.rows == finals.values().map(|m| m.input_rows as u64).sum::<u64>(),
             "exchange conservation failure",
         )?;
-        let batches = exchange::collect(&store)?;
+        let (batches, gather_metrics) = gather.collect()?;
         state = JobState::GatherComplete;
         let mut adaptive = crate::adaptive::AdaptiveSummary::default();
         if job.config.exchange.mode == crate::ExchangeMode::Adaptive {
-            for task in finals.values() {
+            for (partition, task) in &finals {
+                if recovery.committed_attempts[partition] == AttemptId(1) {
+                    continue;
+                }
                 let a = &task.retention.adaptive;
                 require(
                     a.segments_by_tier.iter().sum::<u64>() == task.received.batches
@@ -276,6 +381,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             }
         }
         let metrics = DistributedMetrics {
+            recovery,
             adaptive,
             worker_count: job.workers.len(),
             exchange_mode: job.config.exchange.mode,
@@ -286,10 +392,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 .collect(),
             producers,
             finals,
-            gather: store.metrics()?,
+            gather: gather_metrics,
         };
-        token.cancel();
-        drop(receiver);
+        drop(gather);
         state = JobState::Succeeded;
         Ok(JobOutput {
             batches,

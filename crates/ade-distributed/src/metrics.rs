@@ -32,11 +32,13 @@ pub struct TaskMetrics {
     pub sent: NetworkMetrics,
     pub received: NetworkMetrics,
     pub retention: crate::RetentionMetrics,
+    pub manifests: BTreeMap<u64, crate::lineage::TransferManifest>,
     pub destinations: BTreeMap<u64, NetworkMetrics>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    pub recovery: crate::recovery::RecoveryMetrics,
     pub adaptive: crate::adaptive::AdaptiveSummary,
     pub worker_count: usize,
     pub exchange_mode: crate::ExchangeMode,

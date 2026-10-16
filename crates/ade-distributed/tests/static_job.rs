@@ -52,6 +52,7 @@ fn failure_cleanup(mut cluster: LocalCluster, job: &mut StaticAggregateJob) {
         job: job.id,
         workers: cluster.workers.clone(),
         config: job.config.clone(),
+        snapshot: None,
     };
     ade_distributed::protocol::rpc(
         &cluster.workers[0],
@@ -75,6 +76,7 @@ fn failure_cleanup(mut cluster: LocalCluster, job: &mut StaticAggregateJob) {
         job: JobId(51),
         workers: cluster.workers.clone(),
         config: job.config.clone(),
+        snapshot: None,
     };
     let ready = ade_distributed::protocol::rpc(
         &cluster.workers[0],
@@ -101,6 +103,7 @@ fn two_worker_process_graph_and_failure_cleanup() {
             ..Default::default()
         },
         task_timeout: Duration::from_secs(20),
+        snapshot: None,
     };
     for (i, mode) in [
         ExchangeMode::LocalMaterialized,
@@ -251,6 +254,7 @@ fn adaptive_process_oracle_divergence_and_failure() {
         workers: cluster.workers.clone(),
         config,
         task_timeout: Duration::from_secs(20),
+        snapshot: None,
     };
     let output = coordinator::execute(&job).unwrap();
     for (partition, task) in &output.metrics.finals {
@@ -297,4 +301,124 @@ fn adaptive_process_oracle_divergence_and_failure() {
     job.files = vec![data.path().join("missing.parquet")];
     assert!(coordinator::execute(&job).is_err());
     failure_cleanup(cluster, &mut job);
+}
+
+#[cfg(feature = "research-hooks")]
+fn source_snapshot(files: &[PathBuf]) -> ade_distributed::lineage::SourceSnapshot {
+    use ade_distributed::{
+        ids::MorselId,
+        lineage::{SourceMorsel, SourceSnapshot, fingerprint},
+    };
+    SourceSnapshot {
+        version: 1,
+        manifest_fingerprint: "process-fixture-v1".into(),
+        schema_fingerprint: "fixture-schema-v1".into(),
+        logical_fingerprint: "four-files-4096-keys".into(),
+        replayable: true,
+        morsels: files
+            .iter()
+            .enumerate()
+            .map(|(i, path)| SourceMorsel {
+                id: MorselId(i as u64),
+                path: path.clone(),
+                bytes: std::fs::metadata(path).unwrap().len(),
+                fingerprint: fingerprint(path).unwrap(),
+            })
+            .collect(),
+    }
+}
+#[cfg(feature = "research-hooks")]
+#[test]
+fn real_final_worker_loss_replays_only_missing_partition_with_partial_gather() {
+    let root = tempfile::tempdir().unwrap();
+    let files = fixture(root.path());
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let mut job = StaticAggregateJob {
+        id: JobId(100),
+        snapshot: Some(source_snapshot(&files)),
+        files,
+        workers: cluster.workers.clone(),
+        config: TaskConfig::default(),
+        task_timeout: Duration::from_secs(20),
+    };
+    let normal = coordinator::execute(&job).unwrap();
+    assert_eq!(normal.metrics.recovery.recovery_attempts, 0);
+    verify_output(normal, ExchangeMode::LocalMaterialized);
+    job.id = JobId(101);
+    job.config.research_exit_final_partition = Some(0);
+    let output = coordinator::execute(&job).unwrap();
+    let recovery = &output.metrics.recovery;
+    assert_eq!(recovery.worker_failures_detected, 1);
+    assert_eq!(recovery.recovery_attempts, 1);
+    assert_eq!(recovery.replayed_producer_tasks, 2);
+    assert_eq!(recovery.replayed_morsels, 4);
+    assert_eq!(recovery.lost_segments, recovery.recomputed_segments);
+    assert_eq!(
+        recovery.lost_payload_bytes,
+        recovery.recomputed_payload_bytes
+    );
+    assert!(recovery.full_job_restart_avoided);
+    assert_eq!(
+        recovery.committed_attempts[&0],
+        ade_distributed::ids::AttemptId(1)
+    );
+    assert_eq!(
+        recovery.committed_attempts[&1],
+        ade_distributed::ids::AttemptId(0)
+    );
+    let plan = recovery.plan.as_ref().unwrap();
+    assert_eq!(plan.job, JobId(101));
+    assert_eq!(plan.host, ade_distributed::ids::WorkerId(1));
+    assert_eq!(plan.reused_partitions, [1]);
+    assert!(plan.ranges.iter().all(|r| r.transfer.partition.0 == 0));
+    for manifest in &recovery.replay_manifests {
+        output.metrics.producers[&manifest.logical.producer.0].manifests[&0]
+            .validate_replay(manifest)
+            .unwrap();
+    }
+    assert!(
+        ade_distributed::protocol::rpc(
+            &cluster.workers[0],
+            ade_distributed::protocol::Request::Ping,
+            Duration::from_millis(250)
+        )
+        .is_err()
+    );
+    verify_output(output, ExchangeMode::LocalMaterialized);
+}
+#[cfg(feature = "research-hooks")]
+#[test]
+fn real_worker_loss_without_replayable_lineage_fails_and_cleans_survivor() {
+    let root = tempfile::tempdir().unwrap();
+    let files = fixture(root.path());
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let mut snapshot = source_snapshot(&files);
+    snapshot.replayable = false;
+    let job = StaticAggregateJob {
+        id: JobId(200),
+        snapshot: Some(snapshot),
+        files,
+        workers: cluster.workers.clone(),
+        config: TaskConfig {
+            research_exit_final_partition: Some(0),
+            ..Default::default()
+        },
+        task_timeout: Duration::from_secs(20),
+    };
+    let error = coordinator::execute(&job).err().unwrap();
+    assert!(matches!(error, ade_distributed::Error::Unrecoverable(_)));
+    assert!(error.to_string().contains("non-replayable"));
+    // Cleanup permits a new job on the surviving worker; no recovery loop.
+    let response = ade_distributed::protocol::rpc(
+        &cluster.workers[1],
+        ade_distributed::protocol::Request::PrepareJob(ade_distributed::protocol::JobSpec {
+            job: JobId(201),
+            workers: cluster.workers.clone(),
+            config: TaskConfig::default(),
+            snapshot: None,
+        }),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(matches!(response, ade_distributed::protocol::Reply::Ready));
 }

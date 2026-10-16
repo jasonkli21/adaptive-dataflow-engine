@@ -10,6 +10,7 @@ research-hooks = []
 [lints]
 workspace = true
 [dependencies]
+blake3 = "1"
 ade-exec = { path = "../ade-exec" }
 arrow = { workspace = true, features = ["ipc"] }
 serde = { version = "1", features = ["derive"] }

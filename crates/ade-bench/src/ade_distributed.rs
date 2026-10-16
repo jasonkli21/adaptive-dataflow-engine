@@ -19,6 +19,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct AdeDistributedConfig {
     pub workers: usize,
+    pub recovery_enabled: bool,
     pub task: TaskConfig,
 }
 impl AdeDistributedConfig {
@@ -82,6 +83,16 @@ impl AdeDistributedConfig {
             self.task.exchange.pressure.delay_ms.to_string(),
         );
         info.configuration
+            .insert("recovery_enabled".into(), self.recovery_enabled.to_string());
+        info.configuration
+            .insert("recovery_policy".into(), "single_final_loss_v1".into());
+        info.configuration.insert(
+            "research_exit_final_partition".into(),
+            self.task
+                .research_exit_final_partition
+                .map_or_else(|| "off".into(), |p| p.to_string()),
+        );
+        info.configuration
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration.insert(
@@ -98,6 +109,7 @@ impl AdeDistributedConfig {
 pub struct AdeDistributedEngine {
     config: AdeDistributedConfig,
     files: Vec<PathBuf>,
+    snapshot: ade_distributed::lineage::SourceSnapshot,
     cluster: LocalCluster,
     next_job: Mutex<u64>,
 }
@@ -137,6 +149,8 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut exchange_buffer = None;
         let mut special = std::collections::BTreeMap::new();
         let mut local = Vec::new();
+        let mut exit_final = None;
+        let mut recovery_enabled = true;
         for option in options {
             if let Some(value) = option.strip_prefix("workers=") {
                 require(
@@ -166,19 +180,24 @@ impl BenchmarkEngine for AdeDistributedEngine {
                         .parse::<usize>()
                         .map_err(|_| Error::Invalid("invalid exchange_buffer_bytes".into()))?,
                 );
-            } else if option.starts_with("adaptive_") || option.starts_with("research_") {
+            } else if option.starts_with("adaptive_")
+                || option.starts_with("research_")
+                || option.starts_with("recovery_")
+            {
                 let (key, value) = option
                     .split_once('=')
                     .ok_or_else(|| Error::Invalid("option requires value".into()))?;
                 require(
                     matches!(
                         key,
-                        "adaptive_policy"
+                        "recovery_enabled"
+                            | "adaptive_policy"
                             | "adaptive_buffer_high_pct"
                             | "adaptive_remote_after_bytes"
                             | "research_slow_partition"
                             | "research_delay_after_segments"
                             | "research_delay_ms"
+                            | "research_exit_final_partition"
                     ),
                     "unknown adaptive/research option",
                 )?;
@@ -210,6 +229,11 @@ impl BenchmarkEngine for AdeDistributedEngine {
                     .map_err(|_| Error::Invalid(format!("invalid {key}")))
             };
             match key.as_str() {
+                "recovery_enabled" => {
+                    recovery_enabled = value
+                        .parse::<bool>()
+                        .map_err(|_| Error::Invalid("invalid recovery_enabled".into()))?;
+                }
                 "adaptive_policy" => require(value == "threshold_v1", "invalid adaptive_policy")?,
                 "adaptive_buffer_high_pct" => {
                     exchange.adaptive.buffer_high_pct = u8::try_from(number()?)
@@ -226,18 +250,25 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 }
                 "research_delay_after_segments" => exchange.pressure.after_segments = number()?,
                 "research_delay_ms" => exchange.pressure.delay_ms = number()?,
+                "research_exit_final_partition" => {
+                    let p = number()?;
+                    require(p < workers as u64, "failure target outside topology")?;
+                    exit_final = Some(p);
+                }
                 _ => unreachable!(),
             }
         }
         exchange.validate()?;
         Ok(AdeDistributedConfig {
             workers,
+            recovery_enabled,
             task: TaskConfig {
                 exchange,
                 batch_size: local.batch_size,
                 memory_limit_bytes: local.execution.memory_limit_bytes,
                 spill_enabled: local.execution.spill_enabled,
                 prefetch_batches: local.execution.prefetch_batches,
+                research_exit_final_partition: exit_final,
             },
         })
     }
@@ -272,10 +303,32 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 "ade-distributed requires the synthetic-events-v1 Arrow schema",
             )?;
         }
+        let snapshot = ade_distributed::lineage::SourceSnapshot {
+            version: 1,
+            manifest_fingerprint: blake3::hash(&serde_json::to_vec(manifest)?)
+                .to_hex()
+                .to_string(),
+            schema_fingerprint: manifest.schema_fingerprint.clone(),
+            logical_fingerprint: manifest.logical_fingerprint.clone(),
+            replayable: true,
+            morsels: manifest
+                .files
+                .iter()
+                .enumerate()
+                .map(|(i, f)| ade_distributed::lineage::SourceMorsel {
+                    id: ade_distributed::ids::MorselId(i as u64),
+                    path: root.join(&f.relative_path),
+                    fingerprint: f.fingerprint.clone(),
+                    bytes: f.bytes,
+                })
+                .collect(),
+        };
+        snapshot.validate(&files)?;
         let cluster = LocalCluster::spawn(&worker_binary()?, config.workers)?;
         Ok(Self {
             config: config.clone(),
             files,
+            snapshot,
             cluster,
             next_job: Mutex::new(0),
         })
@@ -298,6 +351,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
             workers: self.cluster.workers.clone(),
             config: self.config.task.clone(),
             task_timeout: ade_distributed::TASK_TIMEOUT,
+            snapshot: self.config.recovery_enabled.then(|| self.snapshot.clone()),
         };
         let output = ade_distributed::coordinator::execute(&job)?;
         tracing::debug!(metrics = %serde_json::to_string(&output.metrics)?, "ADE distributed execution");
@@ -321,6 +375,12 @@ mod tests {
         assert_eq!(config.info().configuration["workers"], "4");
         assert_eq!(config.info().configuration["memory_limit_bytes"], "1048576");
         for options in [
+            vec!["research_exit_final_partition=2"],
+            vec![
+                "research_exit_final_partition=0",
+                "research_exit_final_partition=1",
+            ],
+            vec!["recovery_enabled=invalid"],
             vec!["exchange_mode=adaptive", "adaptive_policy=unknown"],
             vec!["adaptive_buffer_high_pct=80"],
             vec!["exchange_mode=adaptive", "adaptive_buffer_high_pct=0"],

@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP02";
+const MAGIC: &[u8; 8] = b"ADETCP03";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -26,6 +26,7 @@ pub struct JobSpec {
     pub job: JobId,
     pub workers: Vec<WorkerEndpoint>,
     pub config: TaskConfig,
+    pub snapshot: Option<crate::lineage::SourceSnapshot>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,6 +45,14 @@ pub enum Request {
         attempt: AttemptId,
         gather: SocketAddr,
     },
+    RecoverFinal {
+        plan: crate::recovery::RecoveryPlan,
+        gather: SocketAddr,
+    },
+    #[cfg(feature = "research-hooks")]
+    ReleaseFinal {
+        job: JobId,
+    },
     CancelJob {
         job: JobId,
     },
@@ -59,7 +68,14 @@ pub enum Reply {
     Pong(WorkerEndpoint),
     Ready,
     Task(TaskMetrics),
-    Error { code: String, message: String },
+    Recovered {
+        final_metrics: TaskMetrics,
+        manifests: Vec<crate::lineage::TransferManifest>,
+    },
+    Error {
+        code: String,
+        message: String,
+    },
 }
 /// # Errors
 /// Rejects oversized encoding or write failures.
@@ -241,8 +257,8 @@ mod tests {
         )
         .unwrap();
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..bytes.len() - 1]).is_err());
-        // Reject Phase 4 peers before decoding the incompatible Phase 5 schema.
-        bytes[7] = b'1';
+        // Reject Phase 5 framing before reading any incompatible Phase 6 payload.
+        bytes[7] = b'2';
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..]).is_err());
         let mut large = MAGIC.to_vec();
         large.extend_from_slice(&u32::MAX.to_le_bytes());

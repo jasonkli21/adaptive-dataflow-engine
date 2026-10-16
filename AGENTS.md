@@ -29,26 +29,30 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 5 is the active/completed boundary, defined by
-`docs/plans/phase-5-implementation-plan.md` and its implementation report.
-Phases 2–4 remain accepted. Phase 5 adds explicit deterministic `threshold_v1`
-adaptive exchange alongside the five static mechanisms. Destination partitions
-escalate monotonically at segment boundaries with at most three transition
-records; mixed-tier sources preserve strict completion and bounded retention.
-Object-store acceptance uses an ephemeral filesystem backend, not proof of cloud
-durability. Do not begin Phase 6 without a new explicit instruction.
+Phase 6 is the active/completed boundary, defined by
+`docs/plans/phase-6-implementation-plan.md` and its implementation report.
+Phases 2–5 remain accepted, including `threshold_v1` adaptive exchange.
+Phase 6 adds attempt-independent file lineage, terminal manifests and one bounded
+recovery episode for a single final-worker loss after all producers complete.
+Only the missing partition is replayed on a quiescent survivor; gather attempts
+are isolated and validated before commit. Object-store acceptance still uses an
+ephemeral filesystem backend and proves no durable restore. Do not begin Phase 7
+without a new explicit instruction.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
 - Reuse the local spillable aggregate through partial merge, IPC scan/live source and streaming sink.
-- Worker failure fails the job; cancel survivors and clean up. No retry/recovery.
+- Only the documented single final-worker loss can recover. Producer/multiple
+  losses, replay mismatch, poisoning and recovery failure cancel/clean survivors.
+  Preserve one episode, original logical IDs and attempt-safe gather commit.
 - Exchange buffers are separately bounded; producer/final task budgets may overlap.
   The local ledger is not a process RSS cap.
-- Preserve the pure policy/mechanism boundary and static defaults. No lineage,
-  recovery, adaptive scheduling, joins, SQL frontend or streaming/state.
+- Preserve the pure policy/mechanism boundary and static defaults. No cost model,
+  adaptive scheduling, joins, SQL frontend or streaming/state.
 - Run focused tests during development, one final workspace gate/smoke and focused
   five-mode static regression and focused adaptive 2-worker/limited 4-worker release
-  acceptance evidence. Keep CI correctness-only; timing guards remain local release evidence.
+  acceptance evidence, plus Phase 6 normal/recovered/unrecoverable acceptance.
+  Keep CI correctness-only; timing guards remain local release evidence.
 
 A small coherent implementation is preferred to speculative architecture.
 
@@ -126,13 +130,13 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. Phase 5 is recorded in:
+Each phase ends with an implementation report. Phase 6 is recorded in:
 
-`docs/reports/phase-5-implementation-report.md`
+`docs/reports/phase-6-implementation-report.md`
 
-Include baseline/final identity, policy/configuration, observation truthfulness,
-transition/extent bounds, mixed-tier lifecycle, failure/cancellation and backend
-durability statements, deviations, ADRs, commands/tests, raw normal/adversarial
-release evidence, actual partition histories, limitations and Phase 6 handoff.
-Preserve failed experiments as well as final evidence. Do not implement Phase 6
-lineage, retry or recovery as cleanup.
+Include baseline/final identity, supported failure envelope, source snapshot and
+file morsel truthfulness, lost ranges/closure, terminal fingerprint validation,
+attempt-safe gather, bounded metadata, cancellation/poisoning, protocol version,
+commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 7
+handoff. Preserve failed experiments. Do not implement Phase 7 expected-cost
+selection or broader recovery as cleanup.

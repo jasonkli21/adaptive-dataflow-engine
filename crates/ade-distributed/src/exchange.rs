@@ -152,6 +152,7 @@ fn validate_batch(batch: &RecordBatch) -> Result<()> {
     )
 }
 pub struct Sender {
+    fingerprint: blake3::Hasher,
     id: TransferId,
     socket: TcpStream,
     pub metrics: NetworkMetrics,
@@ -171,7 +172,11 @@ impl Sender {
             &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
             &Header::new(id),
         )?;
+        let mut fingerprint = blake3::Hasher::new();
+        fingerprint.update(b"ade-transfer-v1");
+        fingerprint.update(&serde_json::to_vec(&id.logical())?);
         Ok(Self {
+            fingerprint,
             id,
             socket,
             metrics: NetworkMetrics::default(),
@@ -200,6 +205,10 @@ impl Sender {
         )?;
         socket.write_all(&self.metrics.batches.to_le_bytes())?;
         socket.write_all(&encoded.0)?;
+        self.fingerprint.update(&self.metrics.batches.to_le_bytes());
+        self.fingerprint
+            .update(&(encoded.0.len() as u64).to_le_bytes());
+        self.fingerprint.update(&encoded.0);
         self.metrics.batches += 1;
         self.metrics.rows += batch.num_rows() as u64;
         self.metrics.payload_bytes += encoded.0.len() as u64;
@@ -208,7 +217,13 @@ impl Sender {
     }
     /// # Errors
     /// Returns cancellation, transport, rejection, or mismatched completion ACK errors.
-    pub fn finish(mut self) -> Result<NetworkMetrics> {
+    pub fn finish(self) -> Result<NetworkMetrics> {
+        self.finish_manifest().map(|(metrics, _)| metrics)
+    }
+    /// Return terminal evidence only after the destination ACK validates.
+    /// # Errors
+    /// Returns transport, cancellation or completion errors.
+    pub fn finish_manifest(mut self) -> Result<(NetworkMetrics, crate::lineage::TransferManifest)> {
         self.cancellation.check()?;
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
         socket.write_all(&0u32.to_le_bytes())?;
@@ -221,7 +236,17 @@ impl Sender {
         // Identity must match the original request, even on private connections.
         require(id == self.id, "ACK identity mismatch")?;
         self.metrics.transfers = 1;
-        Ok(self.metrics)
+        self.fingerprint.update(b"terminal-v1");
+        self.fingerprint.update(&self.metrics.batches.to_le_bytes());
+        let manifest = crate::lineage::TransferManifest {
+            logical: self.id.logical(),
+            attempt: self.id.attempt,
+            segments: self.metrics.batches,
+            rows: self.metrics.rows,
+            payload_bytes: self.metrics.payload_bytes,
+            fingerprint: self.fingerprint.finalize().to_hex().to_string(),
+        };
+        Ok((self.metrics, manifest))
     }
 }
 #[derive(Default)]
@@ -1527,5 +1552,66 @@ mod tests {
             assert!(store.paths().is_err());
             assert_eq!(store.metrics().unwrap().transfers, 0);
         }
+    }
+    #[test]
+    fn terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let run = |attempt, batches: Vec<RecordBatch>| {
+            let id = transfer(crate::ids::JobId(42), 0, 1, 0)
+                .with_attempt(crate::ids::AttemptId(attempt));
+            let store = Arc::new(
+                Store::new(root.path(), [id].into(), CancellationToken::default()).unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut sender =
+                Sender::new(receiver.address, id, CancellationToken::default()).unwrap();
+            for batch in batches {
+                sender.batch(&batch).unwrap();
+            }
+            sender.finish_manifest().unwrap().1
+        };
+        let original = run(0, vec![batch()]);
+        original.validate_replay(&run(1, vec![batch()])).unwrap();
+        assert!(original.validate_replay(&run(2, vec![batch()])).is_err());
+        assert!(
+            original
+                .validate_replay(&run(1, vec![batch(), batch()]))
+                .is_err()
+        );
+        assert!(
+            original
+                .validate_replay(&run(1, vec![batch().slice(0, 1)]))
+                .is_err()
+        );
+        let changed = RecordBatch::try_new(
+            schema(),
+            vec![
+                batch().column(0).clone(),
+                Arc::new(Int64Array::from(vec![2, 5, 6])),
+                batch().column(2).clone(),
+            ],
+        )
+        .unwrap();
+        let mutated = run(1, vec![changed.clone()]);
+        assert_eq!(
+            (original.segments, original.rows, original.payload_bytes),
+            (mutated.segments, mutated.rows, mutated.payload_bytes)
+        );
+        assert_ne!(original.fingerprint, mutated.fingerprint);
+        assert!(original.validate_replay(&mutated).is_err());
+        let ordered = run(0, vec![batch(), changed.clone()]);
+        let reordered = run(1, vec![changed, batch()]);
+        assert_eq!(
+            (ordered.segments, ordered.rows, ordered.payload_bytes),
+            (reordered.segments, reordered.rows, reordered.payload_bytes)
+        );
+        assert!(ordered.validate_replay(&reordered).is_err());
+        let empty = run(0, vec![]);
+        empty.validate_replay(&run(1, vec![])).unwrap();
+        assert_ne!(empty.fingerprint, original.fingerprint);
     }
 }

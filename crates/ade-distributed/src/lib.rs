@@ -1,4 +1,4 @@
-//! Distributed aggregation with static topology and selectable retention; no recovery.
+//! Distributed aggregation with static topology and selectable retention and bounded lineage recovery.
 pub mod adaptive;
 mod retention;
 #[cfg(feature = "research-hooks")]
@@ -9,10 +9,13 @@ pub use retention::{
 };
 pub mod coordinator;
 pub mod exchange;
+mod gather;
 pub mod ids;
+pub mod lineage;
 pub mod metrics;
 pub mod partition;
 pub mod protocol;
+pub mod recovery;
 pub mod worker;
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, time::Duration};
@@ -38,6 +41,8 @@ pub enum Error {
         stage: &'static str,
         message: String,
     },
+    #[error("unrecoverable: {0}")]
+    Unrecoverable(String),
     #[error("remote {code}: {message}")]
     Remote { code: String, message: String },
 }
@@ -69,6 +74,8 @@ pub struct TaskConfig {
     pub spill_enabled: bool,
     pub prefetch_batches: usize,
     pub exchange: ExchangeConfig,
+    #[cfg(feature = "research-hooks")]
+    pub research_exit_final_partition: Option<u64>,
 }
 impl Default for TaskConfig {
     fn default() -> Self {
@@ -78,6 +85,8 @@ impl Default for TaskConfig {
             spill_enabled: true,
             prefetch_batches: 0,
             exchange: ExchangeConfig::default(),
+            #[cfg(feature = "research-hooks")]
+            research_exit_final_partition: None,
         }
     }
 }

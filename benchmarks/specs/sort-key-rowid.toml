@@ -1,0 +1,16 @@
+schema_version = 1
+id = "sort-key-rowid"
+version = 1
+description = "Synthetic rows ordered by key then unique row_id ascending."
+
+[dataset]
+required_schema = "synthetic-events-v1"
+
+[query]
+kind = "sort_key_rowid"
+
+[validation]
+kind = "ordered_integer_rows_v1"
+
+[tags]
+category = "sort"

@@ -235,6 +235,7 @@ impl BenchmarkEngine for DataFusionEngine {
             Query::Scan => "SELECT row_id, key, value_i64 FROM input".into(),
             Query::ScanFilterProject { threshold } => format!("SELECT key, value_i64 FROM input WHERE secondary < {threshold}"),
             Query::GroupBySum => "SELECT key, CAST(SUM(value_i64) AS BIGINT), COUNT(*) FROM input GROUP BY key".into(),
+            Query::SortKeyRowid => "SELECT key, row_id, value_i64 FROM input ORDER BY key ASC, row_id ASC".into(),
             Query::TpchQ1 => "WITH t AS (SELECT l_returnflag, l_linestatus, CAST(l_quantity AS DOUBLE) q, CAST(l_extendedprice AS DOUBLE) p, CAST(l_discount AS DOUBLE) d, CAST(l_tax AS DOUBLE) t FROM input WHERE l_shipdate <= DATE '1998-09-02') SELECT l_returnflag, l_linestatus, SUM(q), SUM(p), SUM(p*(1-d)), SUM(p*(1-d)*(1+t)), AVG(q), AVG(p), AVG(d), COUNT(*) FROM t GROUP BY l_returnflag,l_linestatus".into(),
         };
         Ok(Self {
@@ -340,7 +341,15 @@ fn canonical(case: &BenchmarkCase, batches: &[RecordBatch]) -> Result<Canonical>
             );
         }
     }
-    rows.sort();
+    if case.query == Query::SortKeyRowid {
+        require(
+            rows.windows(2)
+                .all(|w| (w[0][0], w[0][1]) <= (w[1][0], w[1][1])),
+            "sort output is out of order",
+        )?;
+    } else {
+        rows.sort();
+    }
     Ok(Canonical::Integer(rows))
 }
 fn expected_synthetic(case: &BenchmarkCase, c: &dataset::SyntheticConfig) -> Canonical {
@@ -349,6 +358,9 @@ fn expected_synthetic(case: &BenchmarkCase, c: &dataset::SyntheticConfig) -> Can
     for id in 0..c.rows {
         let (key, second, value) = dataset::row(c, id);
         match case.query {
+            Query::SortKeyRowid => {
+                rows.push(vec![i128::from(key), i128::from(id), i128::from(value)]);
+            }
             Query::Scan => rows.push(vec![i128::from(id), i128::from(key), i128::from(value)]),
             Query::ScanFilterProject { threshold } => {
                 if second < threshold {
@@ -702,6 +714,33 @@ mod tests {
         );
         assert!(DataFusionConfig::from_options(&options).is_err());
         assert!(StubEngine::parse_config(&["target_partitions=4".into()]).is_err());
+    }
+
+    #[test]
+    fn sort_validation_rejects_wrong_order_across_batches() {
+        let case = BenchmarkCase::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmarks/specs/sort-key-rowid.toml"),
+        )
+        .unwrap();
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("key", DataType::UInt64, false),
+            Field::new("row_id", DataType::UInt64, false),
+            Field::new("value_i64", DataType::Int64, false),
+        ]));
+        let batch = |id| {
+            RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(UInt64Array::from(vec![1])),
+                    Arc::new(UInt64Array::from(vec![id])),
+                    Arc::new(Int64Array::from(vec![0])),
+                ],
+            )
+            .unwrap()
+        };
+        assert!(canonical(&case, &[batch(1), batch(2)]).is_ok());
+        assert!(canonical(&case, &[batch(2), batch(1)]).is_err());
     }
 
     #[test]

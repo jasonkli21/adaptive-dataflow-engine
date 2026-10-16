@@ -6,7 +6,7 @@ use crate::{
     require,
     spec::{BenchmarkCase, Query},
 };
-use ade_exec::{CancellationToken, LocalPlan};
+use ade_exec::{CancellationToken, ExecutionConfig, LocalPlan};
 use arrow::record_batch::RecordBatch;
 use std::{collections::BTreeMap, path::Path};
 
@@ -14,6 +14,7 @@ use std::{collections::BTreeMap, path::Path};
 #[derive(Debug, Clone)]
 pub struct AdeLocalConfig {
     pub batch_size: usize,
+    pub execution: ExecutionConfig,
 }
 impl AdeLocalConfig {
     /// Describes the effective local configuration without executing a plan.
@@ -22,7 +23,21 @@ impl AdeLocalConfig {
         EngineInfo {
             name: "ade-local".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            configuration: BTreeMap::from([("batch_size".into(), self.batch_size.to_string())]),
+            configuration: BTreeMap::from([
+                ("batch_size".into(), self.batch_size.to_string()),
+                (
+                    "memory_limit_bytes".into(),
+                    self.execution.memory_limit_bytes.to_string(),
+                ),
+                (
+                    "spill_enabled".into(),
+                    self.execution.spill_enabled.to_string(),
+                ),
+                (
+                    "prefetch_batches".into(),
+                    self.execution.prefetch_batches.to_string(),
+                ),
+            ]),
         }
     }
 }
@@ -38,20 +53,49 @@ pub struct AdeLocalEngine {
 impl BenchmarkEngine for AdeLocalEngine {
     type Config = AdeLocalConfig;
     fn parse_config(options: &[String]) -> Result<Self::Config> {
-        let mut config = AdeLocalConfig { batch_size: 8192 };
+        let mut config = AdeLocalConfig {
+            batch_size: 8192,
+            execution: ExecutionConfig::default(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
         for option in options {
             let (key, value) = option
                 .split_once('=')
                 .ok_or_else(|| Error::Invalid("engine option must be key=value".into()))?;
             require(
-                key == "batch_size",
-                format!("unsupported ade-local option: {key}"),
+                seen.insert(key),
+                format!("duplicate ade-local option: {key}"),
             )?;
-            config.batch_size = value
-                .parse()
-                .map_err(|_| Error::Invalid("invalid batch_size".into()))?;
+            match key {
+                "batch_size" => {
+                    config.batch_size = value
+                        .parse()
+                        .map_err(|_| Error::Invalid("invalid batch_size".into()))?;
+                }
+                "memory_limit_bytes" => {
+                    config.execution.memory_limit_bytes = value
+                        .parse()
+                        .map_err(|_| Error::Invalid("invalid memory_limit_bytes".into()))?;
+                }
+                "spill_enabled" => {
+                    config.execution.spill_enabled = value
+                        .parse()
+                        .map_err(|_| Error::Invalid("invalid spill_enabled".into()))?;
+                }
+                "prefetch_batches" => {
+                    config.execution.prefetch_batches = value
+                        .parse()
+                        .map_err(|_| Error::Invalid("invalid prefetch_batches".into()))?;
+                }
+                _ => {
+                    return Err(Error::Invalid(format!(
+                        "unsupported ade-local option: {key}"
+                    )));
+                }
+            }
         }
         require(config.batch_size > 0, "batch_size must be positive")?;
+        config.execution.validate()?;
         Ok(config)
     }
     async fn prepare(
@@ -62,7 +106,7 @@ impl BenchmarkEngine for AdeLocalEngine {
     ) -> Result<Self> {
         require(
             case.query != Query::TpchQ1,
-            "ade-local Phase 1 does not support TPC-H Q1; use --engine datafusion",
+            "ade-local does not support TPC-H Q1; use --engine datafusion",
         )?;
         case.validate()?;
         manifest.validate()?;
@@ -108,6 +152,12 @@ impl BenchmarkEngine for AdeLocalEngine {
                 key: "key".into(),
                 value: "value_i64".into(),
             },
+            Query::SortKeyRowid => LocalPlan::Sort {
+                input: Box::new(project(scan, &["key", "row_id", "value_i64"])),
+                key: "key".into(),
+                row_id: "row_id".into(),
+                value: "value_i64".into(),
+            },
             Query::TpchQ1 => unreachable!("rejected above"),
         };
         Ok(Self {
@@ -116,8 +166,29 @@ impl BenchmarkEngine for AdeLocalEngine {
         })
     }
     async fn execute(&self) -> Result<Vec<RecordBatch>> {
-        let output = ade_exec::execute(self.plan.clone(), CancellationToken::default())?;
-        tracing::debug!(metrics = ?output.metrics, "ADE local execution");
+        let output = ade_exec::execute_with_config(
+            self.plan.clone(),
+            self.config.execution.clone(),
+            CancellationToken::default(),
+        )?;
+        tracing::debug!(
+            managed_limit = output.metrics.managed.limit,
+            managed_current = output.metrics.managed.current,
+            managed_peak = output.metrics.managed.peak,
+            reservation_attempts = output.metrics.managed.attempts,
+            reservation_denials = output.metrics.managed.denials,
+            pressure_events = output.metrics.managed.pressure_events,
+            spill_files = output.metrics.spill.files,
+            spill_events = output.metrics.spill.events,
+            spill_write_bytes = output.metrics.spill.write_bytes,
+            spill_read_bytes = output.metrics.spill.read_bytes,
+            sort_runs = output.metrics.spill.sort_runs,
+            sort_merges = output.metrics.spill.sort_merges,
+            prefetch_produced = output.metrics.prefetch.produced,
+            prefetch_consumed = output.metrics.prefetch.consumed,
+            prefetch_queue_peak = output.metrics.prefetch.queue_peak,
+            "ADE local execution"
+        );
         Ok(output.batches)
     }
     fn info(&self) -> EngineInfo {

@@ -9,6 +9,7 @@ pub enum Query {
     Scan,
     ScanFilterProject { threshold: u64 },
     GroupBySum,
+    SortKeyRowid,
     TpchQ1,
 }
 /// Required dataset schema, independent of engine configuration.
@@ -83,6 +84,8 @@ impl BenchmarkCase {
             self.validation.kind
                 == if tpch {
                     "q1_tolerance_v1"
+                } else if self.query == Query::SortKeyRowid {
+                    "ordered_integer_rows_v1"
                 } else {
                     "canonical_integer_rows_v1"
                 },

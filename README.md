@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 1 local execution implemented.** `ade-exec` owns synchronous Parquet, filter, projection, hash aggregation, limit and collection, with cancellation, deterministic IDs and observational memory/operator metrics. `ade-local` executes all five synthetic specs through the existing independent correctness oracle.
+**Phase 2 spillable local execution implemented.** `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Execution remains single-node.
 
 The completed Phase 0 architecture/benchmark lab in `crates/ade-bench` provides deterministic datasets, engine-independent workload definitions, a DataFusion baseline, process-isolated macrobenchmarks, versioned result artifacts, correctness validation, comparison tooling, and microbenchmark infrastructure.
 
@@ -29,7 +29,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-1-implementation-plan.md`](docs/plans/phase-1-implementation-plan.md) — active Phase 1 implementation contract.
+4. [`docs/plans/phase-2-implementation-plan.md`](docs/plans/phase-2-implementation-plan.md) — Phase 2 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -40,7 +40,7 @@ Implementation work should use this order:
 ├── AGENTS.md
 ├── Cargo.toml
 ├── crates/
-│   ├── ade-exec/               # Phase 1 local runtime
+│   ├── ade-exec/               # Phase 2 local runtime
 │   └── ade-bench/              # Phase 0 benchmark harness
 ├── benchmarks/
 │   ├── specs/
@@ -96,13 +96,40 @@ target/release/ade-bench validate --engine ade-local --engine-option batch_size=
 target/release/ade-bench run --engine ade-local --spec benchmarks/specs/aggregate-skew.toml --dataset benchmarks/datasets/example --verify-data full --warmups 1 --iterations 3 --output benchmarks/results/ade-example.json
 ```
 
-`batch_size` defaults to 8192 and must be positive. TPC-H Q1 remains supported
-only by DataFusion. The local plan API is provisional. Aggregation and collected
-output reside in memory; memory counters are estimates, without hard limits or
-spill. Detailed metrics are returned by `ade_exec::execute` and logged at debug
-by the adapter; benchmark artifacts keep their existing schema. See the
-[Phase 1 report](docs/reports/phase-1-implementation-report.md) for validation and
-comparison evidence. Phase 2 has not started.
+The effective options are recorded in benchmark engine configuration:
+
+| Option | Default | Meaning |
+|---|---:|---|
+| `batch_size` | 8192 | Positive Parquet scan batch size |
+| `memory_limit_bytes` | 268435456 | Positive execution managed budget (256 MiB) |
+| `spill_enabled` | true | Allow local aggregate/sort spill; false fails at state target |
+| `prefetch_batches` | 0 | Queue depth 0–64; zero reads synchronously |
+
+For example:
+
+```bash
+ADE_LOG=debug target/release/ade-bench validate --engine ade-local --engine-option memory_limit_bytes=4194304 --engine-option prefetch_batches=1 --spec benchmarks/specs/sort-key-rowid.toml --dataset benchmarks/datasets/example
+```
+
+`ADE_LOG=debug` exposes pressure, managed memory, spill/run and prefetch counters
+on stderr. Programmatic `ade_exec::execute_with_config` also returns per-operator
+metrics and accepts an output batch cap. Result artifacts retain schema v1.
+
+The budget covers reserved blocking state, explicit queued batches and retained
+collection; it is **not a total-process RSS cap**. Decoder/kernel/IPC internals,
+synchronous input and allocator overhead are external/transient. A collected
+result that cannot fit fails explicitly even if its operator spills. Aggregate
+uses 16 local partitions and fails clearly if a partition still cannot fit;
+external sort uses bounded IPC chunks and two-way multi-pass merging. Temp spill
+is cleaned on normal success/error/cancellation, and has no recovery durability.
+Prefetch preserves pull backpressure and joins its producer on teardown.
+
+The physical plan is provisional. Sort supports non-null UInt64 key/row_id and
+Int64 value, ascending key then row_id. TPC-H Q1 is supported only by DataFusion.
+No joins, SQL frontend, distributed exchange, scheduling or recovery are added.
+See [ADR-0006](docs/adr/0006-managed-local-memory-and-spill.md) and the
+[Phase 2 report](docs/reports/phase-2-implementation-report.md) for contracts,
+validation and comparison evidence. Phase 3 has not started.
 
 ## License
 

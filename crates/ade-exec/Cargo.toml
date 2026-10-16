@@ -9,9 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
-arrow.workspace = true
+arrow = { workspace = true, features = ["ipc"] }
 parquet.workspace = true
 thiserror = "2"
-
-[dev-dependencies]
 tempfile = "3"

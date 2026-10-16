@@ -29,14 +29,15 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-The active implementation boundary is Phase 1, defined by
-`docs/plans/phase-1-implementation-plan.md`.
+Phase 2 is implemented and accepted; the active boundary remains Phase 2, defined by
+`docs/plans/phase-2-implementation-plan.md`. See the Phase 2 implementation report.
+Do not begin Phase 3 without an explicit new instruction.
 
 - Own local execution in `ade-exec`, independent of DataFusion and `ade-bench`.
 - Preserve the Phase 0 harness, independent oracle, child protocol and result contracts.
-- Implement only scan/filter/project/hash aggregate/limit/collect and runtime hooks.
-- Memory accounting is observational; no hard limits, spill, exchange, scheduler,
-  distribution, recovery, SQL frontend or streaming in this phase.
+- Implement managed memory, local partitioned aggregate spill, external sort, bounded
+  scan prefetch and pressure metrics alongside the existing local operators.
+- No exchange, scheduler, distribution, recovery, SQL frontend or streaming.
 - Do not create empty future crates; defer non-required features.
 - During implementation run focused crate tests; run the full workspace gate near
   completion, then focused release comparison evidence. Keep CI correctness-only.
@@ -117,9 +118,9 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. For Phase 1 create:
+Each phase ends with an implementation report. For Phase 2 create:
 
-`docs/reports/phase-1-implementation-report.md`
+`docs/reports/phase-2-implementation-report.md`
 
 It must include:
 
@@ -134,5 +135,5 @@ It must include:
 9. deferred items;
 10. recommended next-phase considerations.
 
-Include the Phase 1 plan acceptance audit, runtime metrics/memory limitations and
-cross-engine release comparison evidence. Do not begin Phase 2 as cleanup.
+Include the Phase 2 plan acceptance audit, runtime metrics/memory limitations and
+cross-engine release comparison evidence. Do not begin Phase 3 as cleanup.

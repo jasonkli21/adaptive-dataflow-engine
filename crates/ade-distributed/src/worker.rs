@@ -188,7 +188,18 @@ fn final_task(
                 .as_mut()
                 .expect("opened")
                 .batch(&batch)
-                .map_err(local_sink_error)
+                .map_err(local_sink_error)?;
+            #[cfg(feature = "research-hooks")]
+            if attempt == AttemptId(0)
+                && job.spec.config.research_exit_final_partition
+                    == Some(task.0 - job.spec.workers.len() as u64)
+                && sender
+                    .as_ref()
+                    .is_some_and(|sender| sender.metrics.batches == 1)
+            {
+                research_exit_after_first_gather_batch(job, task, &token)?;
+            }
+            Ok(())
         },
     )?;
     job.store.validate_retention_drained()?;
@@ -197,29 +208,31 @@ fn final_task(
         Some(sender) => sender,
         None => open()?,
     };
-    #[cfg(feature = "research-hooks")]
-    if attempt == AttemptId(0)
-        && job.spec.config.research_exit_final_partition
-            == Some(task.0 - job.spec.workers.len() as u64)
-    {
-        // The coordinator releases this gate only after receiving every producer ACK/RPC.
-        let deadline = Instant::now() + crate::TASK_TIMEOUT;
-        while !job.release_final.load(Ordering::Acquire) {
-            token.check()?;
-            require(Instant::now() < deadline, "failure boundary gate timed out")?;
-            thread::sleep(Duration::from_millis(2));
-        }
-        eprintln!(
-            "ADE research worker process exit job={:?} final={task:?} attempt=0 complete_input=true",
-            job.spec.job
-        );
-        std::process::exit(86);
-    }
     metrics.sent = sender.finish()?;
     metrics.received = job.store.metrics()?;
     metrics.retention = job.store.retention_metrics()?;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     Ok(metrics)
+}
+#[cfg(feature = "research-hooks")]
+fn research_exit_after_first_gather_batch(
+    job: &Job,
+    task: TaskId,
+    token: &CancellationToken,
+) -> Result<()> {
+    // The first batch was sent. The coordinator releases this gate only after
+    // every original producer result has arrived, then verifies gather received it.
+    let deadline = Instant::now() + crate::TASK_TIMEOUT;
+    while !job.release_final.load(Ordering::Acquire) {
+        token.check()?;
+        require(Instant::now() < deadline, "failure boundary gate timed out")?;
+        thread::sleep(Duration::from_millis(2));
+    }
+    eprintln!(
+        "ADE research worker process exit job={:?} final={task:?} attempt=0 gather_batches_before_exit=1",
+        job.spec.job
+    );
+    std::process::exit(86);
 }
 // A single RPC owns the whole bounded episode. Cancellation uses the original job token.
 fn recover(
@@ -297,8 +310,7 @@ fn recover_inner(
         require(
             closure.producer == TaskId(p as u64)
                 && closure.original.logical
-                    == transfer(plan.job, 0, plan.partition.0, p as u64).logical()
-                && closure.morsels == snapshot.producer_morsels(closure.producer, count),
+                    == transfer(plan.job, 0, plan.partition.0, p as u64).logical(),
             "recovery closure/source mismatch",
         )?;
         plan.ranges[p].validate(&closure.original)?;
@@ -306,23 +318,32 @@ fn recover_inner(
             plan.ranges[p].start == 0 && plan.ranges[p].end_exclusive == closure.original.segments,
             "recovery requires full transfer range",
         )?;
-        crate::lineage::SourceSnapshot::verify(&closure.morsels)?;
-        let files = closure
-            .morsels
-            .iter()
-            .map(|m| m.path.clone())
-            .collect::<Vec<_>>();
-        let metrics = producer(
-            &replay,
-            &files,
-            closure.producer,
-            AttemptId(1),
-            Some((
-                usize::try_from(plan.partition.0).expect("validated partition"),
+        let manifest = if closure.original.segments == 0 {
+            // Preserve exact empty-transfer coverage without reopening source files.
+            finish_empty_replay(
                 receiver.address,
-            )),
-        )?;
-        let manifest = metrics.manifests[&plan.partition.0].clone();
+                transfer(plan.job, 0, plan.partition.0, p as u64)
+                    .with_attempt(AttemptId(1)),
+                original.store.cancellation.clone(),
+            )?
+            .1;
+            manifest
+        } else {
+            let morsels = snapshot.producer_morsels(closure.producer, count);
+            crate::lineage::SourceSnapshot::verify(&morsels)?;
+            let files = morsels.iter().map(|m| m.path.clone()).collect::<Vec<_>>();
+            let metrics = producer(
+                &replay,
+                &files,
+                closure.producer,
+                AttemptId(1),
+                Some((
+                    usize::try_from(plan.partition.0).expect("validated partition"),
+                    receiver.address,
+                )),
+            )?;
+            metrics.manifests[&plan.partition.0].clone()
+        };
         closure.original.validate_replay(&manifest)?;
         manifests.push(manifest);
     }
@@ -337,6 +358,14 @@ fn recover_inner(
         final_metrics,
         manifests,
     })
+}
+
+fn finish_empty_replay(
+    gather: SocketAddr,
+    id: crate::ids::TransferId,
+    token: CancellationToken,
+) -> Result<(crate::metrics::NetworkMetrics, crate::lineage::TransferManifest)> {
+    Sender::new(gather, id, token)?.finish_manifest()
 }
 #[allow(
     clippy::too_many_lines,
@@ -778,5 +807,59 @@ mod tests {
         handle(&state, Request::CancelJob { job: JobId(43) }).unwrap();
         assert!(state.poisoned.load(Ordering::Acquire));
         assert!(handle(&state, Request::PrepareJob(spec(JobId(44)))).is_err());
+    }
+
+    #[test]
+    fn empty_replay_emits_matching_attempt_terminal_without_source_access() {
+        use crate::ids::{AttemptId, JobId, transfer};
+        use std::net::TcpListener;
+
+        let root = tempfile::tempdir().unwrap();
+        let logical = transfer(JobId(90), 0, 1, 0);
+        let original_store = Arc::new(
+            Store::new(
+                root.path(),
+                [logical].into(),
+                CancellationToken::default(),
+            )
+            .unwrap(),
+        );
+        let receiving = original_store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        let original = finish_empty_replay(
+            receiver.address,
+            logical,
+            CancellationToken::default(),
+        )
+        .unwrap()
+        .1;
+        assert_eq!(original.segments, 0);
+        drop(receiver);
+
+        let replay_store = Arc::new(
+            Store::new(
+                root.path(),
+                [logical.with_attempt(AttemptId(1))].into(),
+                CancellationToken::default(),
+            )
+            .unwrap(),
+        );
+        let receiving = replay_store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        let replay = finish_empty_replay(
+            receiver.address,
+            logical.with_attempt(AttemptId(1)),
+            CancellationToken::default(),
+        )
+        .unwrap()
+        .1;
+        original.validate_replay(&replay).unwrap();
+        assert_eq!(replay_store.metrics().unwrap().batches, 0);
     }
 }

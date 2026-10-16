@@ -289,6 +289,14 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 .is_err(),
                 "final task error without confirmed worker unavailability",
             )?;
+            #[cfg(feature = "research-hooks")]
+            if job.config.research_exit_final_partition == Some(plan.partition.0) {
+                gather.wait_for_partial_prefix(plan.partition.0, Duration::from_secs(2))?;
+            }
+            let replay_snapshot = job
+                .snapshot
+                .as_ref()
+                .ok_or_else(|| Error::Unrecoverable("missing source snapshot".into()))?;
             let address = gather.start_recovery(parent.path(), plan.partition.0)?;
             let reply = protocol::rpc(
                 &job.workers[usize::try_from(plan.host.0)
@@ -320,8 +328,21 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 worker_failures_detected: 1,
                 recovery_attempts: 1,
                 recovered_partitions: 1,
-                replayed_producer_tasks: plan.closures.len() as u64,
-                replayed_morsels: plan.closures.iter().map(|c| c.morsels.len() as u64).sum(),
+                replayed_producer_tasks: plan
+                    .closures
+                    .iter()
+                    .filter(|closure| closure.original.segments > 0)
+                    .count() as u64,
+                replayed_morsels: plan
+                    .closures
+                    .iter()
+                    .filter(|closure| closure.original.segments > 0)
+                    .map(|closure| {
+                        replay_snapshot
+                            .producer_morsels(closure.producer, job.workers.len())
+                            .len() as u64
+                    })
+                    .sum(),
                 lost_segments: plan.closures.iter().map(|c| c.original.segments).sum(),
                 lost_payload_bytes: plan.closures.iter().map(|c| c.original.payload_bytes).sum(),
                 recomputed_segments: manifests.iter().map(|m| m.segments).sum(),

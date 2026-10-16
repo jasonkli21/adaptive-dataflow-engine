@@ -87,6 +87,28 @@ impl Gather {
         self.receivers.push(receiver);
         Ok(address)
     }
+    #[cfg(feature = "research-hooks")]
+    pub(crate) fn wait_for_partial_prefix(
+        &self,
+        partition: u64,
+        timeout: std::time::Duration,
+    ) -> Result<()> {
+        let id = transfer(self.job, 1, 0, self.workers as u64 + partition);
+        let store = &self.stores[&(partition, 0)];
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let batches = store.observed_batches(id)?;
+            if batches > 0 {
+                require(batches == 1, "research failure did not leave a one-batch prefix")?;
+                return Ok(());
+            }
+            require(
+                std::time::Instant::now() < deadline,
+                "research failure produced no accepted gather batch",
+            )?;
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
     pub(crate) fn commit(
         &mut self,
         partition: u64,

@@ -280,7 +280,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
     ) -> Result<Self> {
         require(
             case.query == Query::GroupBySum,
-            "ade-distributed supports only synthetic GroupBySum in Phase 5",
+            "ade-distributed supports only synthetic GroupBySum",
         )?;
         case.validate()?;
         manifest.validate()?;

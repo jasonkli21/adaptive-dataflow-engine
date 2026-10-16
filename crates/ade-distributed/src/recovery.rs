@@ -2,7 +2,7 @@
 use crate::{
     Error, Result,
     ids::{AttemptId, JobId, PartitionId, TaskId, WorkerId, transfer},
-    lineage::{SourceMorsel, SourceSnapshot, TransferManifest},
+    lineage::{SourceSnapshot, TransferManifest},
     metrics::TaskMetrics,
     require,
 };
@@ -32,7 +32,6 @@ impl SegmentRange {
 #[serde(deny_unknown_fields)]
 pub struct ReplayClosure {
     pub producer: TaskId,
-    pub morsels: Vec<SourceMorsel>,
     pub original: TransferManifest,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,9 +156,10 @@ pub fn plan(
                 start: 0,
                 end_exclusive: original.segments,
             });
+            // Paths are already in the prepared snapshot on the recovery host.
+            // The compact closure carries only terminal evidence and producer identity.
             closures.push(ReplayClosure {
                 producer: TaskId(p),
-                morsels: snapshot.producer_morsels(TaskId(p), workers),
                 original,
             });
         }
@@ -178,7 +178,7 @@ pub fn plan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ids::MorselId, metrics::NetworkMetrics};
+    use crate::{ids::MorselId, lineage::SourceMorsel, metrics::NetworkMetrics};
     fn facts() -> (SourceSnapshot, BTreeMap<u64, TaskMetrics>) {
         let snapshot = SourceSnapshot {
             version: 1,
@@ -235,13 +235,16 @@ mod tests {
         );
         assert_eq!(a.reused_partitions, [0]);
         assert_eq!(
-            a.closures[1]
-                .morsels
+            snapshot
+                .producer_morsels(a.closures[1].producer, 2)
                 .iter()
                 .map(|m| m.id)
                 .collect::<Vec<_>>(),
             [MorselId(1), MorselId(3)]
         );
+        assert_eq!(a.closures.len(), 2);
+        assert_eq!(a.closures[0].producer, TaskId(0));
+        assert_eq!(a.closures[1].producer, TaskId(1));
         assert_eq!(a.ranges.len(), 2);
         assert!(
             a.ranges
@@ -249,12 +252,13 @@ mod tests {
                 .all(|r| r.transfer.partition == PartitionId(1))
         );
         assert_eq!(a.ranges[0].end_exclusive, 0); // Empty transfer remains explicit.
-        for (r, c) in a.ranges.iter().zip(&a.closures) {
-            r.validate(&c.original).unwrap();
+        for r in &a.ranges {
+            let original = &producers[&r.transfer.producer.0].manifests[&r.transfer.partition.0];
+            r.validate(original).unwrap();
         }
         let mut bad = a.ranges[1].clone();
         bad.start = 2;
-        assert!(bad.validate(&a.closures[1].original).is_err());
+        assert!(bad.validate(&producers[&1].manifests[&1]).is_err());
     }
     #[test]
     fn refuses_incomplete_multiple_losses_and_invalid_lineage() {
@@ -277,5 +281,40 @@ mod tests {
         assert!(plan(JobId(42), 2, Some(&snapshot), &producers, &[0], &[1]).is_err());
         producers.remove(&0);
         assert!(plan(JobId(42), 2, Some(&snapshot), &producers, &[0], &[1]).is_err());
+    }
+
+    #[test]
+    fn admitted_large_snapshot_is_not_duplicated_in_recovery_request() {
+        let (mut snapshot, producers) = facts();
+        snapshot.morsels = (0..5_000)
+            .map(|i| SourceMorsel {
+                id: MorselId(i),
+                path: format!("/data/partition-{i:05}-with-a-long-source-file-name.parquet").into(),
+                fingerprint: "b".repeat(64),
+                bytes: 4_096,
+            })
+            .collect();
+        let workers = (0..2)
+            .map(|id| crate::WorkerEndpoint {
+                id: WorkerId(id),
+                control: "127.0.0.1:10000".parse().unwrap(),
+                exchange: "127.0.0.1:10001".parse().unwrap(),
+            })
+            .collect();
+        let prepare = crate::protocol::Request::PrepareJob(crate::protocol::JobSpec {
+            job: JobId(42),
+            workers,
+            config: crate::TaskConfig::default(),
+            snapshot: Some(snapshot.clone()),
+        });
+        assert!(serde_json::to_vec(&prepare).unwrap().len() < crate::protocol::MAX_CONTROL_BYTES);
+        let plan = plan(JobId(42), 2, Some(&snapshot), &producers, &[0], &[1]).unwrap();
+        let request = crate::protocol::Request::RecoverFinal {
+            plan,
+            gather: "127.0.0.1:12345".parse().unwrap(),
+        };
+        let encoded = serde_json::to_vec(&request).unwrap();
+        assert!(encoded.len() < crate::protocol::MAX_CONTROL_BYTES);
+        assert!(!String::from_utf8(encoded).unwrap().contains("partition-00000"));
     }
 }

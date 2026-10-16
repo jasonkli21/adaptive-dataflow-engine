@@ -74,22 +74,23 @@ for case in sorted(expected_cases):
     assert recovery['committed_attempts'] == {str(p): (1 if profile == 'recover' and p == 0 else 0) for p in range(workers)}
     exits = [line for line in log.splitlines() if 'research worker process exit' in line]
     if profile == 'recover':
-        assert len(exits) == 1 and 'attempt=0 complete_input=true' in exits[0]
+        assert len(exits) == 1 and 'attempt=0 gather_batches_before_exit=1' in exits[0]
         assert recovery['worker_failures_detected'] == recovery['recovery_attempts'] == recovery['recovered_partitions'] == 1
         assert recovery['full_job_restart_avoided']
         assert recovery['planner_reason'] == 'single_final_worker_loss_recompute_file_lineage_no_durable_copy'
         plan = recovery['plan']
         assert plan['job'] == original_job == 0 and plan['partition'] == 0 and plan['host'] == 1
         assert plan['reused_partitions'] == list(range(1, workers))
-        assert recovery['replayed_producer_tasks'] == len(plan['closures']) == len(plan['ranges']) == workers
+        assert len(plan['closures']) == len(plan['ranges']) == workers
+        assert recovery['replayed_producer_tasks'] == workers
         assert recovery['replayed_morsels'] == len(manifest['files'])
+        assert metrics['finals']['0']['sent']['batches'] > 1
         assert len(recovery['replay_manifests']) == workers
         for p, (closure, lost, replay) in enumerate(zip(plan['closures'], plan['ranges'], recovery['replay_manifests'])):
             original = producers[str(p)]['manifests']['0']
             assert closure['producer'] == p and closure['original'] == original
-            assert [m['id'] for m in closure['morsels']] == list(range(p, len(manifest['files']), workers))
-            for morsel, file in zip(closure['morsels'], manifest['files'][p::workers]):
-                assert morsel['fingerprint'] == file['fingerprint'] and morsel['bytes'] == file['bytes']
+            assert 'morsels' not in closure  # RecoverFinal references the prepared snapshot.
+            assert len(manifest['files'][p::workers]) == recovery['replayed_morsels'] // workers
             assert lost == {'transfer': original['logical'], 'start': 0, 'end_exclusive': original['segments']}
             assert replay == dict(original, attempt=1)
         assert recovery['lost_segments'] == recovery['recomputed_segments'] == sum(c['original']['segments'] for c in plan['closures'])

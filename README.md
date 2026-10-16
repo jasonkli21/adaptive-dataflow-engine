@@ -230,11 +230,16 @@ is no row-group replay, durable object restore, worker replacement, coordinator 
 or Phase 7 cost model. Inputs must remain immutable during the job.
 
 The research build accepts `research_exit_final_partition=0` (default off), which
-exits that real process after complete final input consumption and partial gather
-writes, before terminal completion. The coordinator releases the exit only after
-all original producers succeed. The default distributed library has no hook.
-Effective metadata records the hook and recovery policy. Debug metrics expose
-lost ranges, replay closures/manifests, host, committed attempts and elapsed time.
+exits that real process after sending the first non-empty gather batch, before
+remaining output batches and terminal completion. The acceptance fixture emits
+multiple batches, proving a strict partial prefix. The coordinator releases the
+exit only after all original producers succeed and confirms exactly one batch
+reached the gather store before recovery. The default distributed library has no
+hook. Effective metadata records the hook and recovery policy. Debug
+metrics expose lost ranges, compact producer closures, replay manifests and
+morsel counts derived from the prepared snapshot, host, committed attempts and
+elapsed time. Zero-segment transfers receive empty replay terminals without
+source scans.
 Missing-worker adaptive history is unavailable; summaries retain surviving
 observations and recovered finals report their actual local materialization.
 

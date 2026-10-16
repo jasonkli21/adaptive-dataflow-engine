@@ -348,6 +348,7 @@ fn real_final_worker_loss_replays_only_missing_partition_with_partial_gather() {
     job.config.research_exit_final_partition = Some(0);
     let output = coordinator::execute(&job).unwrap();
     let recovery = &output.metrics.recovery;
+    assert!(output.metrics.finals[&0].sent.batches > 1);
     assert_eq!(recovery.worker_failures_detected, 1);
     assert_eq!(recovery.recovery_attempts, 1);
     assert_eq!(recovery.replayed_producer_tasks, 2);

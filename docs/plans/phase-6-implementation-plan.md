@@ -269,7 +269,9 @@ TransferId {
 
 but helper construction and worker validation effectively assume `AttemptId(0)`.
 
-The private control protocol is currently `ADETCP02`.
+The private control protocol is `ADETCP04`. Version 03 carried source descriptors
+inside the recovery plan; version 04 keeps only producer/terminal references and
+resolves file assignments from the worker's prepared source snapshot.
 
 The exchange segment wire is version 2. A transfer carries full `TransferId`; each non-empty frame carries a monotonically increasing sequence number, and terminal completion carries the final segment count.
 
@@ -448,7 +450,10 @@ SourceSnapshot
 
 A producer's current partial hash aggregate is built across all files assigned to that producer. Therefore the truthful minimal closure for one lost producer→partition transfer is currently:
 
-> the full set of source morsels assigned to that producer task, followed by the same project/partial-aggregate/partition pipeline, while emitting only the target partition.
+> for non-empty lost transfers, the full set of source morsels assigned to that
+> producer task, followed by the same project/partial-aggregate/partition
+> pipeline, while emitting only the target partition. A zero-segment transfer
+> needs only an attempt-1 empty terminal and does not scan its source closure.
 
 This is still a meaningful minimal closure because recovery can exclude:
 
@@ -784,6 +789,10 @@ Requirements:
 - recorded in benchmark effective configuration;
 - cannot trigger accidentally in normal builds;
 - must terminate the worker process, not just return a synthetic error;
+- must exit after sending one non-empty gather batch, before remaining batches
+  and the terminal; the acceptance fixture must produce multiple batches, and
+  the coordinator must confirm it decoded exactly one batch before recovery;
+- a coordinator gate releases the hook only after every producer RPC succeeds;
 - must not corrupt source rows or routing before the declared failure point.
 
 Do not add a broad production fault-injection framework in this phase.
@@ -794,7 +803,7 @@ Do not add a broad production fault-injection framework in this phase.
 
 Phase 6 will likely add requests/replies for recovery preparation, replay, and recovered final execution.
 
-Because the serialized control schema changes, bump the private control magic/version from `ADETCP02` to the next version (expected `ADETCP03`) unless implementation avoids any serialized schema change.
+Because the serialized control schema changes, bump the private control magic/version from `ADETCP02`. The accepted implementation uses `ADETCP04`: version 03 was subsequently extended to remove redundant source morsels from `RecoverFinal`.
 
 Add a focused test proving the new implementation rejects the prior control protocol before decoding incompatible JSON.
 
@@ -992,6 +1001,8 @@ Required evidence:
 - real target worker process exited;
 - all original producer tasks completed successfully;
 - one logical final partition was missing;
+- the failed attempt had one decoded gather batch and fewer than the full
+  deterministic result batch count, with no terminal;
 - lost transfer/segment ranges were derived;
 - only the lost partition's upstream producer closures were replayed;
 - unaffected final partition was not rerun;

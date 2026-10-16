@@ -23,10 +23,12 @@ unavailability and runs one bounded episode on the lowest successful survivor.
 Only the missing destination is emitted; successful final partitions are reused.
 No new logical JobId or whole-job restart occurs.
 
-The demonstrated failure is an actual `process::exit(86)` after consuming complete
-final input and writing partial gather batches, before the terminal. This proves
-incomplete-attempt isolation. The coordinator releases the hook only after
-receiving every original producer result, eliminating a producer-ACK/exit race.
+The demonstrated failure is an actual `process::exit(86)` after the first
+non-empty gather batch is sent, before remaining output batches and the terminal.
+The acceptance fixture emits multiple batches. The coordinator releases the hook
+only after receiving every original producer result, then confirms the gather
+store decoded exactly one attempt-0 batch before recovery. This proves a strict
+incomplete-attempt prefix and avoids a producer-ACK/exit race.
 Other failure windows are not claimed. Producers, multiple losses, live-worker
 task errors, timeouts, missing/invalid snapshots, non-replayable lineage, replay
 mismatch, poisoned hosts, ambiguous completed gather or recovery failure still
@@ -54,7 +56,7 @@ fail/cancel the job with no partial output.
 One direct `blake3` dependency was added using an already locked workspace package;
 no package upgrades. Crate direction remains `ade-bench -> ade-distributed ->
 ade-exec`. Core execution has no frontend dependency. Control framing is now
-`ADETCP03`; a test rejects `ADETCP02` before incompatible payload decoding.
+`ADETCP04`; a test rejects `ADETCP03` before incompatible payload decoding.
 Exchange wire v2, hash v1, schema v1, child protocol and benchmark result schema v1
 are unchanged. Worker/coordinator builds must match.
 
@@ -76,10 +78,11 @@ protection against adversarial concurrent file mutation.
 
 The graph has implicit deterministic edges from ordered morsels to round-robin
 producer tasks and from each producer to each hash destination. Partial aggregate
-state spans every file assigned to its producer. Therefore each missing transfer
-requires that producer's complete file closure, while replay enables **only** the
-missing destination. There is no row-group, source-range or individual-segment
-replay primitive. Empty original transfers retain explicit zero-count coverage.
+state spans every file assigned to its producer. Therefore each non-empty missing
+transfer requires that producer's complete file closure, while replay enables
+**only** the missing destination. Zero-segment transfers receive an attempt-1
+empty terminal without reopening source files. There is no row-group,
+source-range or individual-segment replay primitive.
 
 Original successful producer evidence must contain exactly N destinations and N
 manifests, matching the job/exchange/producer/destination, attempt 0, counts and
@@ -98,14 +101,17 @@ and fingerprint. Identical replay must match every field after replacing only
 attempt 0 with attempt 1. Tests cover identical/empty replay, unexpected attempts,
 changed content/segment count and the existing duplicate/gap/terminal rejection.
 
-The host executes one `RecoverFinal` RPC. It rejects poisoning, active original
-roles and duplicate recovery. A fresh local-materialized Store/receiver expects
-original logical producer IDs, the original JobId, lost destination and attempt
-1. Closures execute sequentially through the same spillable partial aggregate;
-only the target partition opens a sender. Source/range identity is checked, then
-each acknowledged replay manifest is compared before the existing final merge
-aggregate runs. Coordinator validation repeats the manifest comparison before
-promoting the recovered gather output.
+The host executes one `RecoverFinal` RPC. The request carries producer identities,
+terminal manifests and lost ranges; source paths are derived from the snapshot
+already held by the prepared worker. It rejects poisoning, active original roles
+and duplicate recovery. A fresh local-materialized Store/receiver expects original
+logical producer IDs, the original JobId, lost destination and attempt 1. Non-empty
+closures execute sequentially through the same spillable partial aggregate; only
+the target partition opens a sender. Empty closures send an empty terminal
+directly. Source/range identity is checked, then each acknowledged replay
+manifest is compared before the existing final merge aggregate runs. Coordinator
+validation repeats the manifest comparison before promoting the recovered gather
+output.
 
 This is a deliberate deviation from several recovery-session RPCs: a single
 owner bounds state/concurrency, uses the original job cancellation token and
@@ -117,7 +123,8 @@ or scheduler was added.
 
 Each original logical final has a distinct local-materialized Store expecting
 attempt 0. Its task reply and gathered terminal counters must agree before
-promotion. An incomplete failed store is cancelled/quarantined; an already
+promotion. Under the research hook, one bounded in-flight counter confirms a
+single decoded batch before recovery proceeds. An incomplete failed store is cancelled/quarantined; an already
 validated old terminal refuses replacement as ambiguous. A distinct recovery
 receiver/store expects only that final's attempt 1. Old traffic cannot reach the
 new store. Duplicate promotion fails, and collection requires exactly N committed
@@ -133,8 +140,9 @@ or timed-out recovery host fails the job without another episode. An OS file
 operation itself is not made preemptible by this phase.
 
 Diagnostics include real loss detection, one plan/attempt, exact lost ranges,
-source closure/morsels, replay manifests, host, recomputed counts/bytes, elapsed
-time, restart avoidance and one committed attempt per partition. Network
+compact producer closures, source-derived replay morsel counts, replay manifests,
+host, recomputed counts/bytes, elapsed time, restart avoidance and one committed
+attempt per partition. Network
 conservation compares original production with surviving/recomputed final input;
 replay traffic is reported separately instead of double-counting original sends.
 For an adaptive job, the summary includes surviving original-final observations.
@@ -144,8 +152,10 @@ reports local materialization. No adaptive history is fabricated.
 Metadata is bounded by source file count and topology (N<=4, N² original
 manifests, N lost ranges/closures, one episode, N gather commits). There is no
 per-segment history/map, per-segment RPC, or unbounded recovery channel. The 1 MiB
-control cap rejects oversized snapshots/plans. Hashing uses an 8 KiB scratch
-buffer. Sequential replay uses one task budget followed by one final budget;
+control cap rejects oversized snapshots/plans. RecoverFinal references source
+descriptors from the prepared snapshot instead of duplicating them; a test admits
+a 5,000-file synthetic prepared snapshot and keeps the recovery request under that cap. Hashing uses
+an 8 KiB scratch buffer. Sequential replay uses one task budget followed by one final budget;
 original producer/final budgets may overlap. Exchange accounting is separate,
 disk volume has no quota, and managed memory is not a process RSS cap.
 
@@ -232,14 +242,29 @@ adaptive with four workers. A ninth negative case uses the same exit hook but
 result and diagnostic stderr are retained. No timing threshold is used.
 
 The verifier checks source/build/environment/dataset/workload identity, independent
-oracle fingerprints, real exit evidence, all original terminals, exact missing
-ranges/closures/morsels, target-only replay, manifest equality, original JobId,
+oracle fingerprints, real exit evidence after one decoded gather batch,
+all original terminals, exact missing ranges/compact closures, target-only replay,
+source-derived replay morsel counts, manifest equality, original JobId,
 committed attempts, survivor reuse, conservation, drained retention, bounded
 adaptive transitions and the negative error classification. Final clean-commit
 artifacts are stored under `benchmarks/results/phase6-acceptance-20261016`, with
 verifier output `verification.json` there. The final handoff states the run result;
 source SHA is embedded in artifacts rather than inferred from a dirty development
 binary. Unrelated user files are not hidden or ignored to satisfy provenance.
+
+## Review remediation follow-up (2026-10-16)
+
+The independent Phase 6 review identified empty-transfer source replay, duplicated
+source descriptors in `RecoverFinal`, weak partial-gather process evidence, and
+stale adapter wording. The remediation now sends empty attempt-1 terminals without
+source access, derives non-empty file closures from the prepared snapshot, bumps
+control framing to `ADETCP04`, confirms exactly one incomplete attempt-0 batch
+reached gather in the research acceptance path, and removes the stale phase label.
+Focused unit/integration coverage and the Phase 6 verifier were updated.
+
+Available local checks passed: `git diff --check` and an in-memory Python syntax
+compile of `scripts/phase6-verify.py`. Rust checks and release acceptance could not
+run because `cargo` and `rustfmt` are not installed or available on this host.
 
 ## Limitations and Phase 7 handoff
 

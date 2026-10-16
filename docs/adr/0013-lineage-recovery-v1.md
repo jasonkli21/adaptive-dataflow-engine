@@ -37,9 +37,11 @@ deterministic batching. Empty transfers have explicit zero-count manifests.
 The lineage graph is represented by snapshot morsels, deterministic producer
 assignment and logical transfer edges. Missing worker-local data is represented
 by one `[0, terminal_count)` range per producer transfer to the missing partition.
-Closure replays all files assigned to each required producer because partial
-aggregation spans those files. It emits only the missing destination. This is
-minimal under the current whole-producer replay primitive, not row/range replay.
+For a non-empty transfer, closure replays all files assigned to that producer
+because partial aggregation spans those files, while emitting only the missing
+destination. A zero-segment transfer gets an attempt-1 empty terminal without
+reopening its source files. This is minimal under the current whole-producer
+replay primitive, not row/range replay.
 
 ## Planning and mechanism
 
@@ -56,7 +58,10 @@ Choose the lowest successful surviving WorkerId. A single `RecoverFinal` RPC
 owns one episode on that worker after its original roles are quiescent. It
 creates a fresh localhost receiver and local-materialized Store expecting only
 the missing partition, original producer IDs, original JobId and attempt 1.
-It sequentially runs the existing producer pipeline for each closure, validates
+The RPC carries compact producer/terminal references; source paths and fingerprints
+come from the already-prepared snapshot held by the worker. It sequentially runs
+the existing producer pipeline for each non-empty closure and emits empty
+terminals for zero-segment transfers, then validates
 each terminal fingerprint/count against attempt 0, then runs the existing final
 merge aggregate. The host rejects poisoning, non-quiescence, duplicate recovery,
 foreign sources/ranges and unexpected attempts. No general scheduler is needed.
@@ -90,19 +95,24 @@ uses one producer task budget, followed by one final budget; exchange/disk and
 codec resources retain existing bounds/limitations. Recovery local disk volume
 has no quota. The local ledger is not an RSS limit.
 
-Control framing is `ADETCP03`; old `ADETCP02` is rejected before payload decoding.
+Control framing is `ADETCP04`; old `ADETCP03` is rejected before payload decoding.
 Exchange header/frame versions remain unchanged. Recovery diagnostics record the
-plan, exact ranges, closure morsels, manifests, counts, host, elapsed time and
-committed attempts. Adaptive summaries contain only observed surviving original
+plan, exact ranges, compact producer closures, replayed morsel counts, manifests,
+host, elapsed time and committed attempts. The 1 MiB request-boundary test admits
+a 5,000-file synthetic source snapshot and confirms the recovery request does not
+reserialize its source descriptors. Adaptive summaries contain only observed surviving original
 finals; missing-worker adaptive history is unavailable, and the recovered final
 reports actual local materialization rather than fabricated adaptive history.
 
 The feature-gated, default-off `research_exit_final_partition` exits the real
-worker process with code 86 after complete input consumption and partial gather
-writes, before its terminal. A coordinator gate releases it only after all
-original producer RPCs succeeded. It proves partial-attempt isolation as well as
-worker loss. The hook has no default-library setting/branch. Production recovery
-does not depend on the hook.
+worker process with code 86 immediately after sending the first non-empty
+gather batch, before remaining batches and its terminal. The acceptance workload
+produces multiple batches. A coordinator gate releases it only after all original
+producer RPCs succeeded, then confirms the gather store decoded exactly one
+attempt-0 batch before starting recovery. The feature-only observation is bounded
+to one counter per in-flight transfer. It proves strict-prefix partial-attempt
+isolation as well as worker loss. The hook has no default-library setting/branch.
+Production recovery does not depend on the hook.
 
 ## Limitations
 

@@ -261,6 +261,9 @@ struct AdaptiveState {
 struct Registry {
     completed: BTreeMap<TransferId, (PathBuf, NetworkMetrics)>,
     started: BTreeSet<TransferId>,
+    // One accepted-prefix counter per in-flight transfer, never per segment.
+    #[cfg(feature = "research-hooks")]
+    observed_batches: BTreeMap<TransferId, u64>,
 }
 /// One fixed expected transfer set and a unique execution-local root.
 pub struct Store {
@@ -352,6 +355,8 @@ impl Store {
             registry: Mutex::new(Registry {
                 completed: BTreeMap::new(),
                 started: BTreeSet::new(),
+                #[cfg(feature = "research-hooks")]
+                observed_batches: BTreeMap::new(),
             }),
             cancellation,
         })
@@ -392,6 +397,19 @@ impl Store {
             metrics.add(m);
         }
         Ok(metrics)
+    }
+    /// Number of fully decoded and retained data batches for a transfer,
+    /// including an incomplete transfer without a terminal.
+    #[cfg(feature = "research-hooks")]
+    pub(crate) fn observed_batches(&self, id: TransferId) -> Result<u64> {
+        let registry = self
+            .registry
+            .lock()
+            .map_err(|_| Error::Invalid("registry poisoned".into()))?;
+        if let Some((_, metrics)) = registry.completed.get(&id) {
+            return Ok(metrics.batches);
+        }
+        Ok(registry.observed_batches.get(&id).copied().unwrap_or(0))
     }
     /// One common reader for live, spill and finalized materializations.
     #[must_use]
@@ -600,6 +618,12 @@ impl Store {
             metrics.rows += rows;
             metrics.payload_bytes += length as u64;
             metrics.peak_frame_bytes = metrics.peak_frame_bytes.max(length);
+            #[cfg(feature = "research-hooks")]
+            self.registry
+                .lock()
+                .expect("registry lock")
+                .observed_batches
+                .insert(header.id, metrics.batches);
         }
         if let Some(writer) = &mut writer {
             writer.finish()?;
@@ -620,11 +644,10 @@ impl Store {
                 .map_err(|e| Error::Io(e.error))?;
         }
         metrics.transfers = 1;
-        self.registry
-            .lock()
-            .expect("registry lock")
-            .completed
-            .insert(header.id, (path, metrics));
+        let mut registry = self.registry.lock().expect("registry lock");
+        #[cfg(feature = "research-hooks")]
+        registry.observed_batches.remove(&header.id);
+        registry.completed.insert(header.id, (path, metrics));
         Ok(())
     }
 }

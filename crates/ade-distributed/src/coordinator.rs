@@ -91,57 +91,66 @@ fn cancel(workers: &[WorkerEndpoint], job: JobId) {
         }
     });
 }
-fn stage(
+fn tasks(
     job: &StaticAggregateJob,
-    name: &'static str,
-    requests: Vec<Request>,
-) -> Result<BTreeMap<u64, TaskMetrics>> {
+    producers: Vec<Request>,
+    finals: Vec<Request>,
+) -> Result<(BTreeMap<u64, TaskMetrics>, BTreeMap<u64, TaskMetrics>)> {
     let deadline = Instant::now() + job.task_timeout;
     thread::scope(|scope| {
-        let (tx, rx) = mpsc::sync_channel(job.workers.len());
-        for (worker, request) in job.workers.iter().zip(requests) {
-            let tx = tx.clone();
-            scope.spawn(move || {
-                let response =
-                    protocol::rpc_until(worker, request, deadline).and_then(|reply| match reply {
-                        Reply::Task(metrics) => Ok(metrics),
-                        _ => Err(Error::Invalid("unexpected task response".into())),
-                    });
-                let _ = tx.send((worker.id, response));
-            });
+        let (tx, rx) = mpsc::sync_channel(2 * job.workers.len());
+        // Spawn final readers first. A producer may win CPU dispatch; bounded handoff
+        // safely waits until its reader is pulling, without a separate barrier RPC.
+        for (is_final, requests) in [(true, finals), (false, producers)] {
+            for (worker, request) in job.workers.iter().zip(requests) {
+                let tx = tx.clone();
+                scope.spawn(move || {
+                    let response =
+                        protocol::rpc_until(worker, request, deadline).and_then(|r| match r {
+                            Reply::Task(m) => Ok(m),
+                            _ => Err(Error::Invalid("unexpected task response".into())),
+                        });
+                    let _ = tx.send((worker.id, is_final, response));
+                });
+            }
         }
         drop(tx);
-        let mut metrics = BTreeMap::new();
-        for _ in &job.workers {
-            let received = rx.recv_timeout(deadline.saturating_duration_since(Instant::now()));
-            let (worker, result) = match received {
-                Ok(result) => result,
-                Err(error) => {
-                    cancel(&job.workers, job.id);
-                    return Err(Error::Task {
-                        job: job.id,
-                        worker: WorkerId(u64::MAX),
-                        stage: name,
-                        message: format!("stage timeout/disconnect: {error}"),
-                    });
+        let mut producers = BTreeMap::new();
+        let mut finals = BTreeMap::new();
+        for _ in 0..2 * job.workers.len() {
+            let (worker, is_final, response) =
+                match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        cancel(&job.workers, job.id);
+                        return Err(Error::Task {
+                            job: job.id,
+                            worker: WorkerId(u64::MAX),
+                            stage: "overlap",
+                            message: e.to_string(),
+                        });
+                    }
+                };
+            match response {
+                Ok(m) => {
+                    if is_final {
+                        finals.insert(worker.0, m);
+                    } else {
+                        producers.insert(worker.0, m);
+                    }
                 }
-            };
-            match result {
-                Ok(task) => {
-                    metrics.insert(worker.0, task);
-                }
-                Err(error) => {
+                Err(e) => {
                     cancel(&job.workers, job.id);
                     return Err(Error::Task {
                         job: job.id,
                         worker,
-                        stage: name,
-                        message: error.to_string(),
+                        stage: if is_final { "final" } else { "producer" },
+                        message: e.to_string(),
                     });
                 }
             }
         }
-        Ok(metrics)
+        Ok((producers, finals))
     })
 }
 /// Execute one complete static graph; errors never return partial output.
@@ -204,23 +213,18 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         for (i, file) in job.files.iter().enumerate() {
             assignments[i % job.workers.len()].push(file.clone());
         }
-        state = JobState::ProducersRunning;
-        let producers = stage(
-            job,
-            "producer",
-            assignments
-                .into_iter()
-                .enumerate()
-                .map(|(i, files)| Request::RunProducerTask {
-                    job: job.id,
-                    task: TaskId(i as u64),
-                    attempt: AttemptId(0),
-                    files,
-                })
-                .collect(),
-        )?;
-        state = JobState::ExchangeComplete;
-        let requests = job
+        state = JobState::FinalsRunning;
+        let producers = assignments
+            .into_iter()
+            .enumerate()
+            .map(|(i, files)| Request::RunProducerTask {
+                job: job.id,
+                task: TaskId(i as u64),
+                attempt: AttemptId(0),
+                files,
+            })
+            .collect();
+        let finals = job
             .workers
             .iter()
             .map(|w| Request::RunFinalTask {
@@ -230,12 +234,36 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 gather: receiver.address,
             })
             .collect();
-        state = JobState::FinalsRunning;
-        let finals = stage(job, "final", requests)?;
+        let (producers, finals) = tasks(job, producers, finals)?;
+        // Validate conservation before any successful result can escape.
+        let sent =
+            producers
+                .values()
+                .fold(crate::metrics::NetworkMetrics::default(), |mut a, m| {
+                    a.add(&m.sent);
+                    a
+                });
+        let accepted =
+            finals
+                .values()
+                .fold(crate::metrics::NetworkMetrics::default(), |mut a, m| {
+                    a.add(&m.received);
+                    a
+                });
+        require(
+            sent.transfers == (job.workers.len() * job.workers.len()) as u64
+                && sent.transfers == accepted.transfers
+                && sent.batches == accepted.batches
+                && sent.rows == accepted.rows
+                && sent.payload_bytes == accepted.payload_bytes
+                && accepted.rows == finals.values().map(|m| m.input_rows as u64).sum::<u64>(),
+            "exchange conservation failure",
+        )?;
         let batches = exchange::collect(&store)?;
         state = JobState::GatherComplete;
         let metrics = DistributedMetrics {
             worker_count: job.workers.len(),
+            exchange_mode: job.config.exchange.mode,
             elapsed_ms: 0,
             received: finals
                 .iter()

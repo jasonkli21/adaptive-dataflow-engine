@@ -1,7 +1,11 @@
 //! Bounded TCP frames and ephemeral IPC retention. ACK follows file finalization.
 use crate::{
-    Error, Result, ids::TransferId, metrics::NetworkMetrics, partition::HASH_VERSION, protocol,
-    require,
+    Error, ExchangeConfig, ExchangeMode, Result,
+    ids::TransferId,
+    metrics::NetworkMetrics,
+    partition::HASH_VERSION,
+    protocol, require,
+    retention::{Buffer, Objects, RetentionMetrics},
 };
 use ade_exec::CancellationToken;
 use arrow::{
@@ -41,6 +45,7 @@ pub struct Header {
     pub id: TransferId,
     pub hash_version: u32,
     pub schema_version: u32,
+    pub wire_version: u32,
 }
 impl Header {
     /// Construct the current private schema/hash version envelope.
@@ -50,11 +55,12 @@ impl Header {
             id,
             hash_version: HASH_VERSION,
             schema_version: 1,
+            wire_version: 2,
         }
     }
     fn validate(&self) -> Result<()> {
         require(
-            self.hash_version == HASH_VERSION && self.schema_version == 1,
+            self.hash_version == HASH_VERSION && self.schema_version == 1 && self.wire_version == 2,
             "exchange hash/schema version mismatch",
         )
     }
@@ -192,6 +198,7 @@ impl Sender {
                 .map_err(|_| Error::Invalid("frame length overflow".into()))?
                 .to_le_bytes(),
         )?;
+        socket.write_all(&self.metrics.batches.to_le_bytes())?;
         socket.write_all(&encoded.0)?;
         self.metrics.batches += 1;
         self.metrics.rows += batch.num_rows() as u64;
@@ -205,6 +212,7 @@ impl Sender {
         self.cancellation.check()?;
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
         socket.write_all(&0u32.to_le_bytes())?;
+        socket.write_all(&self.metrics.batches.to_le_bytes())?;
         let ack: std::result::Result<TransferId, String> = protocol::read_message(&mut socket)?;
         let id = ack.map_err(|message| Error::Remote {
             code: "exchange".into(),
@@ -225,6 +233,9 @@ pub struct Store {
     root: tempfile::TempDir,
     expected: BTreeSet<TransferId>,
     registry: Mutex<Registry>,
+    config: ExchangeConfig,
+    buffer: Buffer,
+    objects: Option<Objects>,
     pub cancellation: CancellationToken,
 }
 impl Store {
@@ -235,14 +246,36 @@ impl Store {
         expected: BTreeSet<TransferId>,
         cancellation: CancellationToken,
     ) -> Result<Self> {
+        Self::configured(parent, expected, cancellation, ExchangeConfig::default())
+    }
+    /// Create a destination session with one static retention mechanism.
+    /// # Errors
+    /// Returns configuration, backend or temporary storage errors.
+    pub fn configured(
+        parent: &Path,
+        expected: BTreeSet<TransferId>,
+        cancellation: CancellationToken,
+        config: ExchangeConfig,
+    ) -> Result<Self> {
+        config.validate()?;
         require(
             !expected.is_empty() && expected.len() <= 16,
             "expected transfer set must contain 1..16 identities",
         )?;
+        let root = tempfile::Builder::new()
+            .prefix("ade-exchange-")
+            .tempdir_in(parent)?;
+        let buffer = Buffer::new(config.clone(), root.path())?;
+        let objects = if config.mode == ExchangeMode::ObjectStoreMaterialized {
+            Some(Objects::local(parent)?)
+        } else {
+            None
+        };
         Ok(Self {
-            root: tempfile::Builder::new()
-                .prefix("ade-exchange-")
-                .tempdir_in(parent)?,
+            root,
+            config,
+            buffer,
+            objects,
             expected,
             registry: Mutex::new(Registry {
                 completed: BTreeMap::new(),
@@ -255,6 +288,10 @@ impl Store {
     /// Returns cancellation or incomplete-transfer errors.
     pub fn paths(&self) -> Result<Vec<PathBuf>> {
         self.cancellation.check()?;
+        require(
+            self.config.mode == ExchangeMode::LocalMaterialized,
+            "paths require local materialization; use the common reader",
+        )?;
         let registry = self
             .registry
             .lock()
@@ -284,65 +321,113 @@ impl Store {
         }
         Ok(metrics)
     }
+    /// One common reader for live, spill and finalized materializations.
+    #[must_use]
+    pub fn reader(self: &Arc<Self>) -> Box<dyn ade_exec::BatchSource> {
+        Box::new(Source {
+            store: self.clone(),
+            files: None,
+            ipc: None,
+            objects: Vec::new().into_iter(),
+            object: None,
+        })
+    }
+    /// # Errors
+    /// Returns registry or finalized-file metadata errors.
+    pub fn retention_metrics(&self) -> Result<RetentionMetrics> {
+        let mut m = self.buffer.metrics();
+        if let Some(objects) = &self.objects {
+            let objects = objects.metrics();
+            m.object_count = objects.object_count;
+            m.object_write_bytes = objects.object_write_bytes;
+            m.object_read_bytes = objects.object_read_bytes;
+            return Ok(m);
+        }
+        if self.config.mode == ExchangeMode::LocalMaterialized {
+            let r = self
+                .registry
+                .lock()
+                .map_err(|_| Error::Invalid("registry poisoned".into()))?;
+            m.local_materialized_files = r.completed.len() as u64;
+            for (path, _) in r.completed.values() {
+                m.local_materialized_bytes += std::fs::metadata(path)?.len();
+            }
+        }
+        Ok(m)
+    }
+    fn complete(&self) -> bool {
+        self.registry.lock().expect("registry lock").completed.len() == self.expected.len()
+    }
     fn receive(&self, header: &Header, socket: &mut TcpStream) -> Result<()> {
+        let result = self.receive_inner(header, socket);
+        if result.is_err() {
+            self.cancellation.cancel();
+        }
+        result
+    }
+    fn receive_inner(&self, header: &Header, socket: &mut TcpStream) -> Result<()> {
         header.validate()?;
         self.cancellation.check()?;
         require(
             self.expected.contains(&header.id),
             "unexpected transfer identity",
         )?;
-        {
-            let mut registry = self.registry.lock().expect("registry lock");
-            require(
-                registry.started.insert(header.id),
-                "duplicate transfer identity",
-            )?;
-        }
-        // A failed identity remains consumed; Phase 3 never retries. NamedTempFile removes partials.
-        let mut temporary = tempfile::NamedTempFile::new_in(self.root.path())?;
+        require(
+            self.registry
+                .lock()
+                .expect("registry lock")
+                .started
+                .insert(header.id),
+            "duplicate transfer identity",
+        )?;
+        let mut temporary = if self.config.mode == ExchangeMode::LocalMaterialized {
+            Some(tempfile::NamedTempFile::new_in(self.root.path())?)
+        } else {
+            None
+        };
+        let mut writer = temporary
+            .as_mut()
+            .map(|f| StreamWriter::try_new(f.as_file_mut(), &schema()))
+            .transpose()?;
         let mut metrics = NetworkMetrics::default();
-        {
-            let mut writer = StreamWriter::try_new(temporary.as_file_mut(), &schema())?;
-            loop {
-                self.cancellation.check()?;
-                let mut frame = protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT);
-                let mut length = [0; 4];
-                frame.read_exact(&mut length)?;
-                let length = u32::from_le_bytes(length) as usize;
-                if length == 0 {
-                    break;
-                }
-                require(length <= MAX_FRAME_BYTES, "exchange frame too large")?;
-                let mut encoded = vec![0; length];
-                frame.read_exact(&mut encoded)?;
-                require(
-                    encoded.ends_with(&[255, 255, 255, 255, 0, 0, 0, 0]),
-                    "frame lacks IPC completion marker",
-                )?;
-                validate_ipc_envelope(&encoded)?;
-                let mut reader = StreamReader::try_new(Cursor::new(encoded), None)?;
-                require(
-                    reader.schema() == schema(),
-                    "exchange stream schema mismatch",
-                )?;
-                let batch = reader
-                    .next()
-                    .ok_or_else(|| Error::Invalid("frame lacks record batch".into()))??;
-                validate_batch(&batch)?;
-                require(
-                    reader.next().is_none()
-                        && reader.is_finished()
-                        && reader.get_ref().position() == length as u64,
-                    "frame must contain exactly one complete batch",
-                )?;
-                writer.write(&batch)?;
-                metrics.batches += 1;
-                metrics.rows += batch.num_rows() as u64;
-                metrics.payload_bytes += length as u64;
-                metrics.peak_frame_bytes = metrics.peak_frame_bytes.max(length);
+        loop {
+            self.cancellation.check()?;
+            let mut frame = protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT);
+            let mut length = [0; 4];
+            frame.read_exact(&mut length)?;
+            let length = u32::from_le_bytes(length) as usize;
+            require(length <= MAX_FRAME_BYTES, "exchange frame too large")?;
+            let mut sequence = [0; 8];
+            frame.read_exact(&mut sequence)?;
+            require(
+                u64::from_le_bytes(sequence) == metrics.batches,
+                "segment sequence/completion count mismatch",
+            )?;
+            if length == 0 {
+                break;
             }
+            let mut encoded = vec![0; length];
+            frame.read_exact(&mut encoded)?;
+            let batch = decode(&encoded)?;
+            require(batch.num_rows() > 0, "empty data segment")?;
+            let rows = batch.num_rows() as u64;
+            if let Some(writer) = &mut writer {
+                writer.write(&batch)?;
+            } else if let Some(objects) = &self.objects {
+                objects.put(header.id, metrics.batches, encoded)?;
+            } else {
+                drop(batch);
+                self.buffer.push(encoded, &self.cancellation)?;
+            }
+            metrics.batches += 1;
+            metrics.rows += rows;
+            metrics.payload_bytes += length as u64;
+            metrics.peak_frame_bytes = metrics.peak_frame_bytes.max(length);
+        }
+        if let Some(writer) = &mut writer {
             writer.finish()?;
         }
+        drop(writer);
         self.cancellation.check()?;
         let path = self.root.path().join(format!(
             "{}-{}-{}-{}-{}.arrow",
@@ -352,9 +437,11 @@ impl Store {
             header.id.producer.0,
             header.id.attempt.0
         ));
-        temporary
-            .persist_noclobber(&path)
-            .map_err(|e| Error::Io(e.error))?;
+        if let Some(temporary) = temporary {
+            temporary
+                .persist_noclobber(&path)
+                .map_err(|e| Error::Io(e.error))?;
+        }
         metrics.transfers = 1;
         self.registry
             .lock()
@@ -362,6 +449,118 @@ impl Store {
             .completed
             .insert(header.id, (path, metrics));
         Ok(())
+    }
+}
+fn decode(encoded: &[u8]) -> Result<RecordBatch> {
+    validate_ipc_envelope(encoded)?;
+    let mut reader = StreamReader::try_new(Cursor::new(encoded), None)?;
+    require(
+        reader.schema() == schema(),
+        "exchange stream schema mismatch",
+    )?;
+    let batch = reader
+        .next()
+        .ok_or_else(|| Error::Invalid("frame lacks record batch".into()))??;
+    validate_batch(&batch)?;
+    require(
+        reader.next().is_none()
+            && reader.is_finished()
+            && reader.get_ref().position() == encoded.len() as u64,
+        "frame must contain exactly one complete batch",
+    )?;
+    Ok(batch)
+}
+struct Source {
+    store: Arc<Store>,
+    files: Option<std::vec::IntoIter<PathBuf>>,
+    ipc: Option<StreamReader<File>>,
+    objects: std::vec::IntoIter<(TransferId, u64)>,
+    object: Option<(TransferId, u64, u64)>,
+}
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ExchangeSource")
+    }
+}
+impl ade_exec::BatchSource for Source {
+    fn schema(&self) -> SchemaRef {
+        schema()
+    }
+    fn next_batch(&mut self, token: &CancellationToken) -> ade_exec::Result<Option<RecordBatch>> {
+        self.next(token)
+            .map_err(|e| ade_exec::Error::Invalid(format!("exchange source: {e}")))
+    }
+}
+impl Source {
+    fn next(&mut self, token: &CancellationToken) -> Result<Option<RecordBatch>> {
+        loop {
+            token.check()?;
+            self.store.cancellation.check()?;
+            if self.store.config.mode.live() {
+                if let Some(encoded) = self.store.buffer.take()? {
+                    return Ok(Some(decode(&encoded)?));
+                }
+                // Recheck after completion: the last segment may have arrived between checks.
+                if self.store.complete() {
+                    return self.store.buffer.take()?.map(|e| decode(&e)).transpose();
+                }
+            } else if self.store.complete() {
+                break;
+            }
+            let start = std::time::Instant::now();
+            thread::sleep(Duration::from_millis(2));
+            self.store.buffer.waited(start);
+        }
+        if self.files.is_none() {
+            self.files = Some(if self.store.objects.is_some() {
+                Vec::new().into_iter()
+            } else {
+                self.store.paths()?.into_iter()
+            });
+            self.objects = self
+                .store
+                .registry
+                .lock()
+                .expect("registry lock")
+                .completed
+                .iter()
+                .map(|(id, (_, m))| (*id, m.batches))
+                .collect::<Vec<_>>()
+                .into_iter();
+        }
+        if let Some(objects) = &self.store.objects {
+            loop {
+                if let Some((id, sequence, count)) = &mut self.object
+                    && *sequence < *count
+                {
+                    let bytes = objects.get(*id, *sequence)?;
+                    *sequence += 1;
+                    return Ok(Some(decode(&bytes)?));
+                }
+                let Some((id, count)) = self.objects.next() else {
+                    return Ok(None);
+                };
+                self.object = Some((id, 0, count));
+            }
+        }
+        loop {
+            if let Some(reader) = &mut self.ipc
+                && let Some(batch) = reader.next()
+            {
+                return Ok(Some(batch?));
+            }
+            let Some(path) = self.files.as_mut().expect("initialized").next() else {
+                return Ok(None);
+            };
+            self.ipc = Some(StreamReader::try_new(File::open(path)?, None)?);
+        }
+    }
+}
+type ActiveReceivers = Arc<Mutex<std::collections::HashMap<thread::ThreadId, CancellationToken>>>;
+struct ActiveGuard(ActiveReceivers, thread::ThreadId);
+impl Drop for ActiveGuard {
+    fn drop(&mut self) {
+        self.0.lock().expect("active receivers").remove(&self.1);
     }
 }
 /// Owns the listener and all receiver threads; Drop stops acceptance and joins bounded I/O.
@@ -382,6 +581,7 @@ impl Receiver {
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let resolve = Arc::new(resolve);
+        let active: ActiveReceivers = Arc::default();
         let handle = thread::spawn(move || {
             let mut handlers: Vec<JoinHandle<()>> = Vec::new();
             while !stopping.load(Ordering::Relaxed) {
@@ -401,6 +601,8 @@ impl Receiver {
                                 continue;
                             }
                             let resolve = resolve.clone();
+                            let active = active.clone();
+                            let stopping = stopping.clone();
                             handlers.push(thread::spawn(move || {
                                 if socket.set_read_timeout(Some(crate::IO_TIMEOUT)).is_err()
                                     || socket.set_write_timeout(Some(crate::IO_TIMEOUT)).is_err()
@@ -415,6 +617,19 @@ impl Receiver {
                                         ),
                                     )?;
                                     let store = resolve(&header)?;
+                                    let id = thread::current().id();
+                                    active
+                                        .lock()
+                                        .map_err(|_| {
+                                            Error::Invalid(
+                                                "active receiver registry poisoned".into(),
+                                            )
+                                        })?
+                                        .insert(id, store.cancellation.clone());
+                                    let _guard = ActiveGuard(active.clone(), id);
+                                    if stopping.load(Ordering::Relaxed) {
+                                        store.cancellation.cancel();
+                                    }
                                     store.receive(&header, &mut socket)?;
                                     Ok(header.id)
                                 })();
@@ -437,6 +652,13 @@ impl Receiver {
                     }
                 }
                 thread::sleep(Duration::from_millis(2));
+            }
+            for token in active
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .values()
+            {
+                token.cancel();
             }
             for handler in handlers {
                 let _ = handler.join();
@@ -487,6 +709,245 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn duplicate_completed_transfer_fails_the_session() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(1), 0, 0, 0);
+        let store =
+            Arc::new(Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap());
+        let receiving = store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        Sender::new(receiver.address, id, CancellationToken::default())
+            .unwrap()
+            .finish()
+            .unwrap();
+        // Send only the duplicate header: unread trailing TCP data can cause an
+        // OS reset to supersede a rejection ACK, which is also a valid failure.
+        let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
+        protocol::write_message(&mut socket, &Header::new(id)).unwrap();
+        let ack: std::result::Result<TransferId, String> =
+            protocol::read_message(&mut socket).unwrap();
+        assert!(ack.unwrap_err().contains("duplicate transfer identity"));
+        assert!(store.cancellation.check().is_err());
+        assert!(store.paths().is_err());
+    }
+    #[test]
+    fn receiver_drop_unblocks_a_direct_handoff() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(1), 0, 0, 0);
+        let store = Arc::new(
+            Store::configured(
+                parent.path(),
+                [id].into(),
+                CancellationToken::default(),
+                ExchangeConfig {
+                    mode: ExchangeMode::Direct,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        let receiving = store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        let mut sender = Sender::new(receiver.address, id, CancellationToken::default()).unwrap();
+        sender.batch(&batch()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while store.registry.lock().unwrap().started.is_empty() {
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        drop(receiver);
+        assert!(store.cancellation.check().is_err());
+        assert!(sender.finish().is_err());
+    }
+    #[test]
+    fn mechanism_roundtrips_include_empty_transfer_and_metrics() {
+        for mode in [
+            ExchangeMode::Direct,
+            ExchangeMode::Buffered,
+            ExchangeMode::Spill,
+            ExchangeMode::LocalMaterialized,
+            ExchangeMode::ObjectStoreMaterialized,
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let ids = [transfer(JobId(1), 0, 0, 0), transfer(JobId(1), 0, 0, 1)];
+            let store = Arc::new(
+                Store::configured(
+                    parent.path(),
+                    ids.into(),
+                    CancellationToken::default(),
+                    ExchangeConfig {
+                        mode,
+                        buffer_bytes: if mode == ExchangeMode::Spill {
+                            1
+                        } else {
+                            MAX_FRAME_BYTES
+                        },
+                    },
+                )
+                .unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let address = receiver.address;
+            let producer = thread::spawn(move || {
+                let mut sender =
+                    Sender::new(address, ids[0], CancellationToken::default()).unwrap();
+                for _ in 0..5 {
+                    sender.batch(&batch()).unwrap();
+                }
+                sender.finish().unwrap();
+                Sender::new(address, ids[1], CancellationToken::default())
+                    .unwrap()
+                    .finish()
+                    .unwrap();
+            });
+            let mut reader = store.reader();
+            let mut rows = 0;
+            while let Some(batch) = reader.next_batch(&store.cancellation).unwrap() {
+                rows += batch.num_rows();
+            }
+            producer.join().unwrap();
+            assert_eq!(rows, 15);
+            assert_eq!(store.metrics().unwrap().batches, 5);
+            assert_eq!(store.metrics().unwrap().transfers, 2);
+            let m = store.retention_metrics().unwrap();
+            match mode {
+                ExchangeMode::Direct | ExchangeMode::Buffered => {
+                    assert!(m.peak_buffer_bytes > 0);
+                    assert_eq!(
+                        m.spill_write_bytes + m.local_materialized_bytes + m.object_write_bytes,
+                        0
+                    );
+                }
+                ExchangeMode::Spill => {
+                    assert_eq!(m.spill_write_bytes, m.spill_read_bytes);
+                    assert!(m.spill_read_bytes > 0);
+                    assert!(m.peak_buffer_bytes <= 1);
+                }
+                ExchangeMode::LocalMaterialized => {
+                    assert_eq!(m.local_materialized_files, 2);
+                    assert!(m.local_materialized_bytes > 0);
+                }
+                ExchangeMode::ObjectStoreMaterialized => {
+                    assert_eq!(m.object_count, 5);
+                    assert_eq!(m.object_write_bytes, m.object_read_bytes);
+                    assert!(m.object_read_bytes > 0);
+                }
+            }
+            drop(reader);
+            drop(receiver);
+            drop(store);
+            assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+        }
+    }
+    #[test]
+    fn sequence_and_completion_count_rejections_fail_the_session() {
+        for sequence in [1, 99] {
+            let parent = tempfile::tempdir().unwrap();
+            let id = transfer(JobId(1), 0, 0, 0);
+            let store = Arc::new(
+                Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
+            protocol::write_message(&mut socket, &Header::new(id)).unwrap();
+            socket.write_all(&0u32.to_le_bytes()).unwrap();
+            socket.write_all(&u64::to_le_bytes(sequence)).unwrap();
+            let ack: std::result::Result<TransferId, String> =
+                protocol::read_message(&mut socket).unwrap();
+            assert!(ack.is_err());
+            assert!(store.paths().is_err());
+            assert_eq!(store.metrics().unwrap().transfers, 0);
+        }
+    }
+    #[test]
+    fn rejects_duplicate_gapped_segments_and_incorrect_final_counts() {
+        for (second, count) in [(0, 2), (2, 2), (1, 1)] {
+            let parent = tempfile::tempdir().unwrap();
+            let id = transfer(JobId(1), 0, 0, 0);
+            let store = Arc::new(
+                Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut encoded = BoundedBuffer::new(MAX_FRAME_BYTES);
+            let mut writer = StreamWriter::try_new(&mut encoded, &schema()).unwrap();
+            writer.write(&batch()).unwrap();
+            writer.finish().unwrap();
+            drop(writer);
+            let mut bytes = Vec::new();
+            protocol::write_message(&mut bytes, &Header::new(id)).unwrap();
+            for sequence in [0, second] {
+                bytes.extend_from_slice(&u32::try_from(encoded.0.len()).unwrap().to_le_bytes());
+                bytes.extend_from_slice(&u64::to_le_bytes(sequence));
+                bytes.extend_from_slice(&encoded.0);
+            }
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&u64::to_le_bytes(count));
+            let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
+            socket.write_all(&bytes).unwrap();
+            let ack: Result<std::result::Result<TransferId, String>> =
+                protocol::read_message(&mut socket);
+            assert!(!matches!(ack, Ok(Ok(_))));
+            assert!(store.paths().is_err());
+        }
+    }
+    #[test]
+    fn waiting_reader_cancels_and_incomplete_objects_are_not_visible() {
+        for mode in [
+            ExchangeMode::Direct,
+            ExchangeMode::Buffered,
+            ExchangeMode::Spill,
+            ExchangeMode::LocalMaterialized,
+            ExchangeMode::ObjectStoreMaterialized,
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let id = transfer(JobId(1), 0, 0, 0);
+            let store = Arc::new(
+                Store::configured(
+                    parent.path(),
+                    [id].into(),
+                    CancellationToken::default(),
+                    ExchangeConfig {
+                        mode,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            );
+            if let Some(objects) = &store.objects {
+                let mut bytes = BoundedBuffer::new(MAX_FRAME_BYTES);
+                let mut writer = StreamWriter::try_new(&mut bytes, &schema()).unwrap();
+                writer.write(&batch()).unwrap();
+                writer.finish().unwrap();
+                drop(writer);
+                objects.put(id, 0, bytes.0).unwrap();
+            }
+            let reading = store.clone();
+            let reader = thread::spawn(move || reading.reader().next_batch(&reading.cancellation));
+            thread::sleep(Duration::from_millis(20));
+            assert!(!reader.is_finished());
+            store.cancellation.cancel();
+            assert!(reader.join().unwrap().is_err());
+        }
+    }
+    #[test]
     fn loopback_finalizes_empty_and_rejects_duplicate_and_partial() {
         let parent = tempfile::tempdir().unwrap();
         let ids: Vec<_> = (0..3).map(|p| transfer(JobId(9), 0, 0, p)).collect();
@@ -521,12 +982,6 @@ mod tests {
         assert_eq!(store.metrics().unwrap().rows, sent.rows);
         assert_eq!(store.metrics().unwrap().batches, sent.batches);
         assert_eq!(store.metrics().unwrap().payload_bytes, sent.payload_bytes);
-        assert!(
-            Sender::new(receiver.address, ids[0], CancellationToken::default())
-                .unwrap()
-                .finish()
-                .is_err()
-        );
         // A disconnected frame is neither completed nor retained as a partial file.
         let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
         protocol::write_message(&mut socket, &Header::new(ids[2])).unwrap();
@@ -536,6 +991,12 @@ mod tests {
         let ack: std::result::Result<TransferId, String> =
             protocol::read_message(&mut socket).unwrap();
         assert!(ack.is_err());
+        assert!(
+            Sender::new(receiver.address, ids[0], CancellationToken::default())
+                .unwrap()
+                .finish()
+                .is_err()
+        );
         assert!(store.paths().is_err());
         assert_eq!(std::fs::read_dir(store.root.path()).unwrap().count(), 2);
         let paths: Vec<_> = store
@@ -558,35 +1019,33 @@ mod tests {
     }
     #[test]
     fn rejects_oversized_frame_and_wrong_schema_version() {
-        let parent = tempfile::tempdir().unwrap();
-        let id = transfer(JobId(1), 0, 0, 0);
-        let store = Arc::new(
-            Store::new(
-                parent.path(),
-                BTreeSet::from([id]),
-                CancellationToken::default(),
-            )
-            .unwrap(),
-        );
-        let receiving = store.clone();
-        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
-            Ok(receiving.clone())
-        })
-        .unwrap();
-        let mut header = Header::new(id);
-        header.schema_version = 99;
-        let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
-        protocol::write_message(&mut socket, &header).unwrap();
-        let ack: std::result::Result<TransferId, String> =
-            protocol::read_message(&mut socket).unwrap();
-        assert!(ack.is_err());
-        let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
-        protocol::write_message(&mut socket, &Header::new(id)).unwrap();
-        socket.write_all(&u32::MAX.to_le_bytes()).unwrap();
-        let ack: std::result::Result<TransferId, String> =
-            protocol::read_message(&mut socket).unwrap();
-        assert!(ack.is_err());
-        assert!(store.paths().is_err());
-        assert_eq!(store.metrics().unwrap().transfers, 0);
+        for wrong_version in [true, false] {
+            let parent = tempfile::tempdir().unwrap();
+            let id = transfer(JobId(1), 0, 0, 0);
+            let store = Arc::new(
+                Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut header = Header::new(id);
+            if wrong_version {
+                header.schema_version = 99;
+            }
+            let mut bytes = Vec::new();
+            protocol::write_message(&mut bytes, &header).unwrap();
+            if !wrong_version {
+                bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+            }
+            let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
+            socket.write_all(&bytes).unwrap();
+            let ack: Result<std::result::Result<TransferId, String>> =
+                protocol::read_message(&mut socket);
+            assert!(!matches!(ack, Ok(Ok(_))));
+            assert!(store.paths().is_err());
+            assert_eq!(store.metrics().unwrap().transfers, 0);
+        }
     }
 }

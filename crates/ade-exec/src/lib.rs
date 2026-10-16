@@ -57,6 +57,16 @@ pub enum Error {
     #[error("execution cancelled")]
     Cancelled,
 }
+/// Pull boundary for live external input. Implementations must bound retention and
+/// check the supplied token while waiting. Shutdown must release input ownership.
+pub trait BatchSource: Send + std::fmt::Debug {
+    fn schema(&self) -> SchemaRef;
+    /// # Errors
+    /// Returns source or cancellation errors; errors fail the consuming operator.
+    fn next_batch(&mut self, cancellation: &CancellationToken) -> Result<Option<RecordBatch>>;
+    fn shutdown(&mut self) {}
+}
+
 /// Runtime result.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -139,6 +149,7 @@ pub struct ExecContext {
     config: ExecutionConfig,
     memory: MemoryManager,
     spill: SpillManager,
+    external: Option<Box<dyn BatchSource>>,
 }
 /// Finite managed budget, not an allocator or RSS cap.
 #[derive(Debug, Clone)]
@@ -181,6 +192,7 @@ impl ExecContext {
         Ok(Self {
             memory: MemoryManager::new(config.memory_limit_bytes)?,
             spill: SpillManager::new(parent)?,
+            external: None,
             config,
             cancellation,
             metrics: ExecutionMetrics::default(),
@@ -222,6 +234,8 @@ impl ExecContext {
 /// Small local tree, deliberately not a stable general physical IR.
 #[derive(Debug, Clone)]
 pub enum LocalPlan {
+    /// One externally supplied live source, installed by `execute_merge_source_to_sink`.
+    ExternalSource,
     /// Incremental Arrow IPC streams with identical schemas.
     IpcScan {
         files: Vec<PathBuf>,
@@ -268,6 +282,7 @@ struct Node {
     closed: bool,
 }
 enum Kind {
+    External(Box<dyn BatchSource>),
     Scan(scan::Scan),
     IpcScan(ipc_scan::Scan),
     Filter {
@@ -322,6 +337,13 @@ impl Node {
     fn build(plan: LocalPlan, cx: &mut ExecContext) -> Result<Self> {
         cx.cancellation.check()?;
         let (schema, kind, name) = match plan {
+            LocalPlan::ExternalSource => {
+                let source = cx
+                    .external
+                    .take()
+                    .ok_or_else(|| Error::Invalid("external source not installed".into()))?;
+                (source.schema(), Kind::External(source), "external-source")
+            }
             LocalPlan::IpcScan { files } => {
                 let scan = ipc_scan::Scan::new(files)?;
                 (scan.schema.clone(), Kind::IpcScan(scan), "ipc-scan")
@@ -481,6 +503,14 @@ impl Node {
         // Release the previous observed output when downstream asks for another batch.
         cx.memory(self.id, 0)?;
         let output = match &mut self.kind {
+            Kind::External(source) => {
+                let batch = source.next_batch(&cx.cancellation)?;
+                cx.cancellation.check()?;
+                if batch.as_ref().is_some_and(|b| b.schema() != self.schema) {
+                    return Err(Error::Invalid("external source schema changed".into()));
+                }
+                batch
+            }
             Kind::IpcScan(scan) => scan.next()?,
             Kind::Scan(scan) => {
                 let start = Instant::now();
@@ -612,6 +642,7 @@ impl Node {
         }
         match &mut self.kind {
             Kind::Scan(scan) => cx.metrics.prefetch = scan.shutdown(),
+            Kind::External(source) => source.shutdown(),
             Kind::IpcScan(scan) => scan.shutdown(),
             Kind::Filter { input, .. }
             | Kind::Project { input, .. }
@@ -697,6 +728,28 @@ pub fn execute_to_sink(
 ) -> Result<ExecutionMetrics> {
     let mut cx = ExecContext::new(config, cancellation, None)?;
     drive(plan, &mut cx, |batch, _| sink(batch))?;
+    cx.spill.close()?;
+    Ok(cx.metrics)
+}
+
+/// Merge live partial aggregates through the existing spillable operator and sink loop.
+/// # Errors
+/// Returns source, execution, cancellation or sink errors with no partial success.
+pub fn execute_merge_source_to_sink(
+    source: Box<dyn BatchSource>,
+    config: ExecutionConfig,
+    cancellation: CancellationToken,
+    mut sink: impl FnMut(RecordBatch) -> Result<()>,
+) -> Result<ExecutionMetrics> {
+    let mut cx = ExecContext::new(config, cancellation, None)?;
+    cx.external = Some(source);
+    drive(
+        LocalPlan::MergeAggregate {
+            input: Box::new(LocalPlan::ExternalSource),
+        },
+        &mut cx,
+        |batch, _| sink(batch),
+    )?;
     cx.spill.close()?;
     Ok(cx.metrics)
 }

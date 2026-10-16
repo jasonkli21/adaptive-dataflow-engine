@@ -24,6 +24,7 @@ struct Job {
     spec: JobSpec,
     store: Arc<Store>,
     producer_done: AtomicBool,
+    producer_started: AtomicBool,
     final_started: AtomicBool,
 }
 struct State {
@@ -31,7 +32,8 @@ struct State {
     job: Mutex<Option<Arc<Job>>>,
     // Retained after cancellation so delayed traffic can never target a reused ID.
     last_job_id: Mutex<Option<JobId>>,
-    busy: AtomicBool,
+    producer_busy: AtomicBool,
+    final_busy: AtomicBool,
     stop: AtomicBool,
     parent: PathBuf,
 }
@@ -142,14 +144,9 @@ fn producer(state: &State, job: &Job, files: &[PathBuf]) -> Result<TaskMetrics> 
 }
 fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetrics> {
     require(
-        job.producer_done.load(Ordering::Acquire),
-        "producer has not completed",
-    )?;
-    require(
         !job.final_started.swap(true, Ordering::AcqRel),
         "final task already started",
     )?;
-    let files = job.store.paths()?; // all expected producers, including explicit empty streams
     let start = Instant::now();
     let token = job.store.cancellation.clone();
     let open = || {
@@ -165,10 +162,8 @@ fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetric
         )
     };
     let mut sender: Option<Sender> = None;
-    let output = ade_exec::execute_to_sink(
-        LocalPlan::MergeAggregate {
-            input: Box::new(LocalPlan::IpcScan { files }),
-        },
+    let output = ade_exec::execute_merge_source_to_sink(
+        job.store.reader(),
         job.spec.config.execution(),
         token.clone(),
         |batch| {
@@ -189,9 +184,14 @@ fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetric
     };
     metrics.sent = sender.finish()?;
     metrics.received = job.store.metrics()?;
+    metrics.retention = job.store.retention_metrics()?;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
     Ok(metrics)
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "Bounded control state transitions stay together."
+)]
 fn handle(state: &State, request: Request) -> Result<Reply> {
     match request {
         Request::Ping => Ok(Reply::Pong(state.endpoint.clone())),
@@ -209,7 +209,9 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             )?;
             let mut current = state.job.lock().expect("job lock");
             require(
-                current.is_none() && !state.busy.load(Ordering::Acquire),
+                current.is_none()
+                    && !state.producer_busy.load(Ordering::Acquire)
+                    && !state.final_busy.load(Ordering::Acquire),
                 "worker already has active job",
             )?;
             let mut last_job_id = state.last_job_id.lock().expect("job ID watermark lock");
@@ -220,16 +222,18 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             let expected = (0..spec.workers.len())
                 .map(|p| transfer(spec.job, 0, state.endpoint.id.0, p as u64))
                 .collect();
-            let store = Arc::new(Store::new(
+            let store = Arc::new(Store::configured(
                 &state.parent,
                 expected,
                 CancellationToken::default(),
+                spec.config.exchange.clone(),
             )?);
             let accepted_job_id = spec.job;
             *current = Some(Arc::new(Job {
                 spec,
                 store,
                 producer_done: AtomicBool::new(false),
+                producer_started: AtomicBool::new(false),
                 final_started: AtomicBool::new(false),
             }));
             *last_job_id = Some(accepted_job_id);
@@ -251,14 +255,6 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             Ok(Reply::Ready)
         }
         task => {
-            require(
-                state
-                    .busy
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok(),
-                "worker task already running",
-            )?;
-            let _guard = TaskGuard(&state.busy);
             let (id, task_id, attempt, is_final) = match &task {
                 Request::RunProducerTask {
                     job, task, attempt, ..
@@ -268,6 +264,17 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 } => (*job, *task, *attempt, true),
                 _ => unreachable!(),
             };
+            let busy = if is_final {
+                &state.final_busy
+            } else {
+                &state.producer_busy
+            };
+            require(
+                busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok(),
+                "worker task role already running",
+            )?;
+            let _guard = TaskGuard(busy);
             let job = job(state, id)?;
             let expected = state.endpoint.id.0
                 + if is_final {
@@ -280,7 +287,13 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 "task/attempt identity mismatch",
             )?;
             let result = match task {
-                Request::RunProducerTask { files, .. } => producer(state, &job, &files),
+                Request::RunProducerTask { files, .. } => {
+                    require(
+                        !job.producer_started.swap(true, Ordering::AcqRel),
+                        "producer task already started",
+                    )?;
+                    producer(state, &job, &files)
+                }
                 Request::RunFinalTask { gather, .. } => final_task(state, &job, gather),
                 _ => unreachable!(),
             };
@@ -314,7 +327,8 @@ pub fn serve(
         endpoint: endpoint.clone(),
         job: Mutex::new(None),
         last_job_id: Mutex::new(None),
-        busy: AtomicBool::new(false),
+        producer_busy: AtomicBool::new(false),
+        final_busy: AtomicBool::new(false),
         stop: AtomicBool::new(false),
         parent: parent.into(),
     });
@@ -422,7 +436,8 @@ mod tests {
             endpoint: endpoint.clone(),
             job: Mutex::new(None),
             last_job_id: Mutex::new(None),
-            busy: AtomicBool::new(false),
+            producer_busy: AtomicBool::new(false),
+            final_busy: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             parent: parent.path().into(),
         });

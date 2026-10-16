@@ -31,12 +31,14 @@ pub struct TaskMetrics {
     pub spill_bytes: u64,
     pub sent: NetworkMetrics,
     pub received: NetworkMetrics,
+    pub retention: crate::RetentionMetrics,
     pub destinations: BTreeMap<u64, NetworkMetrics>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
     pub worker_count: usize,
+    pub exchange_mode: crate::ExchangeMode,
     pub elapsed_ms: u64,
     pub producers: BTreeMap<u64, TaskMetrics>,
     pub finals: BTreeMap<u64, TaskMetrics>,

@@ -29,20 +29,22 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 3 is the active boundary, defined by
-`docs/plans/phase-3-implementation-plan.md`. Phase 2 remains accepted. Phase 3
-adds a static coordinator, 2–4 workers and real hash exchange for synthetic
-GroupBySum, with bounded TCP/IPC transfers and ephemeral worker-local retention.
-Do not begin Phase 4 without an explicit new instruction.
+Phase 4 is the active/completed boundary, defined by
+`docs/plans/phase-4-implementation-plan.md` and its implementation report.
+Phases 2–3 remain accepted. Phase 4 adds five statically selected hash-exchange
+mechanisms with overlapping producer/final roles, strict segment completion and
+bounded retention. Object-store acceptance uses an ephemeral filesystem backend,
+not proof of cloud durability. Do not begin Phase 5 without a new explicit instruction.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
-- Reuse the local spillable aggregate through partial merge, IPC scan and streaming sink.
+- Reuse the local spillable aggregate through partial merge, IPC scan/live source and streaming sink.
 - Worker failure fails the job; cancel survivors and clean up. No retry/recovery.
-- Exchange buffers are separately bounded; the local ledger is not a process RSS cap.
+- Exchange buffers are separately bounded; producer/final task budgets may overlap.
+  The local ledger is not a process RSS cap.
 - No adaptive exchange, lineage, scheduling, joins, SQL frontend or streaming/state.
 - Run focused tests during development, one final workspace gate/smoke and focused
-  2-/4-worker release comparison evidence. Keep CI correctness-only.
+  five-mode 2-worker and limited 4-worker release acceptance evidence. Keep CI correctness-only.
 
 A small coherent implementation is preferred to speculative architecture.
 
@@ -120,23 +122,12 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. For Phase 3 create:
+Each phase ends with an implementation report. For Phase 4 create:
 
-`docs/reports/phase-3-implementation-report.md`
+`docs/reports/phase-4-implementation-report.md`
 
-It must include:
-
-1. summary;
-2. implemented scope;
-3. deviations from plan;
-4. ADRs resolved;
-5. commands run;
-6. test results;
-7. benchmark smoke results;
-8. known limitations;
-9. deferred items;
-10. recommended next-phase considerations.
-
-Include the Phase 3 plan acceptance audit, distributed lifecycle and memory
-limitations, and 2-/4-worker cross-engine release evidence. Do not begin Phase 4
-as cleanup.
+Include baseline/final commit identity, implemented scope and mechanism semantics,
+producer/final lifecycle, memory/boundedness and backend durability statements,
+deviations, ADRs, commands/test results, five-mode 2-worker and limited 4-worker
+release acceptance, known limitations and Phase 5 handoff observations.
+Do not implement Phase 5 policy, lineage or recovery as cleanup.

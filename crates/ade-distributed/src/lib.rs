@@ -1,4 +1,6 @@
 //! Static distributed aggregation. Private versioned TCP protocols, no recovery.
+mod retention;
+pub use retention::{ExchangeConfig, ExchangeMode, RetentionMetrics};
 pub mod coordinator;
 pub mod exchange;
 pub mod ids;
@@ -15,6 +17,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Arrow: {0}")]
     Arrow(#[from] arrow::error::ArrowError),
+    #[error("object store: {0}")]
+    ObjectStore(#[from] object_store::Error),
     #[error("encoding: {0}")]
     Json(#[from] serde_json::Error),
     #[error("local execution: {0}")]
@@ -58,6 +62,7 @@ pub struct TaskConfig {
     pub memory_limit_bytes: usize,
     pub spill_enabled: bool,
     pub prefetch_batches: usize,
+    pub exchange: ExchangeConfig,
 }
 impl Default for TaskConfig {
     fn default() -> Self {
@@ -66,6 +71,7 @@ impl Default for TaskConfig {
             memory_limit_bytes: 256 * 1024 * 1024,
             spill_enabled: true,
             prefetch_batches: 0,
+            exchange: ExchangeConfig::default(),
         }
     }
 }
@@ -84,6 +90,7 @@ impl TaskConfig {
     pub fn validate(&self) -> Result<()> {
         require(self.batch_size > 0, "positive batch_size required")?;
         self.execution().validate()?;
+        self.exchange.validate()?;
         Ok(())
     }
 }

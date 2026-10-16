@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 3 static distributed batch implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
+**Phase 4 static unified exchange implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-3-implementation-plan.md`](docs/plans/phase-3-implementation-plan.md) — Phase 3 implementation contract.
+4. [`docs/plans/phase-4-implementation-plan.md`](docs/plans/phase-4-implementation-plan.md) — Phase 4 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -129,7 +129,7 @@ Prefetch preserves pull backpressure and joins its producer on teardown.
 
 The physical plan is provisional. Sort supports non-null UInt64 key/row_id and
 Int64 value, ascending key then row_id. TPC-H Q1 is supported only by DataFusion.
-The local plan has no joins or SQL frontend. Static distribution is provided by the separate Phase 3 crate below.
+The local plan has no joins or SQL frontend. Static distribution is provided by the separate distributed crate below.
 See [ADR-0006](docs/adr/0006-managed-local-memory-and-spill.md) and the
 [Phase 2 report](docs/reports/phase-2-implementation-report.md) for contracts,
 validation and comparison evidence.
@@ -151,7 +151,13 @@ ADE_LOG=debug target/release/ade-bench validate --engine ade-distributed \
 ```
 
 Options: `workers=2` (2–4), `batch_size=8192`, `memory_limit_bytes=268435456`,
-`spill_enabled=true`, `prefetch_batches=0` (0–64). Effective configuration and
+`spill_enabled=true`, `prefetch_batches=0` (0–64),
+`exchange_mode=local_materialized`, `exchange_buffer_bytes=4194304`.
+Hash exchange modes are `direct`, `buffered`, `spill`, `local_materialized` and
+`object_store`. Buffer limits are 1 byte–256 MiB; `buffered` requires at least
+1 MiB. `spill` can use a tiny limit to force disk. Direct/local/object modes
+validate/report the buffer setting but do not use it as retention capacity.
+Effective configuration and
 fixed protocol limits appear in engine metadata; standalone debug validation
 prints per-worker/network metrics. `ADE_WORKER_BIN` can select the worker binary;
 otherwise `ade-worker` is resolved beside `ade-bench`.
@@ -159,10 +165,17 @@ otherwise `ade-worker` is resolved beside `ade-bench`.
 The Rust coordinator API also accepts static endpoints. `ade-worker WORKER_ID
 TEMP_PARENT` binds loopback control/exchange ports and writes a framed readiness
 record to stdout; logs use stderr. Gather currently binds loopback, so this is a
-local multi-process deployment. IPC reception is execution-scoped and non-durable.
-One active job per worker, fixed task assignments, no retry/adaptation. Network
-frames are separately bounded (1 MiB, 1024 rows), outside the local managed-memory
-ledger. Coordinator gathering/oracle validation collect the final result. See
-[Phase 3 report](docs/reports/phase-3-implementation-report.md),
-[control ADR](docs/adr/0008-static-control-protocol.md) and
-[exchange ADR](docs/adr/0009-static-tcp-ipc-exchange.md).
+local multi-process deployment. Final consumers and producers overlap, with at
+most one task of each role per worker and no retry/adaptation. The local memory
+limit applies per task; two task budgets may coexist. Exchange retention and
+bounded frame transients (1 MiB, 1024 rows) are separate from the local ledger;
+this is not a process RSS cap. Direct uses rendezvous handoff, buffered uses a
+byte-bounded FIFO, spill uses that FIFO plus a fixed-threshold local disk log,
+and materialized modes wait for every producer to finish. Local storage is lossy.
+Object-store mode uses the public provider-neutral API with an ephemeral local
+filesystem backend: this does not demonstrate cloud/multi-host durability or
+recovery. All storage is execution-scoped. Gather stays fixed and bounded in
+transit; coordinator gathering/oracle validation collect the final result. See
+[Phase 4 report](docs/reports/phase-4-implementation-report.md) and
+[unified exchange ADR](docs/adr/0010-static-unified-exchange.md).
+Phase 5 requires a new explicit instruction.

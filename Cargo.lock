@@ -32,11 +32,13 @@ version = "0.1.0"
 dependencies = [
  "ade-exec",
  "arrow",
+ "object_store",
  "parquet",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

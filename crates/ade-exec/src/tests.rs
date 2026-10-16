@@ -680,3 +680,96 @@ fn phase3_sink_failure_tears_down_spill_and_prefetch() {
     assert_eq!(metrics.output_rows, 3);
     assert_eq!(metrics.managed.current, 0);
 }
+
+#[derive(Debug)]
+struct LiveTestSource {
+    batches: std::collections::VecDeque<RecordBatch>,
+    fail: bool,
+    wait: bool,
+    closed: Arc<std::sync::atomic::AtomicBool>,
+}
+impl BatchSource for LiveTestSource {
+    fn schema(&self) -> SchemaRef {
+        aggregate_schema()
+    }
+    fn next_batch(&mut self, token: &CancellationToken) -> Result<Option<RecordBatch>> {
+        if self.wait {
+            loop {
+                token.check()?;
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+        if self.fail {
+            return Err(Error::Invalid("injected live source failure".into()));
+        }
+        Ok(self.batches.pop_front())
+    }
+    fn shutdown(&mut self) {
+        self.closed.store(true, Ordering::Release);
+    }
+}
+#[test]
+fn live_source_reuses_merge_and_shuts_down_on_error_and_cancel() {
+    let batch = RecordBatch::try_new(
+        aggregate_schema(),
+        vec![
+            Arc::new(UInt64Array::from(vec![7, 7])),
+            Arc::new(arrow::array::Int64Array::from(vec![3, 4])),
+            Arc::new(UInt64Array::from(vec![1, 2])),
+        ],
+    )
+    .unwrap();
+    for (fail, wait) in [(false, false), (true, false), (false, true)] {
+        let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let source = LiveTestSource {
+            batches: [batch.clone()].into(),
+            fail,
+            wait,
+            closed: closed.clone(),
+        };
+        let token = CancellationToken::default();
+        let cancel = token.clone();
+        let handle = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let result = execute_merge_source_to_sink(
+                Box::new(source),
+                ExecutionConfig::default(),
+                token,
+                |b| {
+                    out.push(b);
+                    Ok(())
+                },
+            );
+            (result, out)
+        });
+        if wait {
+            std::thread::sleep(Duration::from_millis(20));
+            cancel.cancel();
+        }
+        let (result, out) = handle.join().unwrap();
+        assert!(closed.load(Ordering::Acquire));
+        if fail || wait {
+            assert!(result.is_err());
+        } else {
+            assert_eq!(result.unwrap().output_rows, 1);
+            assert_eq!(
+                out[0]
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Int64Array>()
+                    .unwrap()
+                    .value(0),
+                7
+            );
+            assert_eq!(
+                out[0]
+                    .column(2)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+                    .value(0),
+                3
+            );
+        }
+    }
+}

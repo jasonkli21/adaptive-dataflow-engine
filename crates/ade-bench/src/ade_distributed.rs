@@ -7,7 +7,7 @@ use crate::{
     spec::{BenchmarkCase, Query},
 };
 use ade_distributed::{
-    TaskConfig,
+    ExchangeConfig, ExchangeMode, TaskConfig,
     coordinator::{LocalCluster, StaticAggregateJob},
     ids::JobId,
 };
@@ -36,6 +36,22 @@ impl AdeDistributedConfig {
             "output_batch_rows".into(),
             self.task.execution().output_batch_rows.to_string(),
         );
+        info.configuration.insert(
+            "exchange_mode".into(),
+            self.task.exchange.mode.as_str().into(),
+        );
+        info.configuration.insert(
+            "exchange_buffer_bytes".into(),
+            self.task.exchange.buffer_bytes.to_string(),
+        );
+        if self.task.exchange.mode == ExchangeMode::ObjectStoreMaterialized {
+            info.configuration.insert(
+                "object_store_backend".into(),
+                "local_filesystem_ephemeral".into(),
+            );
+        }
+        info.configuration
+            .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
@@ -82,6 +98,8 @@ impl BenchmarkEngine for AdeDistributedEngine {
     type Config = AdeDistributedConfig;
     fn parse_config(options: &[String]) -> Result<Self::Config> {
         let mut workers = None;
+        let mut exchange_mode = None;
+        let mut exchange_buffer = None;
         let mut local = Vec::new();
         for option in options {
             if let Some(value) = option.strip_prefix("workers=") {
@@ -94,6 +112,23 @@ impl BenchmarkEngine for AdeDistributedEngine {
                         .parse::<usize>()
                         .map_err(|_| Error::Invalid("invalid workers".into()))?,
                 );
+            } else if let Some(value) = option.strip_prefix("exchange_mode=") {
+                require(exchange_mode.is_none(), "duplicate exchange_mode")?;
+                exchange_mode = Some(match value {
+                    "direct" => ExchangeMode::Direct,
+                    "buffered" => ExchangeMode::Buffered,
+                    "spill" => ExchangeMode::Spill,
+                    "local_materialized" => ExchangeMode::LocalMaterialized,
+                    "object_store" => ExchangeMode::ObjectStoreMaterialized,
+                    _ => return Err(Error::Invalid("invalid exchange_mode".into())),
+                });
+            } else if let Some(value) = option.strip_prefix("exchange_buffer_bytes=") {
+                require(exchange_buffer.is_none(), "duplicate exchange_buffer_bytes")?;
+                exchange_buffer = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| Error::Invalid("invalid exchange_buffer_bytes".into()))?,
+                );
             } else {
                 local.push(option.clone());
             }
@@ -101,9 +136,15 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let workers = workers.unwrap_or(2);
         require((2..=4).contains(&workers), "workers must be 2..4")?;
         let local = crate::ade_local::AdeLocalEngine::parse_config(&local)?;
+        let exchange = ExchangeConfig {
+            mode: exchange_mode.unwrap_or_default(),
+            buffer_bytes: exchange_buffer.unwrap_or(ExchangeConfig::default().buffer_bytes),
+        };
+        exchange.validate()?;
         Ok(AdeDistributedConfig {
             workers,
             task: TaskConfig {
+                exchange,
                 batch_size: local.batch_size,
                 memory_limit_bytes: local.execution.memory_limit_bytes,
                 spill_enabled: local.execution.spill_enabled,
@@ -119,7 +160,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
     ) -> Result<Self> {
         require(
             case.query == Query::GroupBySum,
-            "ade-distributed supports only synthetic GroupBySum in Phase 3",
+            "ade-distributed supports only synthetic GroupBySum in Phase 4",
         )?;
         case.validate()?;
         manifest.validate()?;
@@ -191,6 +232,11 @@ mod tests {
         assert_eq!(config.info().configuration["workers"], "4");
         assert_eq!(config.info().configuration["memory_limit_bytes"], "1048576");
         for options in [
+            vec!["exchange_mode=adaptive"],
+            vec!["exchange_mode=direct", "exchange_mode=spill"],
+            vec!["exchange_buffer_bytes=0"],
+            vec!["exchange_buffer_bytes=1", "exchange_buffer_bytes=2"],
+            vec!["exchange_mode=buffered", "exchange_buffer_bytes=10"],
             vec!["workers=1"],
             vec!["workers=2", "workers=3"],
             vec!["batch_size=0"],

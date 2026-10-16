@@ -29,6 +29,8 @@ struct Job {
 struct State {
     endpoint: WorkerEndpoint,
     job: Mutex<Option<Arc<Job>>>,
+    // Retained after cancellation so delayed traffic can never target a reused ID.
+    last_job_id: Mutex<Option<JobId>>,
     busy: AtomicBool,
     stop: AtomicBool,
     parent: PathBuf,
@@ -210,6 +212,11 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 current.is_none() && !state.busy.load(Ordering::Acquire),
                 "worker already has active job",
             )?;
+            let mut last_job_id = state.last_job_id.lock().expect("job ID watermark lock");
+            require(
+                last_job_id.is_none_or(|last| spec.job > last),
+                "job ID must increase on a reused worker",
+            )?;
             let expected = (0..spec.workers.len())
                 .map(|p| transfer(spec.job, 0, state.endpoint.id.0, p as u64))
                 .collect();
@@ -218,12 +225,14 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 expected,
                 CancellationToken::default(),
             )?);
+            let accepted_job_id = spec.job;
             *current = Some(Arc::new(Job {
                 spec,
                 store,
                 producer_done: AtomicBool::new(false),
                 final_started: AtomicBool::new(false),
             }));
+            *last_job_id = Some(accepted_job_id);
             Ok(Reply::Ready)
         }
         Request::CancelJob { job: id } => {
@@ -304,6 +313,7 @@ pub fn serve(
     let state = Arc::new(State {
         endpoint: endpoint.clone(),
         job: Mutex::new(None),
+        last_job_id: Mutex::new(None),
         busy: AtomicBool::new(false),
         stop: AtomicBool::new(false),
         parent: parent.into(),
@@ -389,4 +399,85 @@ pub fn serve(
         return Err(error.into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{exchange::Header, ids::transfer};
+
+    #[test]
+    fn cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected() {
+        let parent = tempfile::tempdir().unwrap();
+        let control_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let control_address = control_listener.local_addr().unwrap();
+        let exchange_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let exchange_address = exchange_listener.local_addr().unwrap();
+        let endpoint = WorkerEndpoint {
+            id: crate::ids::WorkerId(0),
+            control: control_address,
+            exchange: exchange_address,
+        };
+        let state = Arc::new(State {
+            endpoint: endpoint.clone(),
+            job: Mutex::new(None),
+            last_job_id: Mutex::new(None),
+            busy: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            parent: parent.path().into(),
+        });
+        let receiving = state.clone();
+        let receiver = Receiver::start(exchange_listener, move |header: &Header| {
+            Ok(job(&receiving, header.id.job)?.store.clone())
+        })
+        .unwrap();
+        let peer_control = TcpListener::bind("127.0.0.1:0").unwrap();
+        let peer_exchange = TcpListener::bind("127.0.0.1:0").unwrap();
+        let workers = vec![
+            endpoint,
+            WorkerEndpoint {
+                id: crate::ids::WorkerId(1),
+                control: peer_control.local_addr().unwrap(),
+                exchange: peer_exchange.local_addr().unwrap(),
+            },
+        ];
+        let spec = |id| JobSpec {
+            job: id,
+            workers: workers.clone(),
+            config: crate::TaskConfig::default(),
+        };
+
+        assert!(matches!(
+            handle(&state, Request::PrepareJob(spec(JobId(42)))).unwrap(),
+            Reply::Ready
+        ));
+        handle(&state, Request::CancelJob { job: JobId(42) }).unwrap();
+        assert!(handle(&state, Request::PrepareJob(spec(JobId(42)))).is_err());
+        assert!(matches!(
+            handle(&state, Request::PrepareJob(spec(JobId(43)))).unwrap(),
+            Reply::Ready
+        ));
+
+        let stale_sender = Sender::new(
+            receiver.address,
+            transfer(JobId(42), 0, 0, 0),
+            ade_exec::CancellationToken::default(),
+        )
+        .unwrap();
+        assert!(stale_sender.finish().is_err());
+        let current = job(&state, JobId(43)).unwrap();
+        assert_eq!(current.store.metrics().unwrap().transfers, 0);
+        assert!(current.store.paths().is_err());
+
+        let current_transfer = Sender::new(
+            receiver.address,
+            transfer(JobId(43), 0, 0, 0),
+            ade_exec::CancellationToken::default(),
+        )
+        .unwrap();
+        let metrics = current_transfer.finish().unwrap();
+        assert_eq!(metrics.transfers, 1);
+        assert_eq!(metrics.batches, 0);
+        assert_eq!(current.store.metrics().unwrap().transfers, 1);
+    }
 }

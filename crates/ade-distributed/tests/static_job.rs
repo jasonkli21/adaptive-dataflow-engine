@@ -40,11 +40,53 @@ fn fixture(root: &Path) -> Vec<PathBuf> {
         })
         .collect()
 }
+fn failure_cleanup(mut cluster: LocalCluster, job: &mut StaticAggregateJob) {
+    job.id = JobId(44);
+    // Install state on the survivor before losing its peer, so failure must clean it.
+    let spec = ade_distributed::protocol::JobSpec {
+        job: job.id,
+        workers: cluster.workers.clone(),
+        config: job.config.clone(),
+    };
+    ade_distributed::protocol::rpc(
+        &cluster.workers[0],
+        ade_distributed::protocol::Request::PrepareJob(spec),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    cluster.terminate(1).unwrap();
+    let start = Instant::now();
+    assert!(coordinator::execute(job).is_err());
+    assert!(start.elapsed() < Duration::from_secs(20));
+    // The surviving worker was cancelled, rather than left holding the failed job.
+    let reply = ade_distributed::protocol::rpc(
+        &cluster.workers[0],
+        ade_distributed::protocol::Request::Ping,
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(matches!(reply, ade_distributed::protocol::Reply::Pong(_)));
+    let spec = ade_distributed::protocol::JobSpec {
+        job: JobId(45),
+        workers: cluster.workers.clone(),
+        config: job.config.clone(),
+    };
+    let ready = ade_distributed::protocol::rpc(
+        &cluster.workers[0],
+        ade_distributed::protocol::Request::PrepareJob(spec),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(matches!(ready, ade_distributed::protocol::Reply::Ready));
+    let root = cluster.temp_root().to_path_buf();
+    drop(cluster);
+    assert!(!root.exists());
+}
 #[test]
 fn two_worker_process_graph_and_failure_cleanup() {
     let data = tempfile::tempdir().unwrap();
     let files = fixture(data.path());
-    let mut cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
     let mut job = StaticAggregateJob {
         id: JobId(42),
         files,
@@ -101,48 +143,11 @@ fn two_worker_process_graph_and_failure_cleanup() {
         assert_eq!(output.metrics.received[&worker].transfers, 2);
     }
     assert_eq!(output.metrics.gather.rows, 32);
+    assert!(output.metrics.gather.batches > 0);
     assert!(output.metrics.gather.payload_bytes > 0);
+    assert!(output.metrics.elapsed_ms > 0);
     // Successful cleanup permits a second job on the same static topology.
     job.id = JobId(43);
     assert!(coordinator::execute(&job).is_ok());
-    job.id = JobId(44);
-    // Install state on the survivor before losing its peer, so failure must clean it.
-    let spec = ade_distributed::protocol::JobSpec {
-        job: job.id,
-        workers: cluster.workers.clone(),
-        config: job.config.clone(),
-    };
-    ade_distributed::protocol::rpc(
-        &cluster.workers[0],
-        ade_distributed::protocol::Request::PrepareJob(spec),
-        Duration::from_secs(5),
-    )
-    .unwrap();
-    cluster.terminate(1).unwrap();
-    let start = Instant::now();
-    assert!(coordinator::execute(&job).is_err());
-    assert!(start.elapsed() < Duration::from_secs(20));
-    // The surviving worker was cancelled, rather than left holding the failed job.
-    let reply = ade_distributed::protocol::rpc(
-        &cluster.workers[0],
-        ade_distributed::protocol::Request::Ping,
-        Duration::from_secs(5),
-    )
-    .unwrap();
-    assert!(matches!(reply, ade_distributed::protocol::Reply::Pong(_)));
-    let spec = ade_distributed::protocol::JobSpec {
-        job: JobId(45),
-        workers: cluster.workers.clone(),
-        config: job.config.clone(),
-    };
-    let ready = ade_distributed::protocol::rpc(
-        &cluster.workers[0],
-        ade_distributed::protocol::Request::PrepareJob(spec),
-        Duration::from_secs(5),
-    )
-    .unwrap();
-    assert!(matches!(ready, ade_distributed::protocol::Reply::Ready));
-    let root = cluster.temp_root().to_path_buf();
-    drop(cluster);
-    assert!(!root.exists());
+    failure_cleanup(cluster, &mut job);
 }

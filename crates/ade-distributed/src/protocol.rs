@@ -89,7 +89,9 @@ pub fn read_message<T: DeserializeOwned>(stream: &mut impl Read) -> Result<T> {
 /// # Errors
 /// Returns connection and socket configuration errors.
 pub fn connect(address: SocketAddr, timeout: Duration) -> Result<TcpStream> {
-    let socket = TcpStream::connect_timeout(&address, crate::IO_TIMEOUT)?;
+    let timeout = timeout.min(crate::IO_TIMEOUT);
+    require(!timeout.is_zero(), "positive connect timeout required")?;
+    let socket = TcpStream::connect_timeout(&address, timeout)?;
     socket.set_read_timeout(Some(timeout))?;
     socket.set_write_timeout(Some(timeout))?;
     socket.set_nodelay(true)?;
@@ -98,11 +100,19 @@ pub fn connect(address: SocketAddr, timeout: Duration) -> Result<TcpStream> {
 /// # Errors
 /// Returns transport/deadline, response identity or structured remote errors.
 pub fn rpc(endpoint: &WorkerEndpoint, request: Request, timeout: Duration) -> Result<Reply> {
-    let mut socket = connect(endpoint.control, timeout)?;
+    rpc_until(endpoint, request, Instant::now() + timeout)
+}
+/// Run one RPC against a deadline shared with its coordinator stage.
+pub(crate) fn rpc_until(
+    endpoint: &WorkerEndpoint,
+    request: Request,
+    deadline: Instant,
+) -> Result<Reply> {
+    let mut socket = connect(endpoint.control, remaining_until(deadline)?)?;
     let id = 1;
     let mut socket = DeadlineStream {
         socket: &mut socket,
-        deadline: Instant::now() + timeout,
+        deadline,
     };
     write_message(
         &mut socket,
@@ -116,6 +126,17 @@ pub fn rpc(endpoint: &WorkerEndpoint, request: Request, timeout: Duration) -> Re
     match response.body {
         Reply::Error { code, message } => Err(Error::Remote { code, message }),
         body => Ok(body),
+    }
+}
+fn remaining_until(deadline: Instant) -> std::io::Result<Duration> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "RPC deadline exceeded",
+        ))
+    } else {
+        Ok(remaining)
     }
 }
 // Enforce a total RPC deadline even if a peer dribbles bytes within inactivity timeouts.
@@ -182,6 +203,26 @@ mod tests {
             std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
         ));
         drop(socket);
+        peer.join().unwrap();
+    }
+
+    #[test]
+    fn rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = std::thread::spawn(move || {
+            let (_socket, _) = listener.accept().unwrap();
+            std::thread::sleep(Duration::from_secs(1));
+        });
+        let endpoint = WorkerEndpoint {
+            id: crate::ids::WorkerId(0),
+            control: address,
+            exchange: address,
+        };
+        let timeout = Duration::from_millis(100);
+        let start = Instant::now();
+        assert!(rpc(&endpoint, Request::Ping, timeout).is_err());
+        assert!(start.elapsed() < Duration::from_millis(750));
         peer.join().unwrap();
     }
     #[test]

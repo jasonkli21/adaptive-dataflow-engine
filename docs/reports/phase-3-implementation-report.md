@@ -43,9 +43,11 @@ Idle producers still send explicit empty transfers. Extra directory files are
 never discovered by this runtime.
 
 Hash version 1 is SplitMix64 followed by unsigned modulo N, fixed by vectors and
-row-conservation tests. N final partitions equal N workers. The benchmark adapter
-allocates job IDs from a checked instance-local counter. Public coordinator callers
-must supply unique IDs across jobs on a reused topology to reject stale streams.
+row-conservation tests. N final partitions equal N workers. Every worker retains
+the greatest accepted JobId for its lifetime and rejects PrepareJob IDs that are
+not strictly greater, including after cancellation. The benchmark adapter
+allocates IDs from a checked instance-local counter; public coordinator callers
+must use monotonically increasing IDs when reusing a live topology.
 
 ## Control protocol and coordinator lifecycle
 
@@ -55,10 +57,15 @@ PrepareJob, RunProducerTask, RunFinalTask, CancelJob, Shutdown. Task requests in
 job/task/attempt IDs; Ping verifies the advertised identity/endpoints. Responses
 are typed metrics or structured error code/message. Version/unknown-field/variant,
 size and truncation failures do not silently decode. Five-second connect/socket
-inactivity timeouts and total control-frame deadlines; task RPC/stage deadlines default to 120 seconds. A deadline
-wrapper updates remaining socket time before every read/write, bounding total RPC
-time even under incremental response delivery. The Rust job API configures the
-stage timeout; the adapter records its fixed default.
+inactivity timeouts and total control-frame deadlines; task RPC/stage deadlines
+default to 120 seconds. The task deadline starts before connect, limits connect to
+the lesser of the remaining deadline and five seconds, and applies the same
+absolute deadline to request/response I/O. Every RPC in a stage shares that stage
+deadline. Best-effort cancellation uses a separate five-second per-RPC bound and
+may extend cleanup beyond the task deadline. Stage failure can trigger an
+immediate cancellation wave and a final cleanup wave, each bounded independently.
+The Rust job API configures the stage timeout; the adapter records its fixed
+default.
 
 State progression is Prepared -> ProducersRunning -> ExchangeComplete ->
 FinalsRunning -> GatherComplete -> Succeeded; any required failure becomes Failed.
@@ -156,14 +163,17 @@ Gather currently binds loopback, so supported deployment is local multi-process.
 
 ## Metrics and benchmark integration
 
-DistributedMetrics returns worker count, producer/final task maps and per-worker
-received/gather totals. Task metrics include source files, input/output rows,
-duration, managed peak, local spill bytes, sent/received rows/transfers/payload
-bytes/peak frame and producer destination distribution. Producer input is source
+DistributedMetrics returns worker count, total coordinator elapsed milliseconds,
+producer/final task maps and per-worker received/gather totals. Task metrics include
+source files, input/output rows, duration, managed peak, local spill bytes,
+sent/received rows/transfers/non-empty data batches/payload bytes/peak frame and
+producer destination distribution. Producer input is source
 rows; producer output is partial rows; final input is partial rows; final output
 is group rows. Byte counters measure encoded IPC payload, excluding header/length/
-ACK/control/TCP overhead. On failure the structured error identifies job/worker/stage;
-there is no success metrics object or partial result.
+ACK/control/TCP overhead. Empty transfers count as one completed transfer and zero
+data batches. On failure the structured error identifies job/worker/stage; failed
+or rejected transfers are represented by those errors, and there is no success
+metrics object or partial result.
 
 `ade-distributed` supports only synthetic GroupBySum; other queries are rejected.
 Options: workers 2–4 (default 2), positive batch_size (8192), memory_limit_bytes
@@ -180,8 +190,10 @@ a timing gate. CI builds the workspace so the worker executable is available.
 - Added PrepareJob so incoming transfers can validate the full expected set before
   producer execution; this is the smallest explicit control prerequisite.
 - Omitted the optional coordinator binary: the public API plus harness already
-  provides the coordinator entrypoint. Local loopback deployment satisfies the
-  required multi-process exit condition; multi-host advertised gather is deferred.
+  provides the coordinator entrypoint. The Phase 3 plan now marks this CLI
+  optional/deferred to reconcile its conflicting scope language. Local loopback
+  deployment satisfies the multi-process exit condition; multi-host advertised
+  gather is deferred.
 - Reused local adapter option parsing for the four shared controls rather than
   maintaining duplicate parsers. Query/schema checks remain adapter-owned.
 - IPC input intentionally requires finalized streams rather than Arrow's more
@@ -295,10 +307,13 @@ worker/harness supply acceptance evidence.
   transients are different categories. Coordinator gathering/oracle are collected.
   Harness child peak RSS is not summed worker/cluster RSS; no cluster RSS limit or
   larger-than-memory validation claim is made.
-- Five-second operation deadlines can reject a legitimately very slow transfer;
-  task deadline defaults to 120 seconds and is configurable through the Rust job
-  API. Cancellation is cooperative; blocked filesystem calls are not preemptible.
-  Cancel/cleanup responses are best effort after network or process loss.
+- Five-second exchange-operation deadlines can reject a legitimately very slow
+  transfer. The task/stage deadline defaults to 120 seconds and covers worker
+  RPC connect plus request/response I/O; each of up to two best-effort cancellation
+  waves has a separate five-second per-RPC bound and may extend failure cleanup
+  by up to ten seconds. Cancellation is cooperative; blocked filesystem calls
+  are not preemptible. Cleanup responses are best effort after network or process
+  loss.
 - RAII removes temporary state on ordinary success/error/cancellation. A hard
   worker kill cannot run local-runtime spill destructors; parent-managed exchange
   roots are removed after wait, while unrelated OS-temp local spill leftovers may
@@ -413,15 +428,64 @@ removal and survivor cancellation are additionally verified by the process test.
 |---|---|
 | Static distributed graph, 2–4 workers | Two-worker process test and both release topologies; source assignment covers exactly four files; public local operators in both stages |
 | Correctness and gather | Hand-computed process fixture; mandatory independent oracle on every benchmark child; identical DataFusion/2-/4-worker fingerprint; gather is concatenation |
-| Stable routing and identity | Versioned SplitMix64 vectors and row conservation; explicit job/task/attempt/exchange/partition IDs; task and ACK identity checks |
+| Stable routing and identity | Versioned SplitMix64 vectors and row conservation; explicit job/task/attempt/exchange/partition IDs; worker-enforced increasing JobId high-watermark; task and ACK identity checks |
 | Exchange completeness | Prepared expected sets; duplicate starts rejected; explicit empty transfer; partial/disconnected/oversized/wrong-version transfers fail; final/gather check every expected identity |
 | Bounded resources | 1024-row/1 MiB frames, bounded codec writer, IPC allocation prevalidation, <=4 receiver and <=8 control handlers, synchronous backpressure; no whole-exchange collection |
 | Local prerequisites | Shared sink/collection loop; tested sink failure/spill/prefetch cleanup; incremental finalized IPC scan; checked partial merging in the existing spillable aggregate |
-| Failure and lifecycle | Worker loss with preinstalled survivor state fails, cancels and permits subsequent prepare; total progressing-peer deadline regression; finite frame/ACK waits; parent kill/wait and root-removal assertion |
-| Observable distribution | Every release worker has input/partial/final rows and nonzero sent/received payload; conservation assertions and per-destination metrics; local managed/spill counters |
+| Failure and lifecycle | Worker loss with preinstalled survivor state fails, cancels and permits subsequent prepare; stale previous-job exchange rejection; short RPC deadline against a nonresponsive peer; total progressing-peer deadline regression; finite frame/ACK waits; parent kill/wait and root-removal assertion |
+| Observable distribution | Every release worker has input/partial/final rows and nonzero sent/received payload; coordinator elapsed time, data-frame counts, conservation assertions and per-destination metrics; local managed/spill counters; failed transfers appear as structured errors |
 | Benchmark contracts | Synthetic GroupBySum only; strict options and unsupported-query tests; manifest/schema/oracle ownership and child/result schema v1 preserved |
-| Gates, smoke and documentation | Final fmt/check/Clippy, 51 workspace tests, extended smoke, optimized build, 2-/4-worker acceptance, staged diff check; AGENTS/README/plan/report and ADR-0008/0009 |
+| Gates, smoke and documentation | Final fmt/check/Clippy, 53 workspace tests, refreshed smoke and optimized build, remediation 2-/4-worker acceptance, diff check; AGENTS/README/plan/report and ADR-0008/0009 |
 | Phase boundary | One new cohesive crate; no adaptive/unified exchange framework, scheduling, lineage, retry/recovery, joins, frontend or streaming/state |
+
+## Review remediation and refreshed validation
+
+The Sol High review findings were addressed within Phase 3. Workers retain a
+bounded JobId high-watermark across cancellation and reject reused or decreasing
+IDs; RPC and stage deadlines now include connect; distributed metrics include
+coordinator elapsed time and non-empty frame counts. Failed/rejected transfers
+remain visible as structured errors without a success metrics object. The
+standalone coordinator CLI wording is reconciled as optional/deferred in the plan.
+
+Focused regressions verify cancel-and-reuse rejection, rejection of a stale
+previous-job exchange header while a newer job is active, acceptance of the next
+monotonic ID, short RPC deadlines against a nonresponsive peer, multi-frame
+conservation, empty-transfer batch count, and coordinator elapsed time. The
+existing two-worker process test still runs successful jobs with increasing IDs.
+
+Final validation on the remediation source:
+
+- `cargo fmt --all --check` passed.
+- `cargo check --workspace --all-targets --locked --offline` passed.
+- `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` passed.
+- `cargo test --workspace --all-features --locked --offline` passed: 53 tests plus all doc-test targets.
+- `bash scripts/smoke.sh` passed, including the two-worker independent-oracle check.
+- `cargo build --release --workspace --locked --offline` passed in 6m 28s.
+- `git diff --check` passed.
+
+Fresh release comparison evidence was written under the ignored
+`benchmarks/results/phase3-review-remediation-20261015/` directory, using a new
+matching dataset directory. The environment was Apple M3, macOS aarch64, Rust
+1.99.0, thin LTO, one codegen unit, system allocator, and a dirty-tree build before
+the single remediation commit. The synthetic fixture had 100,000 rows, four
+25,000-row Parquet files, 10,000 possible keys, seed 42 and uniform distribution.
+DataFusion and both distributed topologies passed the independent oracle and
+returned 10,000 groups with fingerprint
+`f89c88f70119ffaed5780864029c66eac3d2b3701247fa3fddb3a434109b9c82`.
+
+| Engine | Median query ms | Mean query ms | Population stddev ms |
+|---|---:|---:|---:|
+| DataFusion | 8.484 | 8.135 | 0.849 |
+| ADE 2 workers | 72.425 | 73.693 | 2.116 |
+| ADE 4 workers | 73.666 | 73.937 | 1.946 |
+
+The compare tool classifies the timings as regressions versus the DataFusion
+baseline; these local timings are correctness evidence, not a speedup claim. For
+the single validation runs, 2 workers reported 59 ms job elapsed, 32 sent/32
+received exchange frames, and 16 gather frames; 4 workers reported 66 ms, 64/64
+exchange frames, and 12 gather frames. Sent/received rows, bytes and frame counts
+matched for both topologies. Release result artifacts passed `check-result`, and
+the cross-engine comparison accepted semantic compatibility.
 
 Phase 3 implementation and its acceptance checks are complete. Phase 4 remains
 outside the active boundary and requires a new explicit instruction.

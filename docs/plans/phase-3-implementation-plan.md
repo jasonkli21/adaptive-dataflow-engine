@@ -773,22 +773,13 @@ For benchmark/test-managed workers:
 
 Avoid "pick a random port, close it, and hope the child binds before someone else" races.
 
-## 6.17 Standalone worker/coordinator CLI
+## 6.17 Standalone worker/coordinator CLI (optional, deferred)
 
-Provide a small manual path sufficient to demonstrate multiple processes.
-
-At minimum:
-
-```text
-ade-worker ...
-ade-coordinator ...
-```
-
-Exact CLI may be minimal.
-
-A developer should be able to run 2–4 workers on localhost and submit the Phase 3 aggregate job without going through the benchmark harness.
-
-Do not turn this into an operations platform.
+A manual CLI may be useful, but it is not required for Phase 3. The public Rust
+coordinator API and benchmark adapter provide the Phase 3 execution entrypoint,
+including the required 2–4-worker localhost process topology. A standalone
+`ade-coordinator` CLI is deferred unless a later phase has an independent need
+for it. Do not turn this into an operations platform.
 
 ## 6.18 Distributed metrics
 
@@ -802,8 +793,9 @@ At minimum record:
 - producer task count;
 - final task count;
 - job wall time;
-- failed worker/task if any;
-- gather rows/batches/bytes.
+- failed worker/task if any (reported as structured errors; failed jobs do not
+  return success metrics);
+- gather rows/batches/bytes, with one batch counted per non-empty data frame.
 
 ### Per worker
 
@@ -823,7 +815,12 @@ At minimum record:
 - wire bytes if practical;
 - per-destination bytes/rows;
 - peak frame bytes;
-- rejected/failed transfers.
+- rejected/failed transfers are surfaced through structured worker/task errors;
+  no success metrics object is returned for a failed job.
+
+Producer/final task counts are the corresponding task-map sizes. `elapsed_ms`
+measures the complete coordinator call, including best-effort worker cleanup.
+Explicit empty transfers count as completed transfers and zero data batches.
 
 Metrics can initially remain runtime/debug diagnostics rather than changing benchmark result schema v1.
 
@@ -1545,6 +1542,9 @@ Phase 3 is complete only if all of the following are true.
 
 - [x] per-worker work metrics exist;
 - [x] exchange row/byte metrics exist;
+- [x] total coordinator elapsed time and non-empty data-frame counts exist;
+- [x] empty transfers count as completed transfers and zero data frames;
+- [x] rejected/failed transfers surface through structured errors on failed jobs;
 - [x] job topology/configuration is visible;
 - [x] acceptance evidence demonstrates nonzero network/work distribution.
 

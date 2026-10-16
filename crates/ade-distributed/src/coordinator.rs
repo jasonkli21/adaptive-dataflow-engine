@@ -96,23 +96,21 @@ fn stage(
     name: &'static str,
     requests: Vec<Request>,
 ) -> Result<BTreeMap<u64, TaskMetrics>> {
+    let deadline = Instant::now() + job.task_timeout;
     thread::scope(|scope| {
         let (tx, rx) = mpsc::sync_channel(job.workers.len());
         for (worker, request) in job.workers.iter().zip(requests) {
             let tx = tx.clone();
             scope.spawn(move || {
                 let response =
-                    protocol::rpc(worker, request, job.task_timeout).and_then(
-                        |reply| match reply {
-                            Reply::Task(metrics) => Ok(metrics),
-                            _ => Err(Error::Invalid("unexpected task response".into())),
-                        },
-                    );
+                    protocol::rpc_until(worker, request, deadline).and_then(|reply| match reply {
+                        Reply::Task(metrics) => Ok(metrics),
+                        _ => Err(Error::Invalid("unexpected task response".into())),
+                    });
                 let _ = tx.send((worker.id, response));
             });
         }
         drop(tx);
-        let deadline = Instant::now() + job.task_timeout;
         let mut metrics = BTreeMap::new();
         for _ in &job.workers {
             let received = rx.recv_timeout(deadline.saturating_duration_since(Instant::now()));
@@ -154,6 +152,7 @@ fn stage(
     reason = "Explicit static stage transitions and failure cleanup remain in one place."
 )]
 pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
+    let started = Instant::now();
     validate_topology(&job.workers)?;
     job.config.validate()?;
     require(
@@ -237,6 +236,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         state = JobState::GatherComplete;
         let metrics = DistributedMetrics {
             worker_count: job.workers.len(),
+            elapsed_ms: 0,
             received: finals
                 .iter()
                 .map(|(id, m)| (*id, m.received.clone()))
@@ -260,7 +260,11 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     }
     // Success also releases worker-local exchange stores. Tasks have completed their RPCs.
     cancel(&job.workers, job.id);
-    result
+    result.map(|mut output| {
+        output.metrics.elapsed_ms =
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        output
+    })
 }
 /// Parent owns children and temp root. Drop always kill/waits before removing files.
 pub struct LocalCluster {

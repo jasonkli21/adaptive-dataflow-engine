@@ -24,12 +24,20 @@ Job, worker, task, partition, exchange and attempt IDs are numeric newtypes;
 attempt zero is required. Producer tasks are worker indices; final task IDs are
 worker count plus worker index. Files are assigned in manifest order round robin.
 Task identity is independent of PID/connection. Only one job/task runs per worker.
+Each worker retains the greatest accepted JobId for its lifetime and accepts a
+new PrepareJob only when its ID is strictly greater. Cancellation and success
+cleanup do not reset this high-watermark, so delayed traffic from an earlier job
+cannot resolve against a later store. Callers reusing a live topology must assign
+monotonically increasing JobIds.
 
 The listener is nonblocking but accepted sockets are explicitly blocking (macOS
 inherits O_NONBLOCK). At most eight control handlers exist; CancelJob can run
 while the task handler is active. Socket inactivity/connect timeout is five
-seconds. Control reads/writes also have five-second total deadlines. Task RPC has a configurable total deadline (default 120 seconds), enforced
-across individual reads/writes; a coordinator stage also has a total deadline.
+seconds. Control reads/writes also have five-second total deadlines. Task RPC has a configurable total deadline (default 120 seconds), starting before
+connection establishment and enforced across connect plus request/response I/O;
+each worker RPC in a stage shares the stage's absolute deadline. Best-effort
+cancellation uses its own five-second per-RPC bound; failure cleanup may issue
+an immediate cancellation wave and a final cleanup wave after the stage returns.
 CancelJob signals the public local cancellation token and releases job ownership;
 active task/receiver references retain their temporary root until teardown.
 Every failure fails the whole job, cancels survivors best effort and returns no

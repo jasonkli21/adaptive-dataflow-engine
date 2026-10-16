@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 #[serde(deny_unknown_fields)]
 pub struct NetworkMetrics {
     pub transfers: u64,
+    /// Non-empty data frames; explicit empty transfers have zero batches.
+    pub batches: u64,
     pub rows: u64,
     pub payload_bytes: u64,
     pub peak_frame_bytes: usize,
@@ -12,6 +14,7 @@ pub struct NetworkMetrics {
 impl NetworkMetrics {
     pub fn add(&mut self, other: &Self) {
         self.transfers += other.transfers;
+        self.batches += other.batches;
         self.rows += other.rows;
         self.payload_bytes += other.payload_bytes;
         self.peak_frame_bytes = self.peak_frame_bytes.max(other.peak_frame_bytes);
@@ -34,6 +37,7 @@ pub struct TaskMetrics {
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
     pub worker_count: usize,
+    pub elapsed_ms: u64,
     pub producers: BTreeMap<u64, TaskMetrics>,
     pub finals: BTreeMap<u64, TaskMetrics>,
     pub received: BTreeMap<u64, NetworkMetrics>,

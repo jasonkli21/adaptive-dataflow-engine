@@ -193,6 +193,7 @@ impl Sender {
                 .to_le_bytes(),
         )?;
         socket.write_all(&encoded.0)?;
+        self.metrics.batches += 1;
         self.metrics.rows += batch.num_rows() as u64;
         self.metrics.payload_bytes += encoded.0.len() as u64;
         self.metrics.peak_frame_bytes = self.metrics.peak_frame_bytes.max(encoded.0.len());
@@ -335,6 +336,7 @@ impl Store {
                     "frame must contain exactly one complete batch",
                 )?;
                 writer.write(&batch)?;
+                metrics.batches += 1;
                 metrics.rows += batch.num_rows() as u64;
                 metrics.payload_bytes += length as u64;
                 metrics.peak_frame_bytes = metrics.peak_frame_bytes.max(length);
@@ -507,13 +509,17 @@ mod tests {
         sender.batch(&batch()).unwrap();
         let sent = sender.finish().unwrap();
         assert_eq!(sent.rows, 6);
+        assert_eq!(sent.batches, 2);
         assert!(sent.payload_bytes > 0);
-        Sender::new(receiver.address, ids[1], CancellationToken::default())
+        let empty = Sender::new(receiver.address, ids[1], CancellationToken::default())
             .unwrap()
             .finish()
             .unwrap();
+        assert_eq!(empty.transfers, 1);
+        assert_eq!(empty.batches, 0);
         assert_eq!(store.metrics().unwrap().transfers, 2);
         assert_eq!(store.metrics().unwrap().rows, sent.rows);
+        assert_eq!(store.metrics().unwrap().batches, sent.batches);
         assert_eq!(store.metrics().unwrap().payload_bytes, sent.payload_bytes);
         assert!(
             Sender::new(receiver.address, ids[0], CancellationToken::default())

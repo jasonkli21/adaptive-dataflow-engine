@@ -1,8 +1,9 @@
-//! Static distributed aggregation. Private versioned TCP protocols, no recovery.
+//! Distributed aggregation with static topology and selectable retention; no recovery.
+pub mod adaptive;
 mod retention;
 pub use retention::{
     ExchangeConfig, ExchangeMode, ObjectStoreBackend, ObjectStoreConfig, ObjectStoreDurability,
-    RetentionMetrics,
+    PressureConfig, RetentionMetrics,
 };
 pub mod coordinator;
 pub mod exchange;

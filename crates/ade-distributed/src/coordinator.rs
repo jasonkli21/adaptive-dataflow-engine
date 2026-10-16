@@ -261,7 +261,22 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         )?;
         let batches = exchange::collect(&store)?;
         state = JobState::GatherComplete;
+        let mut adaptive = crate::adaptive::AdaptiveSummary::default();
+        if job.config.exchange.mode == crate::ExchangeMode::Adaptive {
+            for task in finals.values() {
+                let a = &task.retention.adaptive;
+                require(
+                    a.segments_by_tier.iter().sum::<u64>() == task.received.batches
+                        && a.bytes_by_tier.iter().sum::<u64>() == task.received.payload_bytes
+                        && a.transitions.len() <= 3
+                        && a.extents <= 4,
+                    "adaptive conservation/metadata bound failure",
+                )?;
+                adaptive.add(a);
+            }
+        }
         let metrics = DistributedMetrics {
+            adaptive,
             worker_count: job.workers.len(),
             exchange_mode: job.config.exchange.mode,
             elapsed_ms: 0,

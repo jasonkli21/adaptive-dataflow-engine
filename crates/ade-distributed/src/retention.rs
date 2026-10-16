@@ -1,4 +1,4 @@
-//! Static retention mechanisms. Routing and network identity live outside this module.
+//! Retention mechanisms. Routing, policy application and network identity live outside this module.
 use crate::{Error, Result, exchange::MAX_FRAME_BYTES, ids::TransferId, require};
 use ade_exec::CancellationToken;
 use object_store::{ObjectStore, ObjectStoreExt, local::LocalFileSystem, path::Path};
@@ -24,6 +24,7 @@ const RETENTION_IO_TIMEOUT: Duration = Duration::from_secs(5);
 #[serde(rename_all = "snake_case")]
 pub enum ExchangeMode {
     Direct,
+    Adaptive,
     Buffered,
     Spill,
     #[default]
@@ -36,6 +37,7 @@ impl ExchangeMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Direct => "direct",
+            Self::Adaptive => "adaptive",
             Self::Buffered => "buffered",
             Self::Spill => "spill",
             Self::LocalMaterialized => "local_materialized",
@@ -96,10 +98,22 @@ impl ObjectStoreBackend {
     }
 }
 
+/// Research-only deterministic final-consumer delay; off by default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PressureConfig {
+    pub target_partition: Option<u64>,
+    pub after_segments: u64,
+    pub delay_ms: u64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExchangeConfig {
     pub mode: ExchangeMode,
+    #[serde(default)]
+    pub adaptive: crate::adaptive::AdaptiveConfig,
+    #[serde(default)]
+    pub pressure: PressureConfig,
     pub buffer_bytes: usize,
     #[serde(default)]
     pub object_store: ObjectStoreConfig,
@@ -108,6 +122,8 @@ impl Default for ExchangeConfig {
     fn default() -> Self {
         Self {
             mode: ExchangeMode::LocalMaterialized,
+            adaptive: crate::adaptive::AdaptiveConfig::default(),
+            pressure: PressureConfig::default(),
             buffer_bytes: 4 * MAX_FRAME_BYTES,
             object_store: ObjectStoreConfig::default(),
         }
@@ -117,6 +133,17 @@ impl ExchangeConfig {
     /// # Errors
     /// Rejects zero/excessive limits; buffered mode must fit the largest valid frame.
     pub fn validate(&self) -> Result<()> {
+        self.adaptive.validate()?;
+        require(
+            self.pressure.delay_ms <= 2000
+                && self.pressure.after_segments <= 1_000_000
+                && self.pressure.target_partition.is_none_or(|p| p < 4),
+            "invalid research pressure configuration",
+        )?;
+        require(
+            self.pressure.target_partition.is_some() || self.pressure.delay_ms == 0,
+            "research delay requires target partition",
+        )?;
         require(
             (1..=256 * MAX_FRAME_BYTES).contains(&self.buffer_bytes),
             "exchange buffer must be 1..=268435456 bytes",
@@ -126,8 +153,10 @@ impl ExchangeConfig {
             "buffered exchange requires at least max_frame_bytes",
         )?;
         require(
-            self.mode != ExchangeMode::ObjectStoreMaterialized
-                || !self.object_store.backend.trim().is_empty(),
+            !matches!(
+                self.mode,
+                ExchangeMode::ObjectStoreMaterialized | ExchangeMode::Adaptive
+            ) || !self.object_store.backend.trim().is_empty(),
             "object-store backend name required",
         )
     }
@@ -135,6 +164,7 @@ impl ExchangeConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetentionMetrics {
+    pub adaptive: crate::adaptive::AdaptiveMetrics,
     /// Current bytes in the in-memory exchange queue.
     pub current_buffer_bytes: usize,
     pub peak_buffer_bytes: usize,
@@ -158,6 +188,7 @@ struct BufferState {
     bytes: usize,
     spill_backlog_bytes: usize,
     waiting: bool,
+    consumed: u64,
     metrics: RetentionMetrics,
 }
 /// One queue/spool per destination, with constant disk metadata regardless of segment count.
@@ -179,7 +210,7 @@ impl Buffer {
         root: &FsPath,
         poisoned: Arc<AtomicBool>,
     ) -> Result<Self> {
-        let spool = if config.mode == ExchangeMode::Spill {
+        let spool = if matches!(config.mode, ExchangeMode::Spill | ExchangeMode::Adaptive) {
             Some(SpoolIo::new(tempfile::tempfile_in(root)?, poisoned.clone()))
         } else {
             None
@@ -191,6 +222,7 @@ impl Buffer {
                 bytes: 0,
                 spill_backlog_bytes: 0,
                 waiting: false,
+                consumed: 0,
                 metrics: RetentionMetrics::default(),
             }),
             changed: Condvar::new(),
@@ -203,6 +235,31 @@ impl Buffer {
         self.spool = Some(SpoolIo::with_log(log, self.poisoned.clone()));
     }
     pub fn push(&self, encoded: Vec<u8>, token: &CancellationToken) -> Result<()> {
+        self.push_as(encoded, token, self.config.mode)
+    }
+    pub(crate) fn observation(
+        &self,
+        incoming_bytes: usize,
+    ) -> crate::adaptive::AdaptiveObservation {
+        let s = self.state.lock().expect("buffer lock");
+        crate::adaptive::AdaptiveObservation {
+            incoming_bytes,
+            buffer_bytes: s.bytes,
+            capacity_bytes: self.config.buffer_bytes,
+            spill_backlog_bytes: s.spill_backlog_bytes,
+            consumer_ready: s.waiting,
+            producer_wait_ns: s.metrics.producer_wait_ns,
+            consumer_wait_ns: s.metrics.consumer_wait_ns,
+            consumed_segments: s.consumed,
+            ..Default::default()
+        }
+    }
+    pub(crate) fn push_as(
+        &self,
+        encoded: Vec<u8>,
+        token: &CancellationToken,
+        mode: ExchangeMode,
+    ) -> Result<()> {
         require(
             encoded.len() <= MAX_FRAME_BYTES,
             "spill frame exceeds segment cap",
@@ -211,7 +268,7 @@ impl Buffer {
         let mut s = self.state.lock().expect("buffer lock");
         loop {
             token.check()?;
-            match self.config.mode {
+            match mode {
                 ExchangeMode::Direct if s.waiting && s.queue.is_empty() => break,
                 ExchangeMode::Buffered
                     if encoded.len() <= self.config.buffer_bytes.saturating_sub(s.bytes) =>
@@ -229,8 +286,9 @@ impl Buffer {
             }
         }
         let mut waited_ns = nanos(start);
-        if self.config.mode == ExchangeMode::Spill
-            && (s.spill_backlog_bytes > 0
+        if mode == ExchangeMode::Spill
+            && (self.config.mode == ExchangeMode::Adaptive
+                || s.spill_backlog_bytes > 0
                 || encoded.len() > self.config.buffer_bytes.saturating_sub(s.bytes))
         {
             if self.poisoned.load(Ordering::Acquire) {
@@ -260,7 +318,7 @@ impl Buffer {
         s.metrics.peak_buffer_bytes = s.metrics.peak_buffer_bytes.max(s.bytes);
         s.queue.push_back(encoded);
         self.changed.notify_all();
-        if self.config.mode == ExchangeMode::Direct {
+        if mode == ExchangeMode::Direct {
             let start = Instant::now();
             while !s.queue.is_empty() {
                 token.check()?;
@@ -280,6 +338,7 @@ impl Buffer {
         s.waiting = true;
         self.changed.notify_all();
         if let Some(frame) = s.queue.pop_front() {
+            s.consumed = s.consumed.saturating_add(1);
             s.bytes -= frame.len();
             s.metrics.current_buffer_bytes = s.bytes;
             s.waiting = false;
@@ -315,6 +374,7 @@ impl Buffer {
                     return Err(error);
                 }
             };
+            s.consumed = s.consumed.saturating_add(1);
             s.spill_backlog_bytes = s.spill_backlog_bytes.saturating_sub(frame.len());
             s.metrics.current_spill_backlog_bytes = s.spill_backlog_bytes;
             s.metrics.spill_read_bytes = s
@@ -325,7 +385,10 @@ impl Buffer {
             self.changed.notify_all();
             return Ok(Some(frame));
         }
-        if self.config.mode != ExchangeMode::Direct {
+        if !matches!(
+            self.config.mode,
+            ExchangeMode::Direct | ExchangeMode::Adaptive
+        ) {
             s.waiting = false;
         }
         Ok(None)

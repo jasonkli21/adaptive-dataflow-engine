@@ -44,12 +44,43 @@ impl AdeDistributedConfig {
             "exchange_buffer_bytes".into(),
             self.task.exchange.buffer_bytes.to_string(),
         );
-        if self.task.exchange.mode == ExchangeMode::ObjectStoreMaterialized {
+        if matches!(
+            self.task.exchange.mode,
+            ExchangeMode::ObjectStoreMaterialized | ExchangeMode::Adaptive
+        ) {
             info.configuration.insert(
                 "object_store_backend".into(),
                 "local_filesystem_ephemeral".into(),
             );
         }
+        if self.task.exchange.mode == ExchangeMode::Adaptive {
+            info.configuration
+                .insert("adaptive_policy".into(), "threshold_v1".into());
+            info.configuration.insert(
+                "adaptive_buffer_high_pct".into(),
+                self.task.exchange.adaptive.buffer_high_pct.to_string(),
+            );
+            info.configuration.insert(
+                "adaptive_remote_after_bytes".into(),
+                self.task.exchange.adaptive.remote_after_bytes.to_string(),
+            );
+        }
+        info.configuration.insert(
+            "research_slow_partition".into(),
+            self.task
+                .exchange
+                .pressure
+                .target_partition
+                .map_or_else(|| "off".into(), |p| p.to_string()),
+        );
+        info.configuration.insert(
+            "research_delay_after_segments".into(),
+            self.task.exchange.pressure.after_segments.to_string(),
+        );
+        info.configuration.insert(
+            "research_delay_ms".into(),
+            self.task.exchange.pressure.delay_ms.to_string(),
+        );
         info.configuration
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
@@ -96,10 +127,15 @@ fn worker_binary() -> Result<PathBuf> {
 )]
 impl BenchmarkEngine for AdeDistributedEngine {
     type Config = AdeDistributedConfig;
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Single strict adapter option parser keeps duplicate and mode checks together."
+    )]
     fn parse_config(options: &[String]) -> Result<Self::Config> {
         let mut workers = None;
         let mut exchange_mode = None;
         let mut exchange_buffer = None;
+        let mut special = std::collections::BTreeMap::new();
         let mut local = Vec::new();
         for option in options {
             if let Some(value) = option.strip_prefix("workers=") {
@@ -116,6 +152,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 require(exchange_mode.is_none(), "duplicate exchange_mode")?;
                 exchange_mode = Some(match value {
                     "direct" => ExchangeMode::Direct,
+                    "adaptive" => ExchangeMode::Adaptive,
                     "buffered" => ExchangeMode::Buffered,
                     "spill" => ExchangeMode::Spill,
                     "local_materialized" => ExchangeMode::LocalMaterialized,
@@ -129,6 +166,26 @@ impl BenchmarkEngine for AdeDistributedEngine {
                         .parse::<usize>()
                         .map_err(|_| Error::Invalid("invalid exchange_buffer_bytes".into()))?,
                 );
+            } else if option.starts_with("adaptive_") || option.starts_with("research_") {
+                let (key, value) = option
+                    .split_once('=')
+                    .ok_or_else(|| Error::Invalid("option requires value".into()))?;
+                require(
+                    matches!(
+                        key,
+                        "adaptive_policy"
+                            | "adaptive_buffer_high_pct"
+                            | "adaptive_remote_after_bytes"
+                            | "research_slow_partition"
+                            | "research_delay_after_segments"
+                            | "research_delay_ms"
+                    ),
+                    "unknown adaptive/research option",
+                )?;
+                require(
+                    special.insert(key.to_owned(), value.to_owned()).is_none(),
+                    "duplicate adaptive/research option",
+                )?;
             } else {
                 local.push(option.clone());
             }
@@ -136,11 +193,42 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let workers = workers.unwrap_or(2);
         require((2..=4).contains(&workers), "workers must be 2..4")?;
         let local = crate::ade_local::AdeLocalEngine::parse_config(&local)?;
-        let exchange = ExchangeConfig {
+        let mut exchange = ExchangeConfig {
             mode: exchange_mode.unwrap_or_default(),
             buffer_bytes: exchange_buffer.unwrap_or(ExchangeConfig::default().buffer_bytes),
-            object_store: ExchangeConfig::default().object_store,
+            ..Default::default()
         };
+        require(
+            exchange.mode == ExchangeMode::Adaptive
+                || !special.keys().any(|k| k.starts_with("adaptive_")),
+            "adaptive options require adaptive mode",
+        )?;
+        for (key, value) in special {
+            let number = || {
+                value
+                    .parse::<u64>()
+                    .map_err(|_| Error::Invalid(format!("invalid {key}")))
+            };
+            match key.as_str() {
+                "adaptive_policy" => require(value == "threshold_v1", "invalid adaptive_policy")?,
+                "adaptive_buffer_high_pct" => {
+                    exchange.adaptive.buffer_high_pct = u8::try_from(number()?)
+                        .map_err(|_| Error::Invalid("invalid adaptive percentage".into()))?;
+                }
+                "adaptive_remote_after_bytes" => exchange.adaptive.remote_after_bytes = number()?,
+                "research_slow_partition" => {
+                    let partition = number()?;
+                    require(
+                        partition < workers as u64,
+                        "research partition outside topology",
+                    )?;
+                    exchange.pressure.target_partition = Some(partition);
+                }
+                "research_delay_after_segments" => exchange.pressure.after_segments = number()?,
+                "research_delay_ms" => exchange.pressure.delay_ms = number()?,
+                _ => unreachable!(),
+            }
+        }
         exchange.validate()?;
         Ok(AdeDistributedConfig {
             workers,
@@ -161,7 +249,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
     ) -> Result<Self> {
         require(
             case.query == Query::GroupBySum,
-            "ade-distributed supports only synthetic GroupBySum in Phase 4",
+            "ade-distributed supports only synthetic GroupBySum in Phase 5",
         )?;
         case.validate()?;
         manifest.validate()?;
@@ -233,7 +321,21 @@ mod tests {
         assert_eq!(config.info().configuration["workers"], "4");
         assert_eq!(config.info().configuration["memory_limit_bytes"], "1048576");
         for options in [
-            vec!["exchange_mode=adaptive"],
+            vec!["exchange_mode=adaptive", "adaptive_policy=unknown"],
+            vec!["adaptive_buffer_high_pct=80"],
+            vec!["exchange_mode=adaptive", "adaptive_buffer_high_pct=0"],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_remote_after_bytes=18446744073709551615",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=threshold_v1",
+                "adaptive_policy=threshold_v1",
+            ],
+            vec!["research_delay_ms=1"],
+            vec!["research_slow_partition=2"],
+            vec!["research_slow_partition=0", "research_delay_ms=2001"],
             vec!["exchange_mode=direct", "exchange_mode=spill"],
             vec!["exchange_buffer_bytes=0"],
             vec!["exchange_buffer_bytes=1", "exchange_buffer_bytes=2"],

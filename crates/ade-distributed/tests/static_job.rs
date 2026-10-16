@@ -17,6 +17,9 @@ use std::{
     time::{Duration, Instant},
 };
 fn fixture(root: &Path) -> Vec<PathBuf> {
+    fixture_keys(root, 4096)
+}
+fn fixture_keys(root: &Path, keys: u64) -> Vec<PathBuf> {
     let schema = Arc::new(Schema::new(vec![
         Field::new("key", DataType::UInt64, false),
         Field::new("value_i64", DataType::Int64, false),
@@ -27,9 +30,9 @@ fn fixture(root: &Path) -> Vec<PathBuf> {
             let batch = RecordBatch::try_new(
                 schema.clone(),
                 vec![
-                    Arc::new(UInt64Array::from_iter_values(0..4096)),
+                    Arc::new(UInt64Array::from_iter_values(0..keys)),
                     Arc::new(Int64Array::from_iter_values(
-                        (0..4096).map(|key| file - key),
+                        (0..keys).map(|key| file - i64::try_from(key).unwrap()),
                     )),
                 ],
             )
@@ -134,6 +137,9 @@ fn two_worker_process_graph_and_failure_cleanup() {
 }
 
 fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
+    verify_output_keys(output, mode, 4096);
+}
+fn verify_output_keys(output: coordinator::JobOutput, mode: ExchangeMode, keys: u64) {
     assert_eq!(output.metrics.exchange_mode, mode);
     assert_eq!(output.state, JobState::Succeeded);
     let mut actual = BTreeMap::new();
@@ -161,7 +167,7 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
             );
         }
     }
-    let expected: BTreeMap<_, _> = (0..4096)
+    let expected: BTreeMap<_, _> = (0..keys)
         .map(|key| (key, (6 - 4 * i64::try_from(key).unwrap(), 4)))
         .collect();
     assert_eq!(actual, expected);
@@ -170,8 +176,8 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
         let producer = &output.metrics.producers[&worker];
         let final_task = &output.metrics.finals[&worker];
         assert_eq!(producer.source_files, 2);
-        assert_eq!(producer.input_rows, 8192);
-        assert_eq!(producer.output_rows, 4096);
+        assert_eq!(producer.input_rows as u64, keys * 2);
+        assert_eq!(producer.output_rows as u64, keys);
         assert_eq!(producer.sent.transfers, 2);
         assert!(producer.sent.payload_bytes > 0);
         assert_eq!(producer.destinations.len(), 2);
@@ -179,7 +185,7 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
         assert!(final_task.output_rows > 0);
         assert_eq!(output.metrics.received[&worker].transfers, 2);
     }
-    assert_eq!(output.metrics.gather.rows, 4096);
+    assert_eq!(output.metrics.gather.rows, keys);
     assert!(output.metrics.gather.batches > 0);
     assert!(output.metrics.gather.payload_bytes > 0);
     assert!(output.metrics.elapsed_ms > 0);
@@ -202,6 +208,13 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
                 assert_eq!(m.local_materialized_files, 2);
                 assert!(m.local_materialized_bytes > 0);
             }
+            ExchangeMode::Adaptive => {
+                assert!(m.adaptive.extents <= 4);
+                assert_eq!(
+                    m.adaptive.segments_by_tier.iter().sum::<u64>(),
+                    task.received.batches
+                );
+            }
             ExchangeMode::ObjectStoreMaterialized => {
                 assert!(m.object_count > 2);
                 assert_eq!(m.object_write_bytes, m.object_read_bytes);
@@ -214,4 +227,72 @@ fn verify_output(output: coordinator::JobOutput, mode: ExchangeMode) {
             }
         }
     }
+}
+
+#[test]
+fn adaptive_process_oracle_divergence_and_failure() {
+    let data = tempfile::tempdir().unwrap();
+    let files = fixture_keys(data.path(), 32768);
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let mut config = TaskConfig::default();
+    config.exchange.mode = ExchangeMode::Adaptive;
+    config.exchange.buffer_bytes = 262_144;
+    config.exchange.adaptive.remote_after_bytes = 32768;
+    config.exchange.pressure = ade_distributed::PressureConfig {
+        target_partition: Some(0),
+        after_segments: 1,
+        delay_ms: 250,
+    };
+    let mut job = StaticAggregateJob {
+        id: JobId(1),
+        files,
+        workers: cluster.workers.clone(),
+        config,
+        task_timeout: Duration::from_secs(20),
+    };
+    let output = coordinator::execute(&job).unwrap();
+    for (partition, task) in &output.metrics.finals {
+        eprintln!(
+            "partition {partition}: adaptive segments {:?}",
+            task.retention.adaptive.segments_by_tier
+        );
+    }
+    let slow = &output.metrics.finals[&0].retention;
+    assert!(
+        slow.adaptive
+            .segments_by_tier
+            .iter()
+            .filter(|n| **n > 0)
+            .count()
+            >= 2
+    );
+    assert!(
+        slow.adaptive
+            .transitions
+            .iter()
+            .any(|t| t.new == ade_distributed::adaptive::AdaptiveTier::Spill)
+    );
+    assert!(slow.adaptive.transitions.len() <= 3);
+    assert!(
+        output.metrics.finals[&1]
+            .retention
+            .adaptive
+            .transitions
+            .len()
+            < slow.adaptive.transitions.len(),
+        "normal partition must remain at a lower tier"
+    );
+    for task in output.metrics.finals.values() {
+        assert_eq!(task.retention.current_buffer_bytes, 0);
+        assert_eq!(task.retention.current_spill_backlog_bytes, 0);
+        assert_eq!(
+            task.retention.adaptive.bytes_by_tier.iter().sum::<u64>(),
+            task.received.payload_bytes
+        );
+    }
+    verify_output_keys(output, ExchangeMode::Adaptive, 32768);
+    job.id = JobId(2);
+    job.files = vec![data.path().join("missing.parquet")];
+    assert!(coordinator::execute(&job).is_err());
+    failure_cleanup(cluster, &mut job);
 }

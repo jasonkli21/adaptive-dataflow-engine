@@ -201,6 +201,14 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
         Request::PrepareJob(spec) => {
             spec.config.validate()?;
             crate::coordinator::validate_topology(&spec.workers)?;
+            require(
+                spec.config
+                    .exchange
+                    .pressure
+                    .target_partition
+                    .is_none_or(|p| p < spec.workers.len() as u64),
+                "research pressure target outside topology",
+            )?;
             let own = spec
                 .workers
                 .iter()
@@ -332,7 +340,7 @@ pub fn serve(
     serve_inner(id, control, exchange, parent, None, ready)
 }
 
-/// Serve with a caller-installed object-store backend for object-store exchange mode.
+/// Serve with a caller-installed object-store backend for static or adaptive retention.
 /// The backend name and durability capability must match each job's exchange config.
 /// # Errors
 /// Returns binding, readiness, listener or socket setup errors.

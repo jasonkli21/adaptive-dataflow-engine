@@ -29,12 +29,14 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 4 is the active/completed boundary, defined by
-`docs/plans/phase-4-implementation-plan.md` and its implementation report.
-Phases 2–3 remain accepted. Phase 4 adds five statically selected hash-exchange
-mechanisms with overlapping producer/final roles, strict segment completion and
-bounded retention. Object-store acceptance uses an ephemeral filesystem backend,
-not proof of cloud durability. Do not begin Phase 5 without a new explicit instruction.
+Phase 5 is the active/completed boundary, defined by
+`docs/plans/phase-5-implementation-plan.md` and its implementation report.
+Phases 2–4 remain accepted. Phase 5 adds explicit deterministic `threshold_v1`
+adaptive exchange alongside the five static mechanisms. Destination partitions
+escalate monotonically at segment boundaries with at most three transition
+records; mixed-tier sources preserve strict completion and bounded retention.
+Object-store acceptance uses an ephemeral filesystem backend, not proof of cloud
+durability. Do not begin Phase 6 without a new explicit instruction.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
@@ -42,9 +44,11 @@ not proof of cloud durability. Do not begin Phase 5 without a new explicit instr
 - Worker failure fails the job; cancel survivors and clean up. No retry/recovery.
 - Exchange buffers are separately bounded; producer/final task budgets may overlap.
   The local ledger is not a process RSS cap.
-- No adaptive exchange, lineage, scheduling, joins, SQL frontend or streaming/state.
+- Preserve the pure policy/mechanism boundary and static defaults. No lineage,
+  recovery, adaptive scheduling, joins, SQL frontend or streaming/state.
 - Run focused tests during development, one final workspace gate/smoke and focused
-  five-mode 2-worker and limited 4-worker release acceptance evidence. Keep CI correctness-only.
+  five-mode static regression and focused adaptive 2-worker/limited 4-worker release
+  acceptance evidence. Keep CI correctness-only; timing guards remain local release evidence.
 
 A small coherent implementation is preferred to speculative architecture.
 
@@ -122,12 +126,13 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. For Phase 4 create:
+Each phase ends with an implementation report. Phase 5 is recorded in:
 
-`docs/reports/phase-4-implementation-report.md`
+`docs/reports/phase-5-implementation-report.md`
 
-Include baseline/final commit identity, implemented scope and mechanism semantics,
-producer/final lifecycle, memory/boundedness and backend durability statements,
-deviations, ADRs, commands/test results, five-mode 2-worker and limited 4-worker
-release acceptance, known limitations and Phase 5 handoff observations.
-Do not implement Phase 5 policy, lineage or recovery as cleanup.
+Include baseline/final identity, policy/configuration, observation truthfulness,
+transition/extent bounds, mixed-tier lifecycle, failure/cancellation and backend
+durability statements, deviations, ADRs, commands/tests, raw normal/adversarial
+release evidence, actual partition histories, limitations and Phase 6 handoff.
+Preserve failed experiments as well as final evidence. Do not implement Phase 6
+lineage, retry or recovery as cleanup.

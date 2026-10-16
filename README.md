@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 4 static unified exchange implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
+**Phase 5 adaptive exchange v1 implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-4-implementation-plan.md`](docs/plans/phase-4-implementation-plan.md) — Phase 4 implementation contract.
+4. [`docs/plans/phase-5-implementation-plan.md`](docs/plans/phase-5-implementation-plan.md) — Phase 5 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -154,7 +154,7 @@ Options: `workers=2` (2–4), `batch_size=8192`, `memory_limit_bytes=268435456`,
 `spill_enabled=true`, `prefetch_batches=0` (0–64),
 `exchange_mode=local_materialized`, `exchange_buffer_bytes=4194304`.
 Hash exchange modes are `direct`, `buffered`, `spill`, `local_materialized` and
-`object_store`. Buffer limits are 1 byte–256 MiB; `buffered` requires at least
+`object_store`, plus explicit `adaptive`. Buffer limits are 1 byte–256 MiB; `buffered` requires at least
 1 MiB. `spill` can use a tiny limit to force disk. Direct/local/object modes
 validate/report the buffer setting but do not use it as retention capacity.
 Effective configuration and
@@ -166,7 +166,7 @@ The Rust coordinator API also accepts static endpoints. `ade-worker WORKER_ID
 TEMP_PARENT` binds loopback control/exchange ports and writes a framed readiness
 record to stdout; logs use stderr. Gather currently binds loopback, so this is a
 local multi-process deployment. Final consumers and producers overlap, with at
-most one task of each role per worker and no retry/adaptation. The local memory
+most one task of each role per worker and no retry/recovery. The local memory
 limit applies per task; two task budgets may coexist. Exchange retention and
 bounded frame transients (1 MiB, 1024 rows) are separate from the local ledger;
 this is not a process RSS cap. Direct uses rendezvous handoff, buffered uses a
@@ -183,4 +183,29 @@ execution-scoped. Gather stays fixed and bounded in
 transit; coordinator gathering/oracle validation collect the final result. See
 [Phase 4 report](docs/reports/phase-4-implementation-report.md) and
 [unified exchange ADR](docs/adr/0010-static-unified-exchange.md).
-Phase 5 requires a new explicit instruction.
+
+Adaptive mode runs deterministic `threshold_v1` at validated segment boundaries.
+Destinations independently escalate through direct → buffered → spill → object
+store. `adaptive_policy=threshold_v1`, `adaptive_buffer_high_pct=80` (1–100) and
+`adaptive_remote_after_bytes=67108864` (0 disables remote, maximum 1 TiB) are
+accepted only with `exchange_mode=adaptive`. Typed static configurations ignore
+the serialized adaptive defaults. Equality at the high watermark escalates;
+remote escalation also requires an unconsumed spill backlog. No downgrade or
+routing change occurs. Live local prefixes drain before finalized object suffixes;
+all tiers feed the same aggregate. At most three transition records per
+partition expose exact ordinal/transfer/sequence, reason and observation values.
+Debug metrics include tier byte/segment totals and job transition summaries.
+
+Research-only pressure options are `research_slow_partition=N`,
+`research_delay_after_segments=1`, `research_delay_ms=750`. They delay that final
+consumer once, default off, with a maximum two-second cancellation-aware delay.
+Effective metadata records these options. They change no query semantics.
+
+Run `bash scripts/phase5-acceptance.sh` after a release workspace build for the
+predeclared normal buffered/adaptive comparison, delayed direct/spill/adaptive
+comparison, and limited four-worker adaptive evidence. It preserves raw oracle
+validated iterations and checks the local 1.25× normal median guard plus the
+narrow adversarial win over direct; these timing checks do not run in CI.
+See [ADR-0012](docs/adr/0012-adaptive-exchange-v1.md) and the
+[Phase 5 report](docs/reports/phase-5-implementation-report.md).
+Phase 6 requires a new explicit instruction.

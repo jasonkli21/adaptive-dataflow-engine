@@ -224,6 +224,15 @@ impl Sender {
         Ok(self.metrics)
     }
 }
+#[derive(Default)]
+struct AdaptiveState {
+    tier: crate::adaptive::AdaptiveTier,
+    metrics: crate::adaptive::AdaptiveMetrics,
+    produced_bytes: u64,
+    produced_segments: u64,
+    // At most one suffix boundary per expected transfer, never per segment.
+    object_starts: BTreeMap<TransferId, u64>,
+}
 struct Registry {
     completed: BTreeMap<TransferId, (PathBuf, NetworkMetrics)>,
     started: BTreeSet<TransferId>,
@@ -235,6 +244,8 @@ pub struct Store {
     registry: Mutex<Registry>,
     config: ExchangeConfig,
     buffer: Buffer,
+    adaptive: Mutex<AdaptiveState>,
+    adaptive_metrics: Mutex<crate::adaptive::AdaptiveMetrics>,
     objects: Option<Objects>,
     poisoned: Arc<AtomicBool>,
     pub cancellation: CancellationToken,
@@ -249,7 +260,7 @@ impl Store {
     ) -> Result<Self> {
         Self::configured(parent, expected, cancellation, ExchangeConfig::default())
     }
-    /// Create a destination session with one static retention mechanism.
+    /// Create a destination session with static or adaptive retention.
     /// # Errors
     /// Returns configuration, backend or temporary storage errors.
     pub fn configured(
@@ -275,12 +286,26 @@ impl Store {
             !expected.is_empty() && expected.len() <= 16,
             "expected transfer set must contain 1..16 identities",
         )?;
+        if config.mode == ExchangeMode::Adaptive {
+            let first = expected.first().expect("nonempty validated");
+            require(
+                expected.iter().all(|id| {
+                    id.job == first.job
+                        && id.exchange == first.exchange
+                        && id.partition == first.partition
+                }),
+                "adaptive session requires one destination partition",
+            )?;
+        }
         let root = tempfile::Builder::new()
             .prefix("ade-exchange-")
             .tempdir_in(parent)?;
         let poisoned = Arc::new(AtomicBool::new(false));
         let buffer = Buffer::new_with_poison(config.clone(), root.path(), poisoned.clone())?;
-        let objects = if config.mode == ExchangeMode::ObjectStoreMaterialized {
+        let objects = if matches!(
+            config.mode,
+            ExchangeMode::ObjectStoreMaterialized | ExchangeMode::Adaptive
+        ) {
             Some(Objects::configured(
                 parent,
                 config.object_store.clone(),
@@ -294,6 +319,8 @@ impl Store {
             root,
             config,
             buffer,
+            adaptive: Mutex::new(AdaptiveState::default()),
+            adaptive_metrics: Mutex::default(),
             objects,
             poisoned,
             expected,
@@ -350,12 +377,21 @@ impl Store {
             ipc: None,
             objects: Vec::new().into_iter(),
             object: None,
+            consumed: 0,
+            pressure_applied: false,
         })
     }
     /// # Errors
     /// Returns registry or finalized-file metadata errors.
     pub fn retention_metrics(&self) -> Result<RetentionMetrics> {
         let mut m = self.buffer.metrics();
+        if self.config.mode == ExchangeMode::Adaptive {
+            m.adaptive = self
+                .adaptive_metrics
+                .lock()
+                .map_err(|_| Error::Invalid("adaptive metrics poisoned".into()))?
+                .clone();
+        }
         if let Some(objects) = &self.objects {
             let objects = objects.metrics();
             m.object_count = objects.object_count;
@@ -395,6 +431,76 @@ impl Store {
     }
     fn complete(&self) -> bool {
         self.registry.lock().expect("registry lock").completed.len() == self.expected.len()
+    }
+    fn adaptive_push(&self, id: TransferId, sequence: u64, encoded: Vec<u8>) -> Result<()> {
+        use crate::adaptive::{AdaptiveTier, AdaptiveTransition, decide};
+        // One bounded receiver slot per producer. This ingress lock serializes
+        // policy/placement, never the queue lock used by the reader or cancellation.
+        let mut s = self.adaptive.lock().expect("adaptive ingress");
+        self.cancellation.check()?;
+        let mut observation = self.buffer.observation(encoded.len());
+        observation.produced_bytes = s.produced_bytes;
+        observation.produced_segments = s.produced_segments;
+        while let Some((new, reason)) = decide(&self.config.adaptive, s.tier, &observation) {
+            let transition = AdaptiveTransition {
+                old: s.tier,
+                new,
+                boundary: s.produced_segments,
+                transfer: id,
+                sequence,
+                reason,
+                projected_buffer_pct: u64::try_from(
+                    (observation
+                        .buffer_bytes
+                        .saturating_add(observation.incoming_bytes) as u128)
+                        * 100
+                        / observation.capacity_bytes.max(1) as u128,
+                )
+                .unwrap_or(u64::MAX),
+                lag_segments: observation
+                    .produced_segments
+                    .saturating_sub(observation.consumed_segments),
+                observation: observation.clone(),
+            };
+            debug_assert!(s.metrics.transitions.len() < 3);
+            s.metrics.transitions.push(transition);
+            s.tier = new;
+        }
+        // Snapshot lock is independent of ingress: live metrics remain readable
+        // while a writer waits for rendezvous or a storage operation.
+        *self.adaptive_metrics.lock().expect("adaptive metrics") = s.metrics.clone();
+        let tier = s.tier;
+        let length = encoded.len() as u64;
+        match tier {
+            AdaptiveTier::ObjectStore => {
+                self.objects.as_ref().expect("adaptive objects").put(
+                    id,
+                    sequence,
+                    encoded,
+                    &self.cancellation,
+                )?;
+                s.object_starts.entry(id).or_insert(sequence);
+            }
+            _ => self.buffer.push_as(
+                encoded,
+                &self.cancellation,
+                match tier {
+                    AdaptiveTier::Direct => ExchangeMode::Direct,
+                    AdaptiveTier::Buffered => ExchangeMode::Buffered,
+                    _ => ExchangeMode::Spill,
+                },
+            )?,
+        }
+        s.produced_bytes = s.produced_bytes.saturating_add(length);
+        s.produced_segments = s.produced_segments.saturating_add(1);
+        s.metrics.policy = "threshold_v1".into();
+        s.metrics.extents = 1 + s.metrics.transitions.len();
+        s.metrics.bytes_by_tier[tier.index()] =
+            s.metrics.bytes_by_tier[tier.index()].saturating_add(length);
+        s.metrics.segments_by_tier[tier.index()] =
+            s.metrics.segments_by_tier[tier.index()].saturating_add(1);
+        *self.adaptive_metrics.lock().expect("adaptive metrics") = s.metrics.clone();
+        Ok(())
     }
     fn receive(&self, header: &Header, socket: &mut TcpStream) -> Result<()> {
         let result = self.receive_inner(header, socket);
@@ -451,6 +557,9 @@ impl Store {
             let rows = batch.num_rows() as u64;
             if let Some(writer) = &mut writer {
                 writer.write(&batch)?;
+            } else if self.config.mode == ExchangeMode::Adaptive {
+                drop(batch);
+                self.adaptive_push(header.id, metrics.batches, encoded)?;
             } else if let Some(objects) = &self.objects {
                 objects.put(header.id, metrics.batches, encoded, &self.cancellation)?;
             } else {
@@ -512,8 +621,10 @@ struct Source {
     store: Arc<Store>,
     files: Option<std::vec::IntoIter<PathBuf>>,
     ipc: Option<StreamReader<File>>,
-    objects: std::vec::IntoIter<(TransferId, u64)>,
+    objects: std::vec::IntoIter<(TransferId, u64, u64)>,
     object: Option<(TransferId, u64, u64)>,
+    consumed: u64,
+    pressure_applied: bool,
 }
 impl std::fmt::Debug for Source {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -525,8 +636,35 @@ impl ade_exec::BatchSource for Source {
         schema()
     }
     fn next_batch(&mut self, token: &CancellationToken) -> ade_exec::Result<Option<RecordBatch>> {
-        self.next(token)
-            .map_err(|e| ade_exec::Error::Invalid(format!("exchange source: {e}")))
+        let pressure = &self.store.config.pressure;
+        if !self.pressure_applied
+            && self.consumed >= pressure.after_segments
+            && self
+                .store
+                .expected
+                .iter()
+                .next()
+                .is_some_and(|id| Some(id.partition.0) == pressure.target_partition)
+        {
+            self.pressure_applied = true;
+            let deadline = std::time::Instant::now() + Duration::from_millis(pressure.delay_ms);
+            while std::time::Instant::now() < deadline {
+                token.check()?;
+                self.store
+                    .cancellation
+                    .check()
+                    .map_err(|e| ade_exec::Error::Invalid(e.to_string()))?;
+                thread::sleep(
+                    Duration::from_millis(2)
+                        .min(deadline.saturating_duration_since(std::time::Instant::now())),
+                );
+            }
+        }
+        let batch = self.next(token);
+        if matches!(&batch, Ok(Some(_))) {
+            self.consumed = self.consumed.saturating_add(1);
+        }
+        batch.map_err(|e| ade_exec::Error::Invalid(format!("exchange source: {e}")))
     }
 }
 impl Source {
@@ -534,12 +672,18 @@ impl Source {
         loop {
             token.check()?;
             self.store.cancellation.check()?;
-            if self.store.config.mode.live() {
+            if self.store.config.mode.live() || self.store.config.mode == ExchangeMode::Adaptive {
                 if let Some(encoded) = self.store.buffer.take(&self.store.cancellation)? {
                     return Ok(Some(decode(&encoded)?));
                 }
                 // Recheck after completion: the last segment may have arrived between checks.
                 if self.store.complete() {
+                    if self.store.config.mode == ExchangeMode::Adaptive {
+                        if let Some(encoded) = self.store.buffer.take(&self.store.cancellation)? {
+                            return Ok(Some(decode(&encoded)?));
+                        }
+                        break;
+                    }
                     return self
                         .store
                         .buffer
@@ -567,7 +711,19 @@ impl Source {
                 .expect("registry lock")
                 .completed
                 .iter()
-                .map(|(id, (_, m))| (*id, m.batches))
+                .filter_map(|(id, (_, m))| {
+                    if self.store.config.mode == ExchangeMode::Adaptive {
+                        self.store
+                            .adaptive
+                            .lock()
+                            .expect("adaptive state")
+                            .object_starts
+                            .get(id)
+                            .map(|first| (*id, *first, m.batches))
+                    } else {
+                        Some((*id, 0, m.batches))
+                    }
+                })
                 .collect::<Vec<_>>()
                 .into_iter();
         }
@@ -580,10 +736,10 @@ impl Source {
                     *sequence += 1;
                     return Ok(Some(decode(&bytes)?));
                 }
-                let Some((id, count)) = self.objects.next() else {
+                let Some((id, first, count)) = self.objects.next() else {
                     return Ok(None);
                 };
-                self.object = Some((id, 0, count));
+                self.object = Some((id, first, count));
             }
         }
         loop {
@@ -869,53 +1025,55 @@ mod tests {
     }
     #[test]
     fn receiver_shutdown_returns_while_spill_io_is_stalled() {
-        let parent = tempfile::tempdir().unwrap();
-        let id = transfer(JobId(4), 0, 0, 0);
-        let mut store = Store::configured(
-            parent.path(),
-            [id].into(),
-            CancellationToken::default(),
-            ExchangeConfig {
-                mode: ExchangeMode::Spill,
-                buffer_bytes: 1,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let (started, started_rx) = mpsc::channel();
-        let (release_tx, release_rx) = mpsc::channel();
-        store.buffer.replace_spill_log_for_test(StalledSpillLog {
-            started,
-            release: Mutex::new(release_rx),
-        });
-        let store = Arc::new(store);
-        let receiving = store.clone();
-        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
-            Ok(receiving.clone())
-        })
-        .unwrap();
-        let address = receiver.address;
-        let producer = thread::spawn(move || {
-            let mut sender = Sender::new(address, id, CancellationToken::default()).unwrap();
-            sender
-                .batch(&batch())
-                .and_then(|()| sender.finish().map(|_| ()))
-        });
-        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        for mode in [ExchangeMode::Spill, ExchangeMode::Adaptive] {
+            let parent = tempfile::tempdir().unwrap();
+            let id = transfer(JobId(4), 0, 0, 0);
+            let mut store = Store::configured(
+                parent.path(),
+                [id].into(),
+                CancellationToken::default(),
+                ExchangeConfig {
+                    mode,
+                    buffer_bytes: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let (started, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            store.buffer.replace_spill_log_for_test(StalledSpillLog {
+                started,
+                release: Mutex::new(release_rx),
+            });
+            let store = Arc::new(store);
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let address = receiver.address;
+            let producer = thread::spawn(move || {
+                let mut sender = Sender::new(address, id, CancellationToken::default()).unwrap();
+                sender
+                    .batch(&batch())
+                    .and_then(|()| sender.finish().map(|_| ()))
+            });
+            started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
 
-        let (stopped, stopped_rx) = mpsc::channel();
-        thread::spawn(move || {
-            drop(receiver);
-            let _ = stopped.send(());
-        });
-        let shutdown = stopped_rx.recv_timeout(Duration::from_secs(1));
-        // Release the isolated helper even if the regression returns, so the test
-        // process can clean up its detached test thread.
-        let _ = release_tx.send(());
-        assert!(shutdown.is_ok(), "receiver shutdown waited on spill I/O");
-        assert!(store.cancellation.check().is_err());
-        assert!(store.is_poisoned());
-        assert!(producer.join().unwrap().is_err());
+            let (stopped, stopped_rx) = mpsc::channel();
+            thread::spawn(move || {
+                drop(receiver);
+                let _ = stopped.send(());
+            });
+            let shutdown = stopped_rx.recv_timeout(Duration::from_secs(1));
+            // Release the isolated helper even if the regression returns, so the test
+            // process can clean up its detached test thread.
+            let _ = release_tx.send(());
+            assert!(shutdown.is_ok(), "receiver shutdown waited on spill I/O");
+            assert!(store.cancellation.check().is_err());
+            assert!(store.is_poisoned());
+            assert!(producer.join().unwrap().is_err());
+        }
     }
     #[test]
     fn mechanism_roundtrips_include_empty_transfer_and_metrics() {
@@ -925,6 +1083,7 @@ mod tests {
             ExchangeMode::Spill,
             ExchangeMode::LocalMaterialized,
             ExchangeMode::ObjectStoreMaterialized,
+            ExchangeMode::Adaptive,
         ] {
             let parent = tempfile::tempdir().unwrap();
             let ids = [transfer(JobId(1), 0, 0, 0), transfer(JobId(1), 0, 0, 1)];
@@ -990,6 +1149,10 @@ mod tests {
                     assert_eq!(m.local_materialized_files, 2);
                     assert!(m.local_materialized_bytes > 0);
                 }
+                ExchangeMode::Adaptive => {
+                    assert_eq!(m.adaptive.segments_by_tier.iter().sum::<u64>(), 5);
+                    assert!(m.adaptive.transitions.len() <= 3);
+                }
                 ExchangeMode::ObjectStoreMaterialized => {
                     assert_eq!(m.object_count, 5);
                     assert_eq!(m.object_write_bytes, m.object_read_bytes);
@@ -1001,6 +1164,148 @@ mod tests {
             drop(store);
             assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
         }
+    }
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "One ordered scenario proves conservation at all three transitions."
+    )]
+    fn adaptive_all_boundaries_exact_readback_with_bounded_suffixes() {
+        use crate::adaptive::AdaptiveTier;
+        let parent = tempfile::tempdir().unwrap();
+        let ids = [transfer(JobId(91), 0, 0, 0), transfer(JobId(91), 0, 0, 1)];
+        let encode = |key| {
+            let b = RecordBatch::try_new(
+                schema(),
+                vec![
+                    Arc::new(UInt64Array::from(vec![key])),
+                    Arc::new(Int64Array::from(vec![17])),
+                    Arc::new(UInt64Array::from(vec![1])),
+                ],
+            )
+            .unwrap();
+            let mut bytes = BoundedBuffer::new(MAX_FRAME_BYTES);
+            let mut writer = StreamWriter::try_new(&mut bytes, &schema()).unwrap();
+            writer.write(&b).unwrap();
+            writer.finish().unwrap();
+            drop(writer);
+            bytes.0
+        };
+        let size = encode(0).len();
+        let store = Arc::new(
+            Store::configured(
+                parent.path(),
+                ids.into(),
+                CancellationToken::default(),
+                ExchangeConfig {
+                    mode: ExchangeMode::Adaptive,
+                    buffer_bytes: size * 4,
+                    adaptive: crate::adaptive::AdaptiveConfig {
+                        buffer_high_pct: 80,
+                        remote_after_bytes: 1,
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        // Advertise readiness, then prove the first segment uses real rendezvous.
+        assert!(store.buffer.take(&store.cancellation).unwrap().is_none());
+        let writing = store.clone();
+        let first = encode(0);
+        let producer = thread::spawn(move || writing.adaptive_push(ids[0], 0, first).unwrap());
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            if let Some(bytes) = store.buffer.take(&store.cancellation).unwrap() {
+                assert_eq!(bytes, encode(0));
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            thread::yield_now();
+        }
+        producer.join().unwrap();
+        for sequence in 1..7 {
+            store
+                .adaptive_push(ids[0], sequence, encode(sequence))
+                .unwrap();
+        }
+        store.adaptive_push(ids[1], 0, encode(7)).unwrap();
+        // Terminal validation is covered at the protocol boundary by the matrix.
+        for (id, count) in [(ids[0], 7), (ids[1], 1)] {
+            store.registry.lock().unwrap().completed.insert(
+                id,
+                (
+                    PathBuf::new(),
+                    NetworkMetrics {
+                        batches: count,
+                        transfers: 1,
+                        ..Default::default()
+                    },
+                ),
+            );
+        }
+        let mut reader = store.reader();
+        for key in 1..8 {
+            let b = reader.next_batch(&store.cancellation).unwrap().unwrap();
+            assert_eq!(
+                b.column(0)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+                    .value(0),
+                key
+            );
+        }
+        assert!(reader.next_batch(&store.cancellation).unwrap().is_none());
+        let m = store.retention_metrics().unwrap();
+        assert_eq!(m.adaptive.segments_by_tier, [1, 3, 1, 3]);
+        assert_eq!(
+            m.adaptive
+                .transitions
+                .iter()
+                .map(|t| (t.boundary, t.new))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, AdaptiveTier::Buffered),
+                (4, AdaptiveTier::Spill),
+                (5, AdaptiveTier::ObjectStore)
+            ]
+        );
+        assert_eq!(store.adaptive.lock().unwrap().object_starts.len(), 2);
+        assert_eq!(m.spill_write_bytes, m.spill_read_bytes);
+        assert_eq!(m.object_write_bytes, m.object_read_bytes);
+        store.validate_retention_drained().unwrap();
+        drop(reader);
+        drop(store);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+    #[test]
+    fn adaptive_direct_wait_cancels_and_live_metrics_do_not_block() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(92), 0, 0, 0);
+        let store = Arc::new(
+            Store::configured(
+                parent.path(),
+                [id].into(),
+                CancellationToken::default(),
+                ExchangeConfig {
+                    mode: ExchangeMode::Adaptive,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        assert!(store.buffer.take(&store.cancellation).unwrap().is_none());
+        let writing = store.clone();
+        let producer = thread::spawn(move || writing.adaptive_push(id, 0, vec![1; 8]));
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while store.retention_metrics().unwrap().current_buffer_bytes == 0 {
+            assert!(std::time::Instant::now() < deadline);
+            thread::yield_now();
+        }
+        assert!(!producer.is_finished());
+        store.cancellation.cancel();
+        assert!(producer.join().unwrap().is_err());
     }
     #[test]
     fn sequence_and_completion_count_rejections_fail_the_session() {
@@ -1028,37 +1333,49 @@ mod tests {
     }
     #[test]
     fn rejects_duplicate_gapped_segments_and_incorrect_final_counts() {
-        for (second, count) in [(0, 2), (2, 2), (1, 1)] {
-            let parent = tempfile::tempdir().unwrap();
-            let id = transfer(JobId(1), 0, 0, 0);
-            let store = Arc::new(
-                Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap(),
-            );
-            let receiving = store.clone();
-            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
-                Ok(receiving.clone())
-            })
-            .unwrap();
-            let mut encoded = BoundedBuffer::new(MAX_FRAME_BYTES);
-            let mut writer = StreamWriter::try_new(&mut encoded, &schema()).unwrap();
-            writer.write(&batch()).unwrap();
-            writer.finish().unwrap();
-            drop(writer);
-            let mut bytes = Vec::new();
-            protocol::write_message(&mut bytes, &Header::new(id)).unwrap();
-            for sequence in [0, second] {
-                bytes.extend_from_slice(&u32::try_from(encoded.0.len()).unwrap().to_le_bytes());
-                bytes.extend_from_slice(&u64::to_le_bytes(sequence));
-                bytes.extend_from_slice(&encoded.0);
+        for mode in [ExchangeMode::LocalMaterialized, ExchangeMode::Adaptive] {
+            for (second, count) in [(0, 2), (2, 2), (1, 1)] {
+                let parent = tempfile::tempdir().unwrap();
+                let id = transfer(JobId(1), 0, 0, 0);
+                let store = Arc::new(
+                    Store::configured(
+                        parent.path(),
+                        [id].into(),
+                        CancellationToken::default(),
+                        ExchangeConfig {
+                            mode,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap(),
+                );
+                let receiving = store.clone();
+                let receiver =
+                    Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                        Ok(receiving.clone())
+                    })
+                    .unwrap();
+                let mut encoded = BoundedBuffer::new(MAX_FRAME_BYTES);
+                let mut writer = StreamWriter::try_new(&mut encoded, &schema()).unwrap();
+                writer.write(&batch()).unwrap();
+                writer.finish().unwrap();
+                drop(writer);
+                let mut bytes = Vec::new();
+                protocol::write_message(&mut bytes, &Header::new(id)).unwrap();
+                for sequence in [0, second] {
+                    bytes.extend_from_slice(&u32::try_from(encoded.0.len()).unwrap().to_le_bytes());
+                    bytes.extend_from_slice(&u64::to_le_bytes(sequence));
+                    bytes.extend_from_slice(&encoded.0);
+                }
+                bytes.extend_from_slice(&0u32.to_le_bytes());
+                bytes.extend_from_slice(&u64::to_le_bytes(count));
+                let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
+                socket.write_all(&bytes).unwrap();
+                let ack: Result<std::result::Result<TransferId, String>> =
+                    protocol::read_message(&mut socket);
+                assert!(!matches!(ack, Ok(Ok(_))));
+                assert!(store.paths().is_err());
             }
-            bytes.extend_from_slice(&0u32.to_le_bytes());
-            bytes.extend_from_slice(&u64::to_le_bytes(count));
-            let mut socket = protocol::connect(receiver.address, crate::IO_TIMEOUT).unwrap();
-            socket.write_all(&bytes).unwrap();
-            let ack: Result<std::result::Result<TransferId, String>> =
-                protocol::read_message(&mut socket);
-            assert!(!matches!(ack, Ok(Ok(_))));
-            assert!(store.paths().is_err());
         }
     }
     #[test]
@@ -1069,6 +1386,7 @@ mod tests {
             ExchangeMode::Spill,
             ExchangeMode::LocalMaterialized,
             ExchangeMode::ObjectStoreMaterialized,
+            ExchangeMode::Adaptive,
         ] {
             let parent = tempfile::tempdir().unwrap();
             let id = transfer(JobId(1), 0, 0, 0);

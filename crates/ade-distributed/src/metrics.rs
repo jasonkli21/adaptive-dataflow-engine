@@ -37,6 +37,7 @@ pub struct TaskMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    pub adaptive: crate::adaptive::AdaptiveSummary,
     pub worker_count: usize,
     pub exchange_mode: crate::ExchangeMode,
     pub elapsed_ms: u64,

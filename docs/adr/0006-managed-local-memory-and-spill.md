@@ -78,6 +78,20 @@ queued items, wakes a full producer and joins it. Cancellation is cooperative at
 file/batch and blocking-operator row/chunk boundaries; an in-progress filesystem
 read is not preemptible. There is no detached worker or Tokio dependency.
 
+### Sol High review refinement — terminal ownership and final metrics
+
+When an operator can prove that an upstream subtree will not be pulled again,
+it shuts that subtree down before returning its terminal output. `Limit` applies
+this rule as soon as its row count reaches zero; blocking aggregate and sort
+operators also retire their input after consuming EOF and release retained
+state when their final output batch is ready. Shutdown is idempotent, and drop
+remains the fallback for errors and unwinding. Prefetch shutdown stops the
+producer, clears queued batches, wakes and joins the thread, releases queue
+metadata, and only then snapshots the final counters into execution metrics.
+
+This refines the Phase 2 lifecycle contract without changing collection
+accounting, spill semantics, or the synchronous pull interface.
+
 Arrow's IPC feature and tempfile are enabled in ade-exec using already locked
 versions. No new resolved package or lockfile delta is required. Pinned downloaded
 Arrow 59.3.1 sort/IPC and Parquet reader public APIs were inspected locally.

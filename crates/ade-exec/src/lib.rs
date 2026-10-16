@@ -256,6 +256,7 @@ struct Node {
     id: OperatorId,
     schema: SchemaRef,
     kind: Kind,
+    closed: bool,
 }
 enum Kind {
     Scan(scan::Scan),
@@ -428,13 +429,21 @@ impl Node {
                 ..Default::default()
             },
         );
-        Ok(Self { id, schema, kind })
+        Ok(Self {
+            id,
+            schema,
+            kind,
+            closed: false,
+        })
     }
     #[allow(
         clippy::too_many_lines,
         reason = "Exhaustive pull dispatch shares metric and cancellation boundaries."
     )]
     fn next_batch(&mut self, cx: &mut ExecContext) -> Result<Option<RecordBatch>> {
+        if self.closed {
+            return Ok(None);
+        }
         cx.cancellation.check()?;
         // Release the previous observed output when downstream asks for another batch.
         cx.memory(self.id, 0)?;
@@ -454,6 +463,7 @@ impl Node {
                 threshold,
             } => {
                 let Some(batch) = input.next_batch(cx)? else {
+                    input.shutdown(cx)?;
                     return Ok(None);
                 };
                 cx.input(self.id, &batch);
@@ -474,6 +484,7 @@ impl Node {
             }
             Kind::Project { input, columns } => {
                 let Some(batch) = input.next_batch(cx)? else {
+                    input.shutdown(cx)?;
                     return Ok(None);
                 };
                 cx.input(self.id, &batch);
@@ -484,9 +495,11 @@ impl Node {
             }
             Kind::Limit { input, remaining } => {
                 if *remaining == 0 {
+                    input.shutdown(cx)?;
                     return Ok(None);
                 }
                 let Some(batch) = input.next_batch(cx)? else {
+                    input.shutdown(cx)?;
                     return Ok(None);
                 };
                 cx.input(self.id, &batch);
@@ -495,6 +508,9 @@ impl Node {
                 *remaining -= rows;
                 let result = batch.slice(0, rows);
                 cx.work(self.id, start);
+                if *remaining == 0 {
+                    input.shutdown(cx)?;
+                }
                 Some(result)
             }
             Kind::Aggregate {
@@ -553,6 +569,30 @@ impl Node {
         }
         Ok(output)
     }
+
+    /// Retire this subtree once no later pull can use it. Safe to call repeatedly.
+    fn shutdown(&mut self, cx: &mut ExecContext) -> Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        match &mut self.kind {
+            Kind::Scan(scan) => cx.metrics.prefetch = scan.shutdown(),
+            Kind::Filter { input, .. }
+            | Kind::Project { input, .. }
+            | Kind::Limit { input, .. } => input.shutdown(cx)?,
+            Kind::Aggregate { input, state, .. } => {
+                state.take();
+                input.shutdown(cx)?;
+            }
+            Kind::Sort { input, state, .. } => {
+                state.take();
+                input.shutdown(cx)?;
+            }
+        }
+        cx.memory(self.id, 0)?;
+        self.closed = true;
+        Ok(())
+    }
 }
 /// Collected bounded output and observational execution metrics.
 #[derive(Debug)]
@@ -604,7 +644,8 @@ fn execute_in(
         batches.push(batch);
     }
     cx.cancellation.check()?;
-    drop(root); // joins prefetch and closes readers before removing the spill root
+    root.shutdown(&mut cx)?;
+    drop(root); // fallback drop precedes removal of the spill root
     for m in cx.metrics.operators.values_mut() {
         cx.metrics.memory.release(m.memory.current)?;
         m.memory.current = 0;

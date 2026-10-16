@@ -386,6 +386,33 @@ fn phase2_prefetch_order_error_and_early_drop() {
         )
         .unwrap();
         assert_eq!(limited.metrics.output_rows, 1);
+        assert!(limited.metrics.prefetch.produced >= limited.metrics.prefetch.consumed);
+        assert!(limited.metrics.prefetch.queue_peak <= depth);
+
+        let mut cx = ExecContext::new(config.clone(), CancellationToken::default(), None).unwrap();
+        let memory = cx.memory.clone();
+        let mut limit = Node::build(
+            LocalPlan::Limit {
+                input: Box::new(scan.clone()),
+                rows: 1,
+            },
+            &mut cx,
+        )
+        .unwrap();
+        let terminal = limit.next_batch(&mut cx).unwrap().unwrap();
+        assert_eq!(terminal.num_rows(), 1);
+        assert_eq!(memory.snapshot().current, 0);
+        let final_metrics = cx.metrics.prefetch.clone();
+        assert!(final_metrics.produced >= final_metrics.consumed);
+        assert!(final_metrics.queue_peak <= depth);
+        assert!(limit.next_batch(&mut cx).unwrap().is_none());
+        assert_eq!(cx.metrics.prefetch.produced, final_metrics.produced);
+        assert_eq!(cx.metrics.prefetch.consumed, final_metrics.consumed);
+        assert_eq!(cx.metrics.prefetch.queue_peak, final_metrics.queue_peak);
+        drop(limit);
+        drop(cx);
+        assert_eq!(memory.snapshot().current, 0);
+
         let mut cx = ExecContext::new(config.clone(), CancellationToken::default(), None).unwrap();
         let memory = cx.memory.clone();
         let mut node = Node::build(scan.clone(), &mut cx).unwrap();
@@ -404,6 +431,56 @@ fn phase2_prefetch_order_error_and_early_drop() {
             Err(Error::Io(_))
         ));
     }
+}
+
+#[test]
+fn limit_releases_blocking_aggregate_before_terminal_batch_returns() {
+    let (_data, scan) = phase2_fixture(100, 31);
+    let mut direct_cx = ExecContext::new(
+        ExecutionConfig {
+            memory_limit_bytes: 32_768,
+            output_batch_rows: 128,
+            ..Default::default()
+        },
+        CancellationToken::default(),
+        None,
+    )
+    .unwrap();
+    let direct_memory = direct_cx.memory.clone();
+    let mut aggregate = Node::build(aggregate_plan(scan.clone()), &mut direct_cx).unwrap();
+    assert_eq!(
+        aggregate
+            .next_batch(&mut direct_cx)
+            .unwrap()
+            .unwrap()
+            .num_rows(),
+        31
+    );
+    assert_eq!(direct_memory.snapshot().current, 0);
+    drop(aggregate);
+    drop(direct_cx);
+
+    let config = ExecutionConfig {
+        memory_limit_bytes: 32_768,
+        output_batch_rows: 1,
+        ..Default::default()
+    };
+    let plan = LocalPlan::Limit {
+        input: Box::new(aggregate_plan(scan)),
+        rows: 1,
+    };
+    let mut cx = ExecContext::new(config.clone(), CancellationToken::default(), None).unwrap();
+    let memory = cx.memory.clone();
+    let mut node = Node::build(plan.clone(), &mut cx).unwrap();
+    let terminal = node.next_batch(&mut cx).unwrap().unwrap();
+    assert_eq!(terminal.num_rows(), 1);
+    assert_eq!(memory.snapshot().current, 0);
+    drop(node);
+    drop(cx);
+    assert_eq!(memory.snapshot().current, 0);
+
+    let output = execute_with_config(plan, config, CancellationToken::default()).unwrap();
+    assert_eq!(output.metrics.output_rows, 1);
 }
 #[test]
 fn phase2_error_cancellation_and_collection_release_everything() {

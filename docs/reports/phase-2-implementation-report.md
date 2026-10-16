@@ -4,16 +4,11 @@ Date: 2026-10-15 (America/Los_Angeles).
 
 ## Baseline and final state
 
-Baseline: `985e1a9b1a7406de2f7004cc21e097ce99d40942`, on `main`; HEAD matched
-the supplied plan's reviewed snapshot. Initially untracked files were the Phase 2
-plan and `sol-medium-phase-0-bootstrap-implementation-prompt.md`. The plan is
-included in the implementation commit; the unrelated bootstrap prompt remains
-untouched and untracked. The user's explicit instruction to implement Phase 2
-advances the former Phase 1 boundary in AGENTS.md. No PRD scope change is needed.
-
-Final state is the single Phase 2 commit containing this report, directly atop
-the baseline; identify it with `git log -1 --format=%H`. Its hash is returned in
-the completion message (a commit cannot embed its own final hash). No push.
+Baseline: `985e1a9b1a7406de2f7004cc21e097ce99d40942`, on `main`. The reviewed
+Phase 2 implementation is commit `4c2b4b2`; this report now also records the Sol
+High follow-up remediation in the current commit. The unrelated
+`sol-medium-phase-0-bootstrap-implementation-prompt.md` remains untouched and
+untracked. No PRD scope change is needed, and no push was made.
 
 ## Summary and exact implemented scope
 
@@ -113,10 +108,12 @@ standard-library producer thread and bounded mutex/condvar queue. Slot metadata
 is reserved before allocation; decoded batches are reserved before publication.
 File and row order remain identical. Producer errors propagate, producer panics
 become PrefetchFailed, and cancellation is checked cooperatively. Consumer drop
-sets stop, clears queued reservations, wakes the producer and joins it. Full
-queue/early limit/cancellation cannot strand a blocked sender. Blocking file I/O
-is not preemptible and can delay shutdown. No detached worker, Tokio dependency
-or global mutable service is added to ade-exec.
+or explicit subtree shutdown sets stop, clears queued reservations, wakes the
+producer and joins it. Shutdown releases queue metadata after the join and is
+safe to repeat; Drop remains the error/unwind fallback. Full queue/early
+limit/cancellation cannot strand a blocked sender. Blocking file I/O is not
+preemptible and can delay shutdown. No detached worker, Tokio dependency or
+global mutable service is added to ade-exec.
 
 ## Metrics and harness changes
 
@@ -124,8 +121,11 @@ ExecutionOutput exposes managed limit/current/peak, attempts/denials/pressure,
 per-owner managed peaks, spill files/events/read/write bytes, per-operator spill
 events, initial sort runs/merges, and prefetch produced/consumed/queue/batch peaks.
 Existing operator input/output counters and exclusive work time remain. Scan
-I/O wait is included in its work time. Prefetch metrics on early stop reflect
-activity observed at the last pull; producer teardown is joined before return.
+I/O wait is included in its work time. Execution shutdown joins prefetch before
+capturing its final produced/consumed/queue metrics, including early-stop runs.
+Operators release blocking state before returning their final output batch when
+exhaustion is known. `Limit` shuts down an unreachable input subtree before it
+returns its terminal slice.
 
 `ADE_LOG=debug` enables concise counters for standalone `validate` on stderr.
 Measured child/run paths retain warn-level logging to preserve their recorded
@@ -187,8 +187,9 @@ No cargo clean, Criterion run, remote CI execution or TPC-H regeneration.
 
 ## Focused tests and cleanup evidence
 
-Eleven runtime tests pass. They cover exact managed limit, failed growth/underflow/
-overflow without byte mutation, multiple reservations per owner, RAII release,
+Eleven runtime tests passed during the initial implementation. They cover exact
+managed limit, failed growth/underflow/overflow without byte mutation, multiple
+reservations per owner, RAII release,
 existing operator semantics, repeated aggregate keys across forced generations,
 forced partition spill and sort multi-pass compaction, tie ordering, bounded
 output, no-spill rejection, hot-key reduction, empty sort, corrupt spill version/
@@ -197,11 +198,11 @@ that cannot make progress under a 64 KiB budget.
 
 Prefetch depths 1/3 match depth-zero row order and obey queue bounds. Missing
 producer input files propagate errors; early limit returns and joins. Active
-prefetch is cancelled after its first batch and all managed reservations release. Tests
-observe a known spill parent after success, post-spill I/O failure and cancellation
-of both blocking operators: zero remaining execution directories. A retained
-MemoryManager clone reports zero current bytes after cancellation/error teardown.
-A scan exceeding collection budget fails with structured MemoryLimit.
+prefetch is cancelled after its first batch and all managed reservations release.
+Tests observe a known spill parent after success, post-spill I/O failure and
+cancellation after the first output batch: zero remaining execution directories.
+A retained MemoryManager clone reports zero current bytes after cancellation/error
+teardown. A scan exceeding collection budget fails with structured MemoryLimit.
 
 An additional spill-reader regression test confirms reading eight bytes from a
 100-byte file reports eight bytes, rather than counting file length at open.
@@ -331,6 +332,45 @@ no-progress termination; fixed merge fan-in and run metadata; bounded output;
 ordered validation; full-queue stop/join; collection accounting; independent
 runtime dependencies; and absence of global state or Phase 3 abstractions.
 
+## Sol High review follow-up
+
+The independent review's P2-01 and P2-02 lifecycle findings are addressed in the
+current implementation. Sort checks EOF before reserving an output builder and
+releases its retained rows/cursor reservation when its last batch is built.
+Aggregate releases its final partition table and metadata before returning its
+last batch. Blocking operators shut down their inputs after upstream EOF. `Limit`
+shuts down an unreachable subtree before returning the terminal slice. Prefetch
+shutdown stops the producer, releases queued batches and queue metadata, joins
+the producer, and records post-join metrics. Node and prefetch shutdown are
+idempotent, with Drop retained as a fallback.
+
+The P2-03 evidence gap is covered by new deterministic tests for sort merge
+cancellation and aggregate partition-load cancellation, plus terminal sort EOF,
+sort reservation release, blocking aggregate release under `Limit`, early-limit
+prefetch teardown, and final metric stability. The five new `#[test]` cases and
+the extended prefetch test pass in the follow-up run. The first focused run found
+that the sort EOF cursor compared its old index to the released empty row vector;
+changing the check to treat `index >= rows.len()` as exhausted fixed that case.
+P3-01's sort I/O tuning remains deferred as the review recommended.
+
+Follow-up validation completed with:
+
+```text
+cargo fmt --all --check                                      pass
+cargo test -p ade-exec --locked --offline                    16 passed
+cargo test -p ade-bench --test phase2 --locked --offline      1 passed
+cargo check --workspace --all-targets --locked --offline      pass
+cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings
+cargo test --workspace --all-features --locked --offline     42 passed
+bash scripts/smoke.sh                                        pass
+git diff --check                                             pass
+```
+
+The workspace run includes 19 `ade-bench` unit tests, five Phase 0 integration
+tests, one Phase 1 integration test, one Phase 2 integration test, 16 `ade-exec`
+tests, and doc-test targets. Existing macOS linker compact-unwind warnings were
+printed for `ade-bench`; they did not fail the gates.
+
 ## Known limitations and deferred items
 
 - Managed bytes are an explicit ownership ledger with conservative allowances,
@@ -379,8 +419,10 @@ ordered oracle validation and process-isolated cross-engine evidence.
 | External sort | Arrow run sort, chunked IPC spill, two-way multi-pass merge, fixed level metadata, ordered/tie tests, bounded output, cleanup on error/cancel |
 | Prefetch | Configured 0–64 depth; matching row order at depth zero/positive; bounded queue metrics, errors, early limit, cancellation, stop/wake/join lifecycle |
 | Benchmark integration | Six synthetic specs on ADE; sort DataFusion SQL and independent ordered oracle; explicit configuration; constrained aggregate/sort validation and unchanged protocol/result schema |
-| Quality / validation | Focused tests, workspace fmt/check/Clippy/tests, extended smoke and whitespace checks pass; final affected rechecks described above; no timing gate |
+| Quality / validation | Focused runtime/adapter tests, fmt/check/Clippy, full workspace tests, smoke, and whitespace checks pass after review remediation |
 | Release evidence | Five isolated release runs, check-result, semantic comparisons and diagnostic metrics recorded in the release section |
 | Documentation / phase boundary | AGENTS, root/benchmark README, supplied Phase 2 plan, ADR-0006 and this report; no Phase 3 implementation |
 
-Phase 2 acceptance is complete. Phase 3 has not started.
+Phase 2 acceptance is complete after the independent Sol High review remediation
+and verification recorded above. Phase 3 has not started and remains outside
+this task's scope.

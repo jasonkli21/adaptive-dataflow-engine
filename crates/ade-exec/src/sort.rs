@@ -167,7 +167,7 @@ pub(crate) struct Sort {
     rows: Vec<Row>,
     cursor: Option<Cursor>,
     index: usize,
-    _reservation: Reservation,
+    reservation: Option<Reservation>,
 }
 impl Sort {
     pub fn build(
@@ -208,6 +208,7 @@ impl Sort {
             }
             cx.work(id, start);
         }
+        input.shutdown(cx)?;
         let start = Instant::now();
         let sorted = ordered(&rows, schema)?;
         drop(rows); // release the original allocation before transferring its reservation
@@ -218,7 +219,7 @@ impl Sort {
                 rows,
                 cursor: None,
                 index: 0,
-                _reservation: reservation,
+                reservation: Some(reservation),
             });
         }
         if !rows.is_empty() {
@@ -243,7 +244,7 @@ impl Sort {
             rows: Vec::new(),
             cursor: Some(cursor),
             index: 0,
-            _reservation: reservation,
+            reservation: Some(reservation),
         })
     }
     fn compact(
@@ -269,30 +270,143 @@ impl Sort {
         id: OperatorId,
         cx: &mut ExecContext,
     ) -> Result<Option<RecordBatch>> {
+        if self.cursor.is_some() {
+            let exhausted = self
+                .cursor
+                .as_mut()
+                .expect("checked above")
+                .peek()?
+                .is_none();
+            if exhausted {
+                self.cursor.take();
+                self.reservation.take();
+                return Ok(None);
+            }
+        } else if self.index >= self.rows.len() {
+            self.rows = Vec::new();
+            self.reservation.take();
+            return Ok(None);
+        }
         let size = cx.config.output_batch_rows.min(CHUNK);
         let mut reservation = cx.memory.reservation(id);
         reservation.grow(size * 48 + 1024)?;
-        if let Some(cursor) = &mut self.cursor {
-            let mut rows = Vec::with_capacity(size);
-            for _ in 0..size {
-                cx.cancellation.check()?;
-                if let Some(r) = cursor.pop()? {
-                    rows.push(r);
-                } else {
-                    break;
+        if self.cursor.is_some() {
+            let (rows, exhausted) = {
+                let cursor = self.cursor.as_mut().expect("checked above");
+                let mut rows = Vec::with_capacity(size);
+                for _ in 0..size {
+                    cx.cancellation.check()?;
+                    if let Some(r) = cursor.pop()? {
+                        rows.push(r);
+                    } else {
+                        break;
+                    }
                 }
-            }
+                let exhausted = cursor.peek()?.is_none();
+                (rows, exhausted)
+            };
             if rows.is_empty() {
+                self.cursor.take();
+                self.reservation.take();
                 return Ok(None);
             }
-            return Ok(Some(batch(&rows, schema)?));
-        }
-        if self.index == self.rows.len() {
-            return Ok(None);
+            let result = batch(&rows, schema)?;
+            if exhausted {
+                self.cursor.take();
+                self.reservation.take();
+            }
+            return Ok(Some(result));
         }
         let end = (self.index + size).min(self.rows.len());
         let result = batch(&self.rows[self.index..end], schema)?;
         self.index = end;
+        if end == self.rows.len() {
+            self.rows = Vec::new();
+            self.reservation.take();
+        }
         Ok(Some(result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn schema() -> SchemaRef {
+        Arc::new(arrow::datatypes::Schema::new(vec![
+            arrow::datatypes::Field::new("key", arrow::datatypes::DataType::UInt64, false),
+            arrow::datatypes::Field::new("row_id", arrow::datatypes::DataType::UInt64, false),
+            arrow::datatypes::Field::new("value", arrow::datatypes::DataType::Int64, false),
+        ]))
+    }
+
+    #[test]
+    fn exhausted_sort_does_not_reserve_output_memory() {
+        let mut cx = ExecContext::new(
+            crate::ExecutionConfig {
+                memory_limit_bytes: 10_000,
+                ..Default::default()
+            },
+            crate::CancellationToken::default(),
+            None,
+        )
+        .unwrap();
+        let id = OperatorId(0);
+        let mut competing = cx.memory.reservation(OperatorId(1));
+        competing.grow(3_000).unwrap();
+        let mut state = Sort {
+            rows: Vec::new(),
+            cursor: None,
+            index: 0,
+            reservation: None,
+        };
+        let attempts = cx.memory.snapshot().attempts;
+        assert!(state.next(&schema(), id, &mut cx).unwrap().is_none());
+        assert_eq!(cx.memory.snapshot().attempts, attempts);
+    }
+
+    #[test]
+    fn terminal_in_memory_batch_releases_sort_reservation() {
+        let mut cx = ExecContext::new(
+            crate::ExecutionConfig::default(),
+            crate::CancellationToken::default(),
+            None,
+        )
+        .unwrap();
+        let id = OperatorId(0);
+        let mut retained = cx.memory.reservation(id);
+        retained.grow(128).unwrap();
+        let mut state = Sort {
+            rows: vec![(1, 2, 3)],
+            cursor: None,
+            index: 0,
+            reservation: Some(retained),
+        };
+        assert!(state.next(&schema(), id, &mut cx).unwrap().is_some());
+        assert_eq!(cx.memory.snapshot().current, 0);
+    }
+
+    #[test]
+    fn cancelled_merge_releases_reservation_and_spill_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let token = crate::CancellationToken::default();
+        let mut cx = ExecContext::new(
+            crate::ExecutionConfig::default(),
+            token.clone(),
+            Some(parent.path()),
+        )
+        .unwrap();
+        let id = OperatorId(0);
+        let schema = schema();
+        let left = write_run(&[(1, 1, 10)], &schema, id, &mut cx).unwrap();
+        let right = write_run(&[(2, 2, 20)], &schema, id, &mut cx).unwrap();
+        token.cancel();
+        assert!(matches!(
+            merge(left, right, &schema, id, &mut cx),
+            Err(Error::Cancelled)
+        ));
+        assert_eq!(cx.memory.snapshot().current, 0);
+        drop(cx);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
     }
 }

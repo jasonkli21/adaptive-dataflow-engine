@@ -83,7 +83,7 @@ pub(crate) struct Aggregate {
     partition: usize,
     cursor: usize,
     spilled: bool,
-    _metadata: Reservation,
+    metadata: Option<Reservation>,
 }
 impl Aggregate {
     pub fn build(
@@ -101,7 +101,7 @@ impl Aggregate {
             partition: 0,
             cursor: 0,
             spilled: false,
-            _metadata: metadata,
+            metadata: Some(metadata),
         };
         while let Some(batch) = input.next_batch(cx)? {
             cx.input(id, &batch);
@@ -138,6 +138,7 @@ impl Aggregate {
             }
             cx.work(id, start);
         }
+        input.shutdown(cx)?;
         let start = Instant::now();
         if state.spilled {
             state.flush(id, cx)?;
@@ -251,42 +252,52 @@ impl Aggregate {
             if self.table.is_none() && (!self.spilled || !self.load(id, cx)?) {
                 return Ok(None);
             }
-            let table = self.table.as_mut().expect("loaded");
-            while self.cursor < table.slots.len() && table.slots[self.cursor].is_none() {
-                self.cursor += 1;
-            }
-            if self.cursor == table.slots.len() {
+            let no_more_partitions = self.paths[self.partition..].iter().all(Option::is_none);
+            let (result, exhausted) = {
+                let table = self.table.as_mut().expect("loaded");
+                while self.cursor < table.slots.len() && table.slots[self.cursor].is_none() {
+                    self.cursor += 1;
+                }
+                if self.cursor == table.slots.len() {
+                    self.table.take();
+                    continue;
+                }
+                let rows = cx
+                    .config
+                    .output_batch_rows
+                    .min(table.slots.len() - self.cursor);
+                let mut output = cx.memory.reservation(id);
+                output.grow(
+                    rows.checked_mul(24)
+                        .and_then(|n| n.checked_add(1024))
+                        .ok_or(Error::Overflow("aggregate output"))?,
+                )?;
+                let mut keys = Vec::with_capacity(rows);
+                let mut sums = Vec::with_capacity(rows);
+                let mut counts = Vec::with_capacity(rows);
+                for slot in &table.slots[self.cursor..self.cursor + rows] {
+                    let (key, sum, count) = slot.expect("sorted suffix");
+                    keys.push(key);
+                    sums.push(
+                        i64::try_from(sum)
+                            .map_err(|_| Error::Overflow("aggregate Int64 output"))?,
+                    );
+                    counts.push(count);
+                }
+                self.cursor += rows;
+                let exhausted = self.cursor == table.slots.len() && no_more_partitions;
+                let arrays: Vec<ArrayRef> = vec![
+                    Arc::new(UInt64Array::from(keys)),
+                    Arc::new(Int64Array::from(sums)),
+                    Arc::new(UInt64Array::from(counts)),
+                ];
+                (RecordBatch::try_new(schema.clone(), arrays)?, exhausted)
+            };
+            if exhausted {
                 self.table.take();
-                continue;
+                self.metadata.take();
             }
-            let rows = cx
-                .config
-                .output_batch_rows
-                .min(table.slots.len() - self.cursor);
-            let mut output = cx.memory.reservation(id);
-            output.grow(
-                rows.checked_mul(24)
-                    .and_then(|n| n.checked_add(1024))
-                    .ok_or(Error::Overflow("aggregate output"))?,
-            )?;
-            let mut keys = Vec::with_capacity(rows);
-            let mut sums = Vec::with_capacity(rows);
-            let mut counts = Vec::with_capacity(rows);
-            for slot in &table.slots[self.cursor..self.cursor + rows] {
-                let (key, sum, count) = slot.expect("sorted suffix");
-                keys.push(key);
-                sums.push(
-                    i64::try_from(sum).map_err(|_| Error::Overflow("aggregate Int64 output"))?,
-                );
-                counts.push(count);
-            }
-            self.cursor += rows;
-            let arrays: Vec<ArrayRef> = vec![
-                Arc::new(UInt64Array::from(keys)),
-                Arc::new(Int64Array::from(sums)),
-                Arc::new(UInt64Array::from(counts)),
-            ];
-            return Ok(Some(RecordBatch::try_new(schema.clone(), arrays)?));
+            return Ok(Some(result));
         }
     }
 }
@@ -313,7 +324,7 @@ mod tests {
                 partition: 0,
                 cursor: 0,
                 spilled: true,
-                _metadata: cx.memory.reservation(id),
+                metadata: None,
             };
             state.paths[0] = Some(path);
             assert!(matches!(
@@ -331,5 +342,39 @@ mod tests {
             table.add((1, 0, 1)),
             Err(Error::Overflow("aggregate count"))
         ));
+    }
+
+    #[test]
+    fn cancelled_partition_load_releases_state_and_spill_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let token = crate::CancellationToken::default();
+        let mut cx = ExecContext::new(
+            crate::ExecutionConfig::default(),
+            token.clone(),
+            Some(parent.path()),
+        )
+        .unwrap();
+        let id = OperatorId(0);
+        let (path, mut file) = cx.spill.create(id).unwrap();
+        file.write_all(MAGIC).unwrap();
+        file.write_all(&1_u64.to_le_bytes()).unwrap();
+        file.write_all(&1_i128.to_le_bytes()).unwrap();
+        file.write_all(&1_u64.to_le_bytes()).unwrap();
+        drop(file);
+        let mut state = Aggregate {
+            table: None,
+            paths: std::array::from_fn(|_| None),
+            partition: 0,
+            cursor: 0,
+            spilled: true,
+            metadata: None,
+        };
+        state.paths[0] = Some(path);
+        token.cancel();
+        assert!(matches!(state.load(id, &mut cx), Err(Error::Cancelled)));
+        assert_eq!(cx.memory.snapshot().current, 0);
+        drop(state);
+        drop(cx);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
     }
 }

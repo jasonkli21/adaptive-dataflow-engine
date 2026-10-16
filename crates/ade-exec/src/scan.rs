@@ -45,6 +45,11 @@ impl SyncScan {
             self.reader = Some(builder.with_batch_size(self.batch_size).build()?);
         }
     }
+
+    pub fn shutdown(&mut self) {
+        self.reader.take();
+        self.files = Vec::new().into_iter();
+    }
 }
 #[derive(Debug, Clone, Default)]
 pub struct PrefetchMetrics {
@@ -69,7 +74,7 @@ struct Shared {
 pub(crate) struct Prefetch {
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
-    _metadata: Reservation,
+    metadata: Option<Reservation>,
 }
 impl Prefetch {
     pub fn start(
@@ -160,7 +165,7 @@ impl Prefetch {
         Ok(Self {
             shared,
             thread: Some(thread),
-            _metadata: metadata,
+            metadata: Some(metadata),
         })
     }
     pub fn next(&mut self) -> Result<Option<RecordBatch>> {
@@ -196,9 +201,9 @@ impl Prefetch {
             .metrics
             .clone()
     }
-}
-impl Drop for Prefetch {
-    fn drop(&mut self) {
+
+    /// Stop the producer, release queued batches, and capture counters after join.
+    pub fn shutdown(&mut self) -> PrefetchMetrics {
         {
             let mut q = self
                 .shared
@@ -209,9 +214,26 @@ impl Drop for Prefetch {
             q.items.clear();
         }
         self.shared.space.notify_all();
+        self.shared.ready.notify_all();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+        {
+            let mut q = self
+                .shared
+                .queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Drop the bounded queue allocation together with its reservation.
+            q.items = VecDeque::new();
+        }
+        self.metadata.take();
+        self.metrics()
+    }
+}
+impl Drop for Prefetch {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 pub(crate) enum Scan {
@@ -223,6 +245,16 @@ impl Scan {
         match self {
             Self::Sync(scan) => scan.next(token),
             Self::Prefetch(scan) => scan.next(),
+        }
+    }
+
+    pub fn shutdown(&mut self) -> PrefetchMetrics {
+        match self {
+            Self::Sync(scan) => {
+                scan.shutdown();
+                PrefetchMetrics::default()
+            }
+            Self::Prefetch(scan) => scan.shutdown(),
         }
     }
 }

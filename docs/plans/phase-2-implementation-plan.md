@@ -1,7 +1,7 @@
 # Adaptive Dataflow Engine (ADE) — Phase 2 Detailed Implementation Plan
 ## Spillable Local Engine
 
-**Status:** Implemented; acceptance complete (see Phase 2 report)\
+**Status:** Implemented and accepted; Sol High review remediation verified (see Phase 2 report)\
 **Date:** 2026-10-15\
 **Repository:** `jasonkli21/adaptive-dataflow-engine`\
 **Repository baseline reviewed:** `985e1a9b1a7406de2f7004cc21e097ce99d40942` (`Implement Phase 1 ADE local execution engine`)\
@@ -281,6 +281,7 @@ Preferred Phase 2 shape:
 - honor cancellation;
 - ensure producer shutdown cannot deadlock on a full channel;
 - join/clean up producer work before execution teardown;
+- shut down an upstream subtree before returning a terminal `Limit` batch, and snapshot prefetch metrics after the producer joins;
 - expose queue/prefetch metrics.
 
 A standard-library bounded channel/thread is acceptable and preferable to introducing Tokio solely for local-file prefetch. If Tokio is introduced, there must be a concrete reason documented in an ADR.
@@ -651,6 +652,8 @@ If no spill occurred, use the same bounded finalization path where practical rat
 - empty input/filter result;
 - cancellation during build;
 - cancellation during merge;
+- terminal `Limit` releases upstream reservations before returning its last batch;
+- completed execution metrics include producer activity through shutdown/join;
 - spill write/read failure;
 - too-small budget;
 - cleanup after every error path.
@@ -1031,12 +1034,15 @@ A compact set can cover:
 - output batch bound;
 - too-small budget/fan-in failure is structured;
 - cleanup on error/cancel.
+- an exhausted sort returns EOF without reserving output-builder memory;
+- the final in-memory sort batch releases its retained run reservation before return;
 
 ### Prefetch
 - depth 0 and positive depth produce identical batches/order;
 - queue depth never exceeds config;
 - producer error propagates;
 - cancellation/early consumer drop terminates producer.
+- terminal `Limit` stops and joins prefetch before returning its last batch.
 
 Where practical, combine related assertions into table-driven tests rather than many single-assertion tests.
 

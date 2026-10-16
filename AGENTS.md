@@ -29,9 +29,10 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 2 is implemented and accepted; the active boundary remains Phase 2, defined by
-`docs/plans/phase-2-implementation-plan.md`. See the Phase 2 implementation report.
-Do not begin Phase 3 without an explicit new instruction.
+Phase 2 is implemented and accepted; the Sol High review remediation and its
+verification are recorded in the Phase 2 report. The active boundary remains
+Phase 2, defined by `docs/plans/phase-2-implementation-plan.md`. Do not begin
+Phase 3 without an explicit new instruction.
 
 - Own local execution in `ade-exec`, independent of DataFusion and `ade-bench`.
 - Preserve the Phase 0 harness, independent oracle, child protocol and result contracts.

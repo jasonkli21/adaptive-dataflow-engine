@@ -4,7 +4,7 @@ bin=${ADE_BENCH_BIN:-target/debug/ade-bench}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 "$bin" env --format json > "$work/env.json"
-"$bin" data generate synthetic --dataset-id ci-skew-v1 --rows 100000 --files 3 --row-group-rows 8192 --key-cardinality 10000 --distribution hot-key --output "$work/data" > "$work/manifest.json"
+"$bin" data generate synthetic --dataset-id ci-skew-v1 --rows 100000 --files 4 --row-group-rows 8192 --key-cardinality 10000 --distribution hot-key --output "$work/data" > "$work/manifest.json"
 "$bin" data inspect "$work/data" > "$work/inspect.json"
 for name in scan scan-filter-project aggregate-low-cardinality aggregate-high-cardinality aggregate-skew sort-key-rowid; do
   "$bin" validate --spec "benchmarks/specs/$name.toml" --dataset "$work/data" > "$work/$name-validation.json"
@@ -31,4 +31,20 @@ for name, limit in [("aggregate", 2097152), ("sort", 4194304)]:
     assert 0 < metrics["prefetch_queue_peak"] <= 1, metrics
     if name == "sort":
         assert metrics["sort_runs"] > 1 and metrics["sort_merges"] > 0, metrics
+PYTHON
+
+# Real process/network path, independently validated against the same DataFusion fixture.
+ADE_LOG=debug "$bin" validate --engine ade-distributed --engine-option workers=2 --spec benchmarks/specs/aggregate-skew.toml --dataset "$work/data" > "$work/distributed.json" 2> "$work/distributed.log"
+python3 - "$work" <<'PYTHON'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+assert json.loads((root / "distributed.json").read_text())["result_fingerprint"] == json.loads((root / "aggregate-skew-validation.json").read_text())["result_fingerprint"]
+line = next(line for line in (root / "distributed.log").read_text().splitlines() if "ADE distributed execution" in line)
+metrics = json.JSONDecoder().raw_decode(line.split("metrics=", 1)[1])[0]
+assert metrics["worker_count"] == 2
+assert metrics["gather"]["rows"] > 0 and metrics["gather"]["payload_bytes"] > 0
+for worker in ("0", "1"):
+    assert metrics["producers"][worker]["source_files"] == 2
+    assert metrics["producers"][worker]["sent"]["payload_bytes"] > 0
+    assert metrics["received"][worker]["transfers"] == 2
 PYTHON

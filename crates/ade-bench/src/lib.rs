@@ -1,4 +1,5 @@
 //! Reproducible benchmark infrastructure and adapters; execution lives in engine crates.
+pub mod ade_distributed;
 pub mod ade_local;
 pub mod cli;
 pub mod compare;
@@ -13,6 +14,8 @@ pub mod stats;
 /// Structured failures at benchmark boundaries.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("ADE distributed execution: {0}")]
+    AdeDistributed(#[from] ::ade_distributed::Error),
     #[error("ADE local execution: {0}")]
     AdeLocal(#[from] ade_exec::Error),
     #[error("I/O: {0}")]

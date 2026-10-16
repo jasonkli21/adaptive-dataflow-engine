@@ -2,6 +2,7 @@
 members = [
     "crates/ade-bench",
     "crates/ade-exec",
+    "crates/ade-distributed",
 ]
 resolver = "3"
 

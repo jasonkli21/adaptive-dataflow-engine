@@ -29,19 +29,20 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 2 is implemented and accepted; the Sol High review remediation and its
-verification are recorded in the Phase 2 report. The active boundary remains
-Phase 2, defined by `docs/plans/phase-2-implementation-plan.md`. Do not begin
-Phase 3 without an explicit new instruction.
+Phase 3 is the active boundary, defined by
+`docs/plans/phase-3-implementation-plan.md`. Phase 2 remains accepted. Phase 3
+adds a static coordinator, 2–4 workers and real hash exchange for synthetic
+GroupBySum, with bounded TCP/IPC transfers and ephemeral worker-local retention.
+Do not begin Phase 4 without an explicit new instruction.
 
-- Own local execution in `ade-exec`, independent of DataFusion and `ade-bench`.
-- Preserve the Phase 0 harness, independent oracle, child protocol and result contracts.
-- Implement managed memory, local partitioned aggregate spill, external sort, bounded
-  scan prefetch and pressure metrics alongside the existing local operators.
-- No exchange, scheduler, distribution, recovery, SQL frontend or streaming.
-- Do not create empty future crates; defer non-required features.
-- During implementation run focused crate tests; run the full workspace gate near
-  completion, then focused release comparison evidence. Keep CI correctness-only.
+- Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
+- Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
+- Reuse the local spillable aggregate through partial merge, IPC scan and streaming sink.
+- Worker failure fails the job; cancel survivors and clean up. No retry/recovery.
+- Exchange buffers are separately bounded; the local ledger is not a process RSS cap.
+- No adaptive exchange, lineage, scheduling, joins, SQL frontend or streaming/state.
+- Run focused tests during development, one final workspace gate/smoke and focused
+  2-/4-worker release comparison evidence. Keep CI correctness-only.
 
 A small coherent implementation is preferred to speculative architecture.
 
@@ -119,9 +120,9 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. For Phase 2 create:
+Each phase ends with an implementation report. For Phase 3 create:
 
-`docs/reports/phase-2-implementation-report.md`
+`docs/reports/phase-3-implementation-report.md`
 
 It must include:
 
@@ -136,5 +137,6 @@ It must include:
 9. deferred items;
 10. recommended next-phase considerations.
 
-Include the Phase 2 plan acceptance audit, runtime metrics/memory limitations and
-cross-engine release comparison evidence. Do not begin Phase 3 as cleanup.
+Include the Phase 3 plan acceptance audit, distributed lifecycle and memory
+limitations, and 2-/4-worker cross-engine release evidence. Do not begin Phase 4
+as cleanup.

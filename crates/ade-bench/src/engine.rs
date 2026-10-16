@@ -113,6 +113,7 @@ pub struct EngineRequest {
 pub enum ResolvedEngine {
     DataFusion(DataFusionConfig),
     AdeLocal(crate::ade_local::AdeLocalConfig),
+    AdeDistributed(crate::ade_distributed::AdeDistributedConfig),
 }
 
 impl EngineRequest {
@@ -125,6 +126,9 @@ impl EngineRequest {
             "datafusion" => Ok(ResolvedEngine::DataFusion(DataFusionEngine::parse_config(
                 &self.options,
             )?)),
+            "ade-distributed" => Ok(ResolvedEngine::AdeDistributed(
+                crate::ade_distributed::AdeDistributedEngine::parse_config(&self.options)?,
+            )),
             "ade-local" => Ok(ResolvedEngine::AdeLocal(
                 crate::ade_local::AdeLocalEngine::parse_config(&self.options)?,
             )),
@@ -140,6 +144,7 @@ impl ResolvedEngine {
         match self {
             Self::DataFusion(config) => config.info(),
             Self::AdeLocal(config) => config.info(),
+            Self::AdeDistributed(config) => config.info(),
         }
     }
 }
@@ -534,6 +539,12 @@ pub async fn execute_validated_request(
 ) -> Result<ExecutionOutcome> {
     let resolved = request.resolve()?;
     match resolved {
+        ResolvedEngine::AdeDistributed(config) => {
+            execute_validated_with::<crate::ade_distributed::AdeDistributedEngine>(
+                root, m, case, &config,
+            )
+            .await
+        }
         ResolvedEngine::AdeLocal(config) => {
             execute_validated_with::<crate::ade_local::AdeLocalEngine>(root, m, case, &config).await
         }

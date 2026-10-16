@@ -18,7 +18,9 @@ benchmark substrate
 
 ## Current status
 
-**Phase 2 spillable local execution implemented.** `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Execution remains single-node.
+**Phase 3 static distributed batch implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. Worker failure fails the job; no retry or recovery.
+
+Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
 The completed Phase 0 architecture/benchmark lab in `crates/ade-bench` provides deterministic datasets, engine-independent workload definitions, a DataFusion baseline, process-isolated macrobenchmarks, versioned result artifacts, correctness validation, comparison tooling, and microbenchmark infrastructure.
 
@@ -29,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-2-implementation-plan.md`](docs/plans/phase-2-implementation-plan.md) — Phase 2 implementation contract.
+4. [`docs/plans/phase-3-implementation-plan.md`](docs/plans/phase-3-implementation-plan.md) — Phase 3 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -40,6 +42,7 @@ Implementation work should use this order:
 ├── AGENTS.md
 ├── Cargo.toml
 ├── crates/
+│   ├── ade-distributed/        # static coordinator, workers, TCP/IPC exchange
 │   ├── ade-exec/               # Phase 2 local runtime
 │   └── ade-bench/              # Phase 0 benchmark harness
 ├── benchmarks/
@@ -85,7 +88,7 @@ cargo bench -p ade-bench
 
 See [`benchmarks/README.md`](benchmarks/README.md) for executable generation/run/compare examples, TPC-H-derived setup, and dataset size recipes. Read the [methodology](docs/research/benchmarking-methodology.md) before interpreting local measurements. The [implementation report](docs/reports/phase-0-implementation-report.md) records acceptance evidence and limitations.
 
-Run `bash scripts/smoke.sh` after `cargo build -p ade-bench` for the CI correctness flow. Result artifacts are immutable: choose a new output path for every run.
+Run `bash scripts/smoke.sh` after `cargo build --workspace` for the CI correctness flow. Result artifacts are immutable: choose a new output path for every run.
 
 ## ADE local execution
 
@@ -126,11 +129,40 @@ Prefetch preserves pull backpressure and joins its producer on teardown.
 
 The physical plan is provisional. Sort supports non-null UInt64 key/row_id and
 Int64 value, ascending key then row_id. TPC-H Q1 is supported only by DataFusion.
-No joins, SQL frontend, distributed exchange, scheduling or recovery are added.
+The local plan has no joins or SQL frontend. Static distribution is provided by the separate Phase 3 crate below.
 See [ADR-0006](docs/adr/0006-managed-local-memory-and-spill.md) and the
 [Phase 2 report](docs/reports/phase-2-implementation-report.md) for contracts,
-validation and comparison evidence. Phase 3 has not started.
+validation and comparison evidence.
 
 ## License
 
 No open-source license has been selected in this scaffold. Add one intentionally before relying on public reuse semantics.
+
+## ADE static distributed execution
+
+Build both binaries with `cargo build --workspace --release`. The benchmark
+adapter starts loopback workers on OS-selected ports, owns their lifecycle, and
+validates the collected result with the existing independent oracle.
+
+```sh
+ADE_LOG=debug target/release/ade-bench validate --engine ade-distributed \
+  --engine-option workers=2 --spec benchmarks/specs/aggregate-skew.toml \
+  --dataset benchmarks/datasets/skew-v1
+```
+
+Options: `workers=2` (2–4), `batch_size=8192`, `memory_limit_bytes=268435456`,
+`spill_enabled=true`, `prefetch_batches=0` (0–64). Effective configuration and
+fixed protocol limits appear in engine metadata; standalone debug validation
+prints per-worker/network metrics. `ADE_WORKER_BIN` can select the worker binary;
+otherwise `ade-worker` is resolved beside `ade-bench`.
+
+The Rust coordinator API also accepts static endpoints. `ade-worker WORKER_ID
+TEMP_PARENT` binds loopback control/exchange ports and writes a framed readiness
+record to stdout; logs use stderr. Gather currently binds loopback, so this is a
+local multi-process deployment. IPC reception is execution-scoped and non-durable.
+One active job per worker, fixed task assignments, no retry/adaptation. Network
+frames are separately bounded (1 MiB, 1024 rows), outside the local managed-memory
+ledger. Coordinator gathering/oracle validation collect the final result. See
+[Phase 3 report](docs/reports/phase-3-implementation-report.md),
+[control ADR](docs/adr/0008-static-control-protocol.md) and
+[exchange ADR](docs/adr/0009-static-tcp-ipc-exchange.md).

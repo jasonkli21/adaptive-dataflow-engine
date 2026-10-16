@@ -90,6 +90,7 @@ impl Aggregate {
         input: &mut Node,
         key: usize,
         value: usize,
+        count: Option<usize>,
         id: OperatorId,
         cx: &mut ExecContext,
     ) -> Result<Self> {
@@ -116,6 +117,20 @@ impl Aggregate {
                 .as_any()
                 .downcast_ref::<Int64Array>()
                 .ok_or_else(|| Error::Invalid("aggregate value type".into()))?;
+            let counts = count
+                .map(|c| {
+                    batch
+                        .column(c)
+                        .as_any()
+                        .downcast_ref::<UInt64Array>()
+                        .ok_or_else(|| Error::Invalid("aggregate count type".into()))
+                })
+                .transpose()?;
+            if counts.is_some_and(|c| c.null_count() != 0) {
+                return Err(Error::Invalid(
+                    "aggregate count nulls are unsupported".into(),
+                ));
+            }
             if keys.null_count() != 0 || values.null_count() != 0 {
                 return Err(Error::Invalid("aggregate nulls are unsupported".into()));
             }
@@ -123,7 +138,11 @@ impl Aggregate {
                 if i % 1024 == 0 {
                     cx.cancellation.check()?;
                 }
-                let row = (keys.value(i), i128::from(values.value(i)), 1);
+                let count = counts.map_or(1, |c| c.value(i));
+                if count == 0 {
+                    return Err(Error::Invalid("partial count must be positive".into()));
+                }
+                let row = (keys.value(i), i128::from(values.value(i)), count);
                 if !state.table.as_mut().expect("table").add(row)? {
                     cx.memory.pressure();
                     if !cx.config.spill_enabled {

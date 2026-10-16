@@ -6,6 +6,7 @@ version = 4
 name = "ade-bench"
 version = "0.1.0"
 dependencies = [
+ "ade-distributed",
  "ade-exec",
  "arrow",
  "blake3",
@@ -23,6 +24,19 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "ade-distributed"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "arrow",
+ "parquet",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

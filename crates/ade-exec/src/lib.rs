@@ -1,5 +1,6 @@
 //! Provisional single-node pull execution with managed memory and local spill.
 mod aggregate;
+mod ipc_scan;
 pub mod memory;
 mod scan;
 mod sort;
@@ -221,6 +222,14 @@ impl ExecContext {
 /// Small local tree, deliberately not a stable general physical IR.
 #[derive(Debug, Clone)]
 pub enum LocalPlan {
+    /// Incremental Arrow IPC streams with identical schemas.
+    IpcScan {
+        files: Vec<PathBuf>,
+    },
+    /// Merge non-null key/sum/count partial aggregates using the spillable table.
+    MergeAggregate {
+        input: Box<Self>,
+    },
     ParquetScan {
         files: Vec<PathBuf>,
         batch_size: usize,
@@ -260,6 +269,7 @@ struct Node {
 }
 enum Kind {
     Scan(scan::Scan),
+    IpcScan(ipc_scan::Scan),
     Filter {
         input: Box<Node>,
         column: usize,
@@ -273,6 +283,7 @@ enum Kind {
         input: Box<Node>,
         key: usize,
         value: usize,
+        count: Option<usize>,
         state: Option<aggregate::Aggregate>,
     },
     Sort {
@@ -311,6 +322,27 @@ impl Node {
     fn build(plan: LocalPlan, cx: &mut ExecContext) -> Result<Self> {
         cx.cancellation.check()?;
         let (schema, kind, name) = match plan {
+            LocalPlan::IpcScan { files } => {
+                let scan = ipc_scan::Scan::new(files)?;
+                (scan.schema.clone(), Kind::IpcScan(scan), "ipc-scan")
+            }
+            LocalPlan::MergeAggregate { input } => {
+                let input = Box::new(Self::build(*input, cx)?);
+                let key = column(&input.schema, "key", &DataType::UInt64)?;
+                let value = column(&input.schema, "sum", &DataType::Int64)?;
+                let count = column(&input.schema, "count", &DataType::UInt64)?;
+                (
+                    aggregate_schema(),
+                    Kind::Aggregate {
+                        input,
+                        key,
+                        value,
+                        count: Some(count),
+                        state: None,
+                    },
+                    "merge-aggregate",
+                )
+            }
             LocalPlan::ParquetScan { files, batch_size } => {
                 if batch_size == 0 || files.is_empty() {
                     return Err(Error::Invalid(
@@ -378,6 +410,7 @@ impl Node {
                         input,
                         key,
                         value,
+                        count: None,
                         state: None,
                     },
                     "hash-aggregate",
@@ -448,6 +481,7 @@ impl Node {
         // Release the previous observed output when downstream asks for another batch.
         cx.memory(self.id, 0)?;
         let output = match &mut self.kind {
+            Kind::IpcScan(scan) => scan.next()?,
             Kind::Scan(scan) => {
                 let start = Instant::now();
                 let result = scan.next(&cx.cancellation)?;
@@ -517,11 +551,12 @@ impl Node {
                 input,
                 key,
                 value,
+                count,
                 state,
             } => {
                 if state.is_none() {
                     *state = Some(aggregate::Aggregate::build(
-                        input, *key, *value, self.id, cx,
+                        input, *key, *value, *count, self.id, cx,
                     )?);
                 }
                 let start = Instant::now();
@@ -577,6 +612,7 @@ impl Node {
         }
         match &mut self.kind {
             Kind::Scan(scan) => cx.metrics.prefetch = scan.shutdown(),
+            Kind::IpcScan(scan) => scan.shutdown(),
             Kind::Filter { input, .. }
             | Kind::Project { input, .. }
             | Kind::Limit { input, .. } => input.shutdown(cx)?,
@@ -625,10 +661,9 @@ fn execute_in(
     parent: Option<&std::path::Path>,
 ) -> Result<ExecutionOutput> {
     let mut cx = ExecContext::new(config, cancellation, parent)?;
-    let mut root = Node::build(plan, &mut cx)?;
     let mut batches = Vec::new();
     let mut retained = cx.memory.reservation(OperatorId(u32::MAX));
-    while let Some(batch) = root.next_batch(&mut cx)? {
+    drive(plan, &mut cx, |batch, cx| {
         retained.grow(
             batch
                 .get_array_memory_size()
@@ -639,25 +674,55 @@ fn execute_in(
             .try_reserve_exact(1)
             .map_err(|_| Error::Invalid("output allocation failed".into()))?;
         cx.metrics.memory.reserve(batch.get_array_memory_size())?;
-        cx.metrics.output_rows += batch.num_rows();
-        cx.metrics.output_batches += 1;
         batches.push(batch);
-    }
-    cx.cancellation.check()?;
-    root.shutdown(&mut cx)?;
-    drop(root); // fallback drop precedes removal of the spill root
-    for m in cx.metrics.operators.values_mut() {
-        cx.metrics.memory.release(m.memory.current)?;
-        m.memory.current = 0;
-    }
-    cx.metrics.managed = cx.memory.snapshot();
-    cx.metrics.spill = cx.spill.snapshot();
+        Ok(())
+    })?;
     cx.spill.close()?;
     Ok(ExecutionOutput {
         batches,
         metrics: cx.metrics,
         _retained: retained,
     })
+}
+
+/// Execute without collecting output. The synchronous sink owns one bounded output batch
+/// at a time; returning an error tears down operators and local spill through RAII.
+/// # Errors
+/// Returns execution, cancellation, or sink errors.
+pub fn execute_to_sink(
+    plan: LocalPlan,
+    config: ExecutionConfig,
+    cancellation: CancellationToken,
+    mut sink: impl FnMut(RecordBatch) -> Result<()>,
+) -> Result<ExecutionMetrics> {
+    let mut cx = ExecContext::new(config, cancellation, None)?;
+    drive(plan, &mut cx, |batch, _| sink(batch))?;
+    cx.spill.close()?;
+    Ok(cx.metrics)
+}
+
+fn drive(
+    plan: LocalPlan,
+    cx: &mut ExecContext,
+    mut sink: impl FnMut(RecordBatch, &mut ExecContext) -> Result<()>,
+) -> Result<()> {
+    let mut root = Node::build(plan, cx)?;
+    let result = (|| {
+        while let Some(batch) = root.next_batch(cx)? {
+            cx.metrics.output_rows += batch.num_rows();
+            cx.metrics.output_batches += 1;
+            sink(batch, cx)?;
+        }
+        cx.cancellation.check()
+    })();
+    // Shutdown also runs after sink errors, before the spill root is removed.
+    let shutdown = root.shutdown(cx);
+    drop(root);
+    result?;
+    shutdown?;
+    cx.metrics.managed = cx.memory.snapshot();
+    cx.metrics.spill = cx.spill.snapshot();
+    Ok(())
 }
 
 #[cfg(test)]

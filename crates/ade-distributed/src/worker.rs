@@ -1,0 +1,392 @@
+//! One active job per worker. Control remains responsive while the task runs.
+use crate::{
+    Error, Result, WorkerEndpoint,
+    exchange::{Receiver, Sender, Store},
+    ids::{AttemptId, JobId, TaskId, transfer},
+    metrics::TaskMetrics,
+    partition,
+    protocol::{self, Envelope, JobSpec, Reply, Request},
+    require,
+};
+use ade_exec::{CancellationToken, LocalPlan};
+use std::{
+    io::Write,
+    net::{SocketAddr, TcpListener},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
+struct Job {
+    spec: JobSpec,
+    store: Arc<Store>,
+    producer_done: AtomicBool,
+    final_started: AtomicBool,
+}
+struct State {
+    endpoint: WorkerEndpoint,
+    job: Mutex<Option<Arc<Job>>>,
+    busy: AtomicBool,
+    stop: AtomicBool,
+    parent: PathBuf,
+}
+struct TaskGuard<'a>(&'a AtomicBool);
+impl Drop for TaskGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+fn job(state: &State, id: JobId) -> Result<Arc<Job>> {
+    let current = state.job.lock().expect("job lock");
+    let job = current
+        .as_ref()
+        .ok_or_else(|| Error::Invalid("no prepared job".into()))?;
+    require(job.spec.job == id, "job identity mismatch")?;
+    job.store.cancellation.check()?;
+    Ok(job.clone())
+}
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Used as an owned map_err adapter across crate errors."
+)]
+fn local_sink_error(error: Error) -> ade_exec::Error {
+    ade_exec::Error::Invalid(format!("distributed sink: {error}"))
+}
+fn task_metrics(
+    start: Instant,
+    output: &ade_exec::ExecutionMetrics,
+    source_files: usize,
+) -> TaskMetrics {
+    TaskMetrics {
+        source_files,
+        input_rows: output
+            .operators
+            .values()
+            .next()
+            .map_or(0, |m| m.output_rows),
+        output_rows: output.output_rows,
+        elapsed_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        managed_peak: output.managed.peak,
+        spill_bytes: output.spill.write_bytes,
+        ..Default::default()
+    }
+}
+fn producer(state: &State, job: &Job, files: &[PathBuf]) -> Result<TaskMetrics> {
+    require(
+        !job.producer_done.load(Ordering::Acquire),
+        "producer already completed",
+    )?;
+    let start = Instant::now();
+    let token = job.store.cancellation.clone();
+    // Do not hold idle receiver connections while a blocking aggregate builds.
+    let open = |p: usize| {
+        Sender::new(
+            job.spec.workers[p].exchange,
+            transfer(job.spec.job, 0, p as u64, state.endpoint.id.0),
+            token.clone(),
+        )
+    };
+    let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
+    let mut metrics = if files.is_empty() {
+        TaskMetrics::default()
+    } else {
+        let plan = LocalPlan::HashAggregate {
+            input: Box::new(LocalPlan::Project {
+                input: Box::new(LocalPlan::ParquetScan {
+                    files: files.to_vec(),
+                    batch_size: job.spec.config.batch_size,
+                }),
+                columns: vec!["key".into(), "value_i64".into()],
+            }),
+            key: "key".into(),
+            value: "value_i64".into(),
+        };
+        let count = senders.len();
+        let output =
+            ade_exec::execute_to_sink(plan, job.spec.config.execution(), token.clone(), |batch| {
+                for (p, sender) in senders.iter_mut().enumerate() {
+                    let selected = partition::select(&batch, p, count).map_err(local_sink_error)?;
+                    if selected.num_rows() > 0 {
+                        if sender.is_none() {
+                            *sender = Some(open(p).map_err(local_sink_error)?);
+                        }
+                        sender
+                            .as_mut()
+                            .expect("opened")
+                            .batch(&selected)
+                            .map_err(local_sink_error)?;
+                    }
+                }
+                Ok(())
+            })?;
+        task_metrics(start, &output, files.len())
+    };
+    for (p, sender) in senders.into_iter().enumerate() {
+        let sender = match sender {
+            Some(sender) => sender,
+            None => open(p)?,
+        };
+        let sent = sender.finish()?;
+        metrics.sent.add(&sent);
+        metrics.destinations.insert(p as u64, sent);
+    }
+    token.check()?;
+    metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    job.producer_done.store(true, Ordering::Release);
+    Ok(metrics)
+}
+fn final_task(state: &State, job: &Job, gather: SocketAddr) -> Result<TaskMetrics> {
+    require(
+        job.producer_done.load(Ordering::Acquire),
+        "producer has not completed",
+    )?;
+    require(
+        !job.final_started.swap(true, Ordering::AcqRel),
+        "final task already started",
+    )?;
+    let files = job.store.paths()?; // all expected producers, including explicit empty streams
+    let start = Instant::now();
+    let token = job.store.cancellation.clone();
+    let open = || {
+        Sender::new(
+            gather,
+            transfer(
+                job.spec.job,
+                1,
+                0,
+                job.spec.workers.len() as u64 + state.endpoint.id.0,
+            ),
+            token.clone(),
+        )
+    };
+    let mut sender: Option<Sender> = None;
+    let output = ade_exec::execute_to_sink(
+        LocalPlan::MergeAggregate {
+            input: Box::new(LocalPlan::IpcScan { files }),
+        },
+        job.spec.config.execution(),
+        token.clone(),
+        |batch| {
+            if sender.is_none() {
+                sender = Some(open().map_err(local_sink_error)?);
+            }
+            sender
+                .as_mut()
+                .expect("opened")
+                .batch(&batch)
+                .map_err(local_sink_error)
+        },
+    )?;
+    let mut metrics = task_metrics(start, &output, 0);
+    let sender = match sender {
+        Some(sender) => sender,
+        None => open()?,
+    };
+    metrics.sent = sender.finish()?;
+    metrics.received = job.store.metrics()?;
+    metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    Ok(metrics)
+}
+fn handle(state: &State, request: Request) -> Result<Reply> {
+    match request {
+        Request::Ping => Ok(Reply::Pong(state.endpoint.clone())),
+        Request::PrepareJob(spec) => {
+            spec.config.validate()?;
+            crate::coordinator::validate_topology(&spec.workers)?;
+            let own = spec
+                .workers
+                .iter()
+                .find(|w| w.id == state.endpoint.id)
+                .ok_or_else(|| Error::Invalid("worker absent from topology".into()))?;
+            require(
+                own.control == state.endpoint.control && own.exchange == state.endpoint.exchange,
+                "worker endpoint mismatch",
+            )?;
+            let mut current = state.job.lock().expect("job lock");
+            require(
+                current.is_none() && !state.busy.load(Ordering::Acquire),
+                "worker already has active job",
+            )?;
+            let expected = (0..spec.workers.len())
+                .map(|p| transfer(spec.job, 0, state.endpoint.id.0, p as u64))
+                .collect();
+            let store = Arc::new(Store::new(
+                &state.parent,
+                expected,
+                CancellationToken::default(),
+            )?);
+            *current = Some(Arc::new(Job {
+                spec,
+                store,
+                producer_done: AtomicBool::new(false),
+                final_started: AtomicBool::new(false),
+            }));
+            Ok(Reply::Ready)
+        }
+        Request::CancelJob { job: id } => {
+            let mut current = state.job.lock().expect("job lock");
+            if current.as_ref().is_some_and(|j| j.spec.job == id) {
+                let old = current.take().expect("job");
+                old.store.cancellation.cancel();
+            }
+            Ok(Reply::Ready)
+        }
+        Request::Shutdown => {
+            state.stop.store(true, Ordering::Release);
+            if let Some(job) = state.job.lock().expect("job lock").take() {
+                job.store.cancellation.cancel();
+            }
+            Ok(Reply::Ready)
+        }
+        task => {
+            require(
+                state
+                    .busy
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok(),
+                "worker task already running",
+            )?;
+            let _guard = TaskGuard(&state.busy);
+            let (id, task_id, attempt, is_final) = match &task {
+                Request::RunProducerTask {
+                    job, task, attempt, ..
+                } => (*job, *task, *attempt, false),
+                Request::RunFinalTask {
+                    job, task, attempt, ..
+                } => (*job, *task, *attempt, true),
+                _ => unreachable!(),
+            };
+            let job = job(state, id)?;
+            let expected = state.endpoint.id.0
+                + if is_final {
+                    job.spec.workers.len() as u64
+                } else {
+                    0
+                };
+            require(
+                task_id == TaskId(expected) && attempt == AttemptId(0),
+                "task/attempt identity mismatch",
+            )?;
+            let result = match task {
+                Request::RunProducerTask { files, .. } => producer(state, &job, &files),
+                Request::RunFinalTask { gather, .. } => final_task(state, &job, gather),
+                _ => unreachable!(),
+            };
+            if result.is_err() {
+                job.store.cancellation.cancel();
+            }
+            result.map(Reply::Task)
+        }
+    }
+}
+/// Serve until Shutdown. Readiness is emitted only after both sockets are bound.
+/// The caller owns the parent directory and may remove it after killing/waiting a child.
+/// # Errors
+/// Returns binding, readiness, listener or socket setup errors.
+pub fn serve(
+    id: crate::ids::WorkerId,
+    control: SocketAddr,
+    exchange: SocketAddr,
+    parent: &Path,
+    mut ready: impl Write,
+) -> Result<()> {
+    let listener = TcpListener::bind(control)?;
+    listener.set_nonblocking(true)?;
+    let exchange_listener = TcpListener::bind(exchange)?;
+    let endpoint = WorkerEndpoint {
+        id,
+        control: listener.local_addr()?,
+        exchange: exchange_listener.local_addr()?,
+    };
+    let state = Arc::new(State {
+        endpoint: endpoint.clone(),
+        job: Mutex::new(None),
+        busy: AtomicBool::new(false),
+        stop: AtomicBool::new(false),
+        parent: parent.into(),
+    });
+    let receiving = state.clone();
+    let receiver = Receiver::start(exchange_listener, move |header| {
+        Ok(job(&receiving, header.id.job)?.store.clone())
+    })?;
+    protocol::write_message(&mut ready, &endpoint)?;
+    ready.flush()?;
+    let mut handlers: Vec<JoinHandle<()>> = Vec::new();
+    let mut listener_error = None;
+    while !state.stop.load(Ordering::Acquire) {
+        let mut i = 0;
+        while i < handlers.len() {
+            if handlers[i].is_finished() {
+                let _ = handlers.swap_remove(i).join();
+            } else {
+                i += 1;
+            }
+        }
+        // At most one task plus a small bounded set of control operations.
+        if handlers.len() < 8 {
+            match listener.accept() {
+                Ok((mut socket, _)) => {
+                    // macOS inherits O_NONBLOCK from the accepting listener.
+                    if socket.set_nonblocking(false).is_err() {
+                        continue;
+                    }
+                    let state = state.clone();
+                    handlers.push(thread::spawn(move || {
+                        if socket.set_read_timeout(Some(crate::IO_TIMEOUT)).is_err()
+                            || socket.set_write_timeout(Some(crate::IO_TIMEOUT)).is_err()
+                        {
+                            return;
+                        }
+                        if let Ok(envelope) = protocol::read_message::<Envelope<Request>>(
+                            &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
+                        ) {
+                            let body = handle(&state, envelope.body).unwrap_or_else(|error| {
+                                Reply::Error {
+                                    code: match &error {
+                                        Error::Exec(_) => "execution",
+                                        Error::Io(_) => "io",
+                                        _ => "protocol",
+                                    }
+                                    .into(),
+                                    message: error.to_string(),
+                                }
+                            });
+                            let _ = protocol::write_message(
+                                &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
+                                &Envelope {
+                                    request_id: envelope.request_id,
+                                    body,
+                                },
+                            );
+                        }
+                    }));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => {
+                    listener_error = Some(e);
+                    break;
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    if let Some(job) = state
+        .job
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+    {
+        job.store.cancellation.cancel();
+    }
+    for handler in handlers {
+        let _ = handler.join();
+    }
+    drop(receiver);
+    if let Some(error) = listener_error {
+        return Err(error.into());
+    }
+    Ok(())
+}

@@ -592,3 +592,91 @@ fn phase2_partition_no_progress_and_empty_sort() {
     }));
     assert_eq!(empty.metrics.output_rows, 0);
 }
+
+#[test]
+fn phase3_ipc_merge_and_checked_counts() {
+    use arrow::ipc::writer::StreamWriter;
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, sum: i64, count: u64| {
+        let path = dir.path().join(name);
+        let mut writer =
+            StreamWriter::try_new(File::create(&path).unwrap(), &aggregate_schema()).unwrap();
+        let batch = RecordBatch::try_new(
+            aggregate_schema(),
+            vec![
+                Arc::new(UInt64Array::from(vec![7])),
+                Arc::new(Int64Array::from(vec![sum])),
+                Arc::new(UInt64Array::from(vec![count])),
+            ],
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.finish().unwrap();
+        path
+    };
+    let a = write("a.arrow", 11, 3);
+    let b = write("b.arrow", -4, 2);
+    let plan = |files| LocalPlan::MergeAggregate {
+        input: Box::new(LocalPlan::IpcScan { files }),
+    };
+    let result = run(plan(vec![a.clone(), b.clone()]));
+    assert_eq!(ints(&result, 1), vec![7]);
+    assert_eq!(
+        result.batches[0]
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap()
+            .value(0),
+        5
+    );
+    assert!(matches!(
+        execute(
+            plan(vec![a.clone(), write("overflow.arrow", 0, u64::MAX)]),
+            CancellationToken::default()
+        ),
+        Err(Error::Overflow("aggregate count"))
+    ));
+    let file = std::fs::OpenOptions::new().write(true).open(&b).unwrap();
+    file.set_len(file.metadata().unwrap().len() - 5).unwrap();
+    assert!(execute(plan(vec![a, b]), CancellationToken::default()).is_err());
+}
+
+#[test]
+fn phase3_sink_failure_tears_down_spill_and_prefetch() {
+    let (_dir, scan) = phase2_fixture(5000, 1000);
+    let parent = tempfile::tempdir().unwrap();
+    let config = ExecutionConfig {
+        memory_limit_bytes: 65536,
+        prefetch_batches: 1,
+        output_batch_rows: 1,
+        ..Default::default()
+    };
+    let mut cx =
+        ExecContext::new(config, CancellationToken::default(), Some(parent.path())).unwrap();
+    let manager = cx.memory.clone();
+    let plan = aggregate_plan(scan);
+    let mut calls = 0;
+    let result = drive(plan, &mut cx, |batch, _| {
+        calls += 1;
+        assert_eq!(batch.num_rows(), 1);
+        Err(Error::Invalid("sink rejected".into()))
+    });
+    assert!(result.is_err());
+    assert_eq!(calls, 1);
+    assert_eq!(manager.snapshot().current, 0);
+    assert!(cx.spill.snapshot().events > 0);
+    drop(cx);
+    assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+    // Public sink returns post-shutdown metrics without a collection reservation.
+    let (_dir, scan) = fixture(&[1, 2, 3]);
+    let metrics = execute_to_sink(
+        scan,
+        ExecutionConfig::default(),
+        CancellationToken::default(),
+        |_| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(metrics.output_rows, 3);
+    assert_eq!(metrics.managed.current, 0);
+}

@@ -26,7 +26,7 @@ Synthetic controls include rows, files, row-group-rows, compression (`none`, `sn
 | local-small | 10000000 | 128 | 1000000 | about 2 GB logical; compression changes physical size |
 | local-memory-pressure | user sized | user sized | rows/2 | choose logical size above host RAM; baseline may fail without a configured spill/memory policy |
 
-The generator writes bounded 8192-row batches; Parquet buffers depend on configured row-group size. The harness collects results and its oracle in memory. Scan/high-cardinality validation may need substantial memory. No ADE memory/spill runtime is implemented.
+The generator writes bounded 8192-row batches; Parquet buffers depend on configured row-group size. The harness collects results and its oracle in memory. Scan/high-cardinality validation may need substantial memory. ADE managed memory and local spill apply to its runtime; harness/oracle collection remains external.
 
 ## TPC-H-derived local integration
 
@@ -49,3 +49,20 @@ cargo bench -p ade-bench --bench smoke -- --test
 ```
 
 Criterion measures a stable BLAKE3 buffer operation independently of macrobench orchestration. Read [methodology](../docs/research/benchmarking-methodology.md) before interpreting results. `examples/result-v1.json` is an intentionally small schema example, not a performance claim.
+
+## Phase 3 static distributed adapter
+
+Build with `cargo build --release --workspace` so `ade-worker` is present beside
+`ade-bench`. Use `--engine ade-distributed --engine-option workers=2` (or 4) with
+any existing synthetic aggregate spec. Scan, filter/project, sort and Q1 are
+rejected by this adapter. The four local options listed above also apply; each
+worker runs one producer and one final task. Files come only from the manifest,
+assigned round robin. Gather concatenates disjoint partitions. No retries.
+
+`ADE_LOG=debug` standalone validation emits structured per-worker source/input/
+partial/final rows, destination payload bytes/transfers/peak frames, durations,
+local managed peak/spill and gather totals. These diagnostics do not change result
+schema v1 or measured-child logging. Worker memory budgets exclude separately
+bounded network buffers and coordinator/harness collection. Use at least four
+files to demonstrate work on every worker. Local timings have no acceptance
+threshold and do not establish speedup.

@@ -378,6 +378,7 @@ impl Store {
             objects: Vec::new().into_iter(),
             object: None,
             consumed: 0,
+            #[cfg(feature = "research-hooks")]
             pressure_applied: false,
         })
     }
@@ -441,9 +442,12 @@ impl Store {
         let mut observation = self.buffer.observation(encoded.len());
         observation.produced_bytes = s.produced_bytes;
         observation.produced_segments = s.produced_segments;
-        while let Some((new, reason)) = decide(&self.config.adaptive, s.tier, &observation) {
+        let mut next_tier = s.tier;
+        let mut applied_transitions = Vec::new();
+        while let Some((new, reason)) = decide(&self.config.adaptive, next_tier, &observation) {
             let transition = AdaptiveTransition {
-                old: s.tier,
+                policy: "threshold_v1".into(),
+                old: next_tier,
                 new,
                 boundary: s.produced_segments,
                 transfer: id,
@@ -463,13 +467,10 @@ impl Store {
                 observation: observation.clone(),
             };
             debug_assert!(s.metrics.transitions.len() < 3);
-            s.metrics.transitions.push(transition);
-            s.tier = new;
+            applied_transitions.push(transition);
+            next_tier = new;
         }
-        // Snapshot lock is independent of ingress: live metrics remain readable
-        // while a writer waits for rendezvous or a storage operation.
-        *self.adaptive_metrics.lock().expect("adaptive metrics") = s.metrics.clone();
-        let tier = s.tier;
+        let tier = next_tier;
         let length = encoded.len() as u64;
         match tier {
             AdaptiveTier::ObjectStore => {
@@ -491,6 +492,10 @@ impl Store {
                 },
             )?,
         }
+        // Publish only after the chosen mechanism accepted the complete segment.
+        // Snapshot readers can never mistake a failed placement for a transition.
+        s.metrics.transitions.extend(applied_transitions);
+        s.tier = tier;
         s.produced_bytes = s.produced_bytes.saturating_add(length);
         s.produced_segments = s.produced_segments.saturating_add(1);
         s.metrics.policy = "threshold_v1".into();
@@ -624,6 +629,7 @@ struct Source {
     objects: std::vec::IntoIter<(TransferId, u64, u64)>,
     object: Option<(TransferId, u64, u64)>,
     consumed: u64,
+    #[cfg(feature = "research-hooks")]
     pressure_applied: bool,
 }
 impl std::fmt::Debug for Source {
@@ -636,28 +642,31 @@ impl ade_exec::BatchSource for Source {
         schema()
     }
     fn next_batch(&mut self, token: &CancellationToken) -> ade_exec::Result<Option<RecordBatch>> {
-        let pressure = &self.store.config.pressure;
-        if !self.pressure_applied
-            && self.consumed >= pressure.after_segments
-            && self
-                .store
-                .expected
-                .iter()
-                .next()
-                .is_some_and(|id| Some(id.partition.0) == pressure.target_partition)
+        #[cfg(feature = "research-hooks")]
         {
-            self.pressure_applied = true;
-            let deadline = std::time::Instant::now() + Duration::from_millis(pressure.delay_ms);
-            while std::time::Instant::now() < deadline {
-                token.check()?;
-                self.store
-                    .cancellation
-                    .check()
-                    .map_err(|e| ade_exec::Error::Invalid(e.to_string()))?;
-                thread::sleep(
-                    Duration::from_millis(2)
-                        .min(deadline.saturating_duration_since(std::time::Instant::now())),
-                );
+            let pressure = &self.store.config.pressure;
+            if !self.pressure_applied
+                && self.consumed >= pressure.after_segments
+                && self
+                    .store
+                    .expected
+                    .iter()
+                    .next()
+                    .is_some_and(|id| Some(id.partition.0) == pressure.target_partition)
+            {
+                self.pressure_applied = true;
+                let deadline = std::time::Instant::now() + Duration::from_millis(pressure.delay_ms);
+                while std::time::Instant::now() < deadline {
+                    token.check()?;
+                    self.store
+                        .cancellation
+                        .check()
+                        .map_err(|e| ade_exec::Error::Invalid(e.to_string()))?;
+                    thread::sleep(
+                        Duration::from_millis(2)
+                            .min(deadline.saturating_duration_since(std::time::Instant::now())),
+                    );
+                }
             }
         }
         let batch = self.next(token);

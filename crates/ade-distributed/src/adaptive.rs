@@ -63,12 +63,15 @@ pub struct AdaptiveObservation {
 #[serde(rename_all = "snake_case")]
 pub enum AdaptiveReason {
     ConsumerNotReady,
+    ExistingBacklog,
+    IncomingExceedsBufferCapacity,
     BufferPressure,
     SpillBacklogAndSize,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdaptiveTransition {
+    pub policy: String,
     pub old: AdaptiveTier,
     pub new: AdaptiveTier,
     /// Destination acceptance ordinal (cross-producer order is unspecified).
@@ -99,11 +102,16 @@ pub fn decide(
     o: &AdaptiveObservation,
 ) -> Option<(AdaptiveTier, AdaptiveReason)> {
     match tier {
-        AdaptiveTier::Direct
-            if !o.consumer_ready || o.buffer_bytes > 0 || o.incoming_bytes > o.capacity_bytes =>
-        {
+        AdaptiveTier::Direct if !o.consumer_ready => {
             Some((AdaptiveTier::Buffered, AdaptiveReason::ConsumerNotReady))
         }
+        AdaptiveTier::Direct if o.buffer_bytes > 0 => {
+            Some((AdaptiveTier::Buffered, AdaptiveReason::ExistingBacklog))
+        }
+        AdaptiveTier::Direct if o.incoming_bytes > o.capacity_bytes => Some((
+            AdaptiveTier::Buffered,
+            AdaptiveReason::IncomingExceedsBufferCapacity,
+        )),
         AdaptiveTier::Buffered
             if (o.buffer_bytes.saturating_add(o.incoming_bytes) as u128) * 100
                 >= (o.capacity_bytes as u128) * u128::from(config.buffer_high_pct) =>
@@ -225,6 +233,30 @@ mod tests {
             }
             .validate()
             .is_err()
+        );
+    }
+
+    #[test]
+    fn direct_transition_reason_names_the_observed_pressure() {
+        let config = AdaptiveConfig::default();
+        let mut observation = AdaptiveObservation {
+            capacity_bytes: 10,
+            consumer_ready: true,
+            ..Default::default()
+        };
+        observation.buffer_bytes = 1;
+        assert_eq!(
+            decide(&config, AdaptiveTier::Direct, &observation),
+            Some((AdaptiveTier::Buffered, AdaptiveReason::ExistingBacklog))
+        );
+        observation.buffer_bytes = 0;
+        observation.incoming_bytes = 11;
+        assert_eq!(
+            decide(&config, AdaptiveTier::Direct, &observation),
+            Some((
+                AdaptiveTier::Buffered,
+                AdaptiveReason::IncomingExceedsBufferCapacity
+            ))
         );
     }
 }

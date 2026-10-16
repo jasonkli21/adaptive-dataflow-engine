@@ -201,6 +201,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
         Request::PrepareJob(spec) => {
             spec.config.validate()?;
             crate::coordinator::validate_topology(&spec.workers)?;
+            #[cfg(feature = "research-hooks")]
             require(
                 spec.config
                     .exchange

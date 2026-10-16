@@ -23,8 +23,9 @@ fn git(root: &Path, args: &[&str]) -> Option<String> {
         .output()
         .ok()
         .filter(|output| output.status.success())
+        // Preserve successful empty output: `git status --porcelain` uses it to
+        // mean a clean tree, which must be recorded as `dirty=false`.
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-        .filter(|value| !value.is_empty())
 }
 
 fn emit_rerun(path: &Path) {

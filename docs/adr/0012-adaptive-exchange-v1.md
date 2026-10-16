@@ -40,6 +40,14 @@ There are at most four receiver threads and no new per-decision threads/channel.
 A second fixed-size metrics snapshot uses an independent short lock so live
 metrics do not wait for ingress I/O or rendezvous.
 
+A transition is staged locally while the ingress lock is held and becomes
+visible in the current tier and applied transition history only after the
+selected mechanism accepts the complete segment. Failed placement does not
+publish a successful transition or count that segment in tier totals. Every
+transition carries `threshold_v1` explicitly, and direct-to-buffered reasons
+distinguish consumer readiness, existing backlog, and an oversized incoming
+frame.
+
 ## Mixed tiers and bounded metadata
 
 A destination has at most three transition records, four tier counters and four
@@ -79,6 +87,12 @@ An explicit, default-off consumer delay targets one partition after a configured
 number of delivered segments, once per source. It is capped at two seconds,
 polls cancellation, changes no rows/routing, and appears in effective benchmark
 configuration. It is research instrumentation, not scheduling policy.
+
+The hook is compiled only with `ade-distributed`'s `research-hooks` feature,
+enabled by the benchmark crate; the default library API and source path contain
+no delay setting or delay branch. Phase 5 changes the private serialized control
+schema, so control framing uses `ADETCP02`. The exchange segment wire remains
+version 2 and result artifacts remain schema v1.
 
 Bidirectional adaptation, migration of old segments, a coordinator decision RPC,
 and one object index per segment were rejected because they add state and

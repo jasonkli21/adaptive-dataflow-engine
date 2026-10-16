@@ -802,6 +802,15 @@ Inputs:
 - estimated lineage cost;
 - worker health.
 
+These are candidate signals for the adaptive policy as it evolves, not a
+requirement that every phase implement every signal. Phase 5 v1 may use a
+truthful measured subset: exchange-buffer occupancy, consumer readiness/lag,
+spill backlog, and observed intermediate production. It must not label exchange
+pressure as process memory pressure or invent lineage-cost or nonfatal worker
+health estimates. Lineage-cost signals belong with the Phase 6 lineage model;
+worker failures continue to fail the job. Any broader Phase 5 signal requirement
+must be added explicitly to this PRD before expanding the phase contract.
+
 **Exit:** one job can use different mechanisms for different partitions/segments and outperform at least one static policy on a defined adversarial workload without unacceptable normal-case regression.
 
 ---

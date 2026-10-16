@@ -12,12 +12,12 @@ report (`git log -1 --format='%H %s' -- docs/reports/phase-5-implementation-repo
 the exact resulting SHA is returned in the implementation handoff. A commit
 cannot contain its own literal SHA without changing that SHA.
 
-No dependency/package changes. The one-way `ade-bench -> ade-distributed ->
+No new dependencies or packages. The one-way `ade-bench -> ade-distributed ->
 ade-exec` dependency graph, result schema v1, manifest/child/oracle contracts,
-hash/wire/schema versions, worker membership and one producer/one final role
-per worker remain intact. There is no Phase 6 implementation. Workers and coordinator must use the same
-build; private control diagnostics gain adaptive fields while the segment wire
-contract remains unchanged.
+exchange segment wire/schema versions, worker membership and one producer/one
+final role per worker remain intact. There is no Phase 6 implementation. Workers
+and coordinator must use the same build; the private control protocol has since
+been bumped to `ADETCP02` for its adaptive schema.
 
 Material changes:
 
@@ -265,11 +265,12 @@ final diagnostic cases performed no spill/object I/O.
 Environment: Apple M3, eight physical/logical cores, 24 GiB RAM, macOS aarch64,
 kernel 27.0.0; Rust 1.99.0 (`b940084d7`), aarch64-apple-darwin, system allocator,
 opt-level 3, thin LTO, one codegen unit, debug-info 1, assertions disabled.
-Build-bound provenance records the baseline SHA with dirty=true, because
-evidence was collected before the single implementation commit. Raw artifacts
-preserve environment, source, configuration, setup/query times, warmups and
-fingerprints. Coordinator timing includes cleanup; reported coordinator RSS
-does not include worker RSS. No cloud execution or CI performance claim exists.
+The original build-bound provenance records the Phase 4 baseline SHA with
+dirty=true, because that evidence was collected before the single implementation
+commit. It is historical development evidence and does not establish acceptance
+for the reviewed Phase 5 commit. Coordinator timing includes cleanup; reported
+coordinator RSS does not include worker RSS. No cloud execution or CI performance
+claim exists.
 
 ## Static release regression refresh
 
@@ -285,11 +286,12 @@ Two-worker cases had four transfers/32 segments; four-worker cases had
 byte conservation and object capability checks passed. Static timings have no
 performance claim. Log: `/tmp/ade-phase5-static-refresh.log`.
 
-Phase 5 exit criteria are met: independently correct mixed tiers and divergent
-partitions, pure explainable deterministic policy, bounded metadata/resources,
-static compatibility, no recovery expansion, and the predeclared narrow
-adversarial win plus acceptable normal regression. The initial failed divergence
-attempt remains explicitly recorded. Final `git diff --check` passed.
+The Phase 5 implementation has independently correct mixed tiers and divergent
+partitions, a pure deterministic policy, bounded metadata/resources, static
+compatibility and no recovery expansion. The initial failed divergence attempt
+remains explicitly recorded. The historical performance measurements above do
+not establish acceptance because they were not bound to a clean final commit;
+see the review-remediation record below for commit-bound release validation.
 
 ## Limitations and Phase 6 handoff
 
@@ -303,3 +305,29 @@ Phase 6 receives validated identities/sequences, bounded placement transitions,
 production sizes, wait observations, backend capabilities as facts and static/
 adaptive baselines. Lineage, lost-segment detection and recovery choices require
 a new explicit instruction.
+
+## Independent review remediation
+
+- Object-store puts/gets now execute on detached per-operation Tokio owners.
+  Their caller uses a bounded response channel with cancellation/deadline checks;
+  the helper retains its backend and ephemeral root while blocked. The injected
+  provider test blocks synchronously during the initial future poll and checks
+  cancellation, poisoning, rejection of later operations and bounded caller
+  return.
+- Adaptive transition records and current tier are committed only after the
+  selected tier accepts the segment. Records identify `threshold_v1`, and
+  direct-to-buffered causes distinguish readiness, backlog and oversize.
+- Research delay injection is behind the `research-hooks` Cargo feature,
+  enabled by `ade-bench`; the default distributed library build has no pressure
+  field or source-delay branch.
+- The private control protocol is `ADETCP02`; a test rejects an `ADETCP01`
+  peer before JSON decoding. Result schema v1 and exchange segment wire v2 are
+  unchanged.
+- The PRD identifies Phase 5 inputs as candidate signals over the policy's
+  evolution and explicitly permits the truthful v1 subset. It forbids fake RSS,
+  lineage-cost or nonfatal-health inputs.
+- The acceptance verifier checks the clean source commit, all six expected
+  configurations, identical environment/build/dataset identities, one warmup,
+  five measured iterations and the shared oracle fingerprint. The shell runner
+  refuses a dirty checkout. Clean final-commit acceptance evidence is recorded
+  in the verification handoff and ignored result artifacts.

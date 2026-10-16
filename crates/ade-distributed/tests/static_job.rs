@@ -230,18 +230,20 @@ fn verify_output_keys(output: coordinator::JobOutput, mode: ExchangeMode, keys: 
 }
 
 #[test]
+#[cfg(feature = "research-hooks")]
 fn adaptive_process_oracle_divergence_and_failure() {
     let data = tempfile::tempdir().unwrap();
     let files = fixture_keys(data.path(), 32768);
     let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
     let mut config = TaskConfig::default();
     config.exchange.mode = ExchangeMode::Adaptive;
-    config.exchange.buffer_bytes = 262_144;
+    config.exchange.buffer_bytes = 600_000;
+    config.exchange.adaptive.buffer_high_pct = 100;
     config.exchange.adaptive.remote_after_bytes = 32768;
     config.exchange.pressure = ade_distributed::PressureConfig {
         target_partition: Some(0),
         after_segments: 1,
-        delay_ms: 250,
+        delay_ms: 2000,
     };
     let mut job = StaticAggregateJob {
         id: JobId(1),

@@ -138,7 +138,7 @@ validation and comparison evidence.
 
 No open-source license has been selected in this scaffold. Add one intentionally before relying on public reuse semantics.
 
-## ADE static distributed execution
+## ADE distributed execution
 
 Build both binaries with `cargo build --workspace --release`. The benchmark
 adapter starts loopback workers on OS-selected ports, owns their lifecycle, and
@@ -196,7 +196,9 @@ all tiers feed the same aggregate. At most three transition records per
 partition expose exact ordinal/transfer/sequence, reason and observation values.
 Debug metrics include tier byte/segment totals and job transition summaries.
 
-Research-only pressure options are `research_slow_partition=N`,
+The delay hook is compiled only for the `ade-bench` research-hooks build; the
+default `ade-distributed` library API has no delay option. Benchmark options are
+`research_slow_partition=N`,
 `research_delay_after_segments=1`, `research_delay_ms=750`. They delay that final
 consumer once, default off, with a maximum two-second cancellation-aware delay.
 Effective metadata records these options. They change no query semantics.

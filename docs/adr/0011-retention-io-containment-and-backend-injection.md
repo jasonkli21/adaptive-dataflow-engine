@@ -19,10 +19,13 @@ nearby comments still described Phase 3 task/lifecycle rules.
   cannot stop, the session is cancelled and the worker is poisoned. Poisoned
   workers reject a later `PrepareJob`; their I/O helper is not joined during
   worker shutdown.
-- Race object-store futures against the session cancellation token and a
-  five-second operation deadline. A cancelled or timed-out operation poisons
-  the worker. Runtime teardown uses bounded shutdown so provider blocking work
-  cannot hold the worker's task ownership path indefinitely.
+- Run each object-store operation on a detached, per-operation Tokio owner.
+  The exchange caller waits on a bounded response channel while checking the
+  session cancellation token and five-second deadline. A cancelled, timed-out,
+  disconnected or failed operation poisons the worker. The detached owner keeps
+  the backend and any ephemeral filesystem root alive until provider work ends;
+  a provider that blocks synchronously inside its first future poll can outlive
+  the failed session without holding its receiver or worker teardown path.
 - Allow callers to install an `ObjectStoreBackend` when starting a worker. Each
   job names the expected backend and declares its durability capability in
   `ExchangeConfig`; effective task metrics report those values. The worker
@@ -52,8 +55,10 @@ nearby comments still described Phase 3 task/lifecycle rules.
 ## Consequences
 
 Spill and object-store waiters return after cancellation/deadline even if an
-underlying blocking helper remains active. Such a worker cannot accept another
-job and must be shut down/replaced by its owner. Injected backend creation and
+underlying blocking helper remains active. Object operations use at most one
+helper per bounded receiver operation; poisoning prevents later work from
+starting on that worker. Such a worker cannot accept another job and must be
+shut down/replaced by its owner. Injected backend creation and
 credentials belong to the worker caller. The default benchmark worker continues
 to use local ephemeral storage. Live metrics do not change benchmark result
 schema v1.

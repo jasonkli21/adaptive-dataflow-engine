@@ -98,7 +98,9 @@ impl ObjectStoreBackend {
     }
 }
 
-/// Research-only deterministic final-consumer delay; off by default.
+/// Research-only deterministic final-consumer delay; available only to the
+/// benchmark crate's `research-hooks` build.
+#[cfg(feature = "research-hooks")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PressureConfig {
@@ -112,6 +114,7 @@ pub struct ExchangeConfig {
     pub mode: ExchangeMode,
     #[serde(default)]
     pub adaptive: crate::adaptive::AdaptiveConfig,
+    #[cfg(feature = "research-hooks")]
     #[serde(default)]
     pub pressure: PressureConfig,
     pub buffer_bytes: usize,
@@ -123,6 +126,7 @@ impl Default for ExchangeConfig {
         Self {
             mode: ExchangeMode::LocalMaterialized,
             adaptive: crate::adaptive::AdaptiveConfig::default(),
+            #[cfg(feature = "research-hooks")]
             pressure: PressureConfig::default(),
             buffer_bytes: 4 * MAX_FRAME_BYTES,
             object_store: ObjectStoreConfig::default(),
@@ -134,12 +138,14 @@ impl ExchangeConfig {
     /// Rejects zero/excessive limits; buffered mode must fit the largest valid frame.
     pub fn validate(&self) -> Result<()> {
         self.adaptive.validate()?;
+        #[cfg(feature = "research-hooks")]
         require(
             self.pressure.delay_ms <= 2000
                 && self.pressure.after_segments <= 1_000_000
                 && self.pressure.target_partition.is_none_or(|p| p < 4),
             "invalid research pressure configuration",
         )?;
+        #[cfg(feature = "research-hooks")]
         require(
             self.pressure.target_partition.is_some() || self.pressure.delay_ms == 0,
             "research delay requires target partition",
@@ -568,8 +574,7 @@ fn nanos(start: Instant) -> u64 {
 /// worker-session boundary; the local filesystem remains the deterministic default.
 pub(crate) struct Objects {
     backend: Arc<dyn ObjectStore>,
-    runtime: Option<tokio::runtime::Runtime>,
-    _root: Option<tempfile::TempDir>,
+    root_guard: Option<Arc<tempfile::TempDir>>,
     config: ObjectStoreConfig,
     poisoned: Arc<AtomicBool>,
     operation_timeout: Duration,
@@ -582,7 +587,7 @@ impl Objects {
         supplied: Option<&ObjectStoreBackend>,
         poisoned: Arc<AtomicBool>,
     ) -> Result<Self> {
-        let (backend, root): (Arc<dyn ObjectStore>, Option<tempfile::TempDir>) =
+        let (backend, root): (Arc<dyn ObjectStore>, Option<Arc<tempfile::TempDir>>) =
             if let Some(supplied) = supplied {
                 require(
                     supplied.config == config,
@@ -597,17 +602,13 @@ impl Objects {
                 let root = tempfile::Builder::new()
                     .prefix("ade-objects-")
                     .tempdir_in(parent)?;
+                let root = Arc::new(root);
                 let backend = Arc::new(LocalFileSystem::new_with_prefix(root.path())?);
                 (backend, Some(root))
             };
         Ok(Self {
             backend,
-            runtime: Some(
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()?,
-            ),
-            _root: root,
+            root_guard: root,
             config,
             poisoned,
             operation_timeout: RETENTION_IO_TIMEOUT,
@@ -628,9 +629,10 @@ impl Objects {
         token: &CancellationToken,
     ) -> Result<()> {
         let length = bytes.len() as u64;
+        let backend = self.backend.clone();
         self.run(
-            async {
-                self.backend
+            async move {
+                backend
                     .put(&Self::key(id, sequence), bytes.into())
                     .await
                     .map_err(Error::ObjectStore)
@@ -644,13 +646,14 @@ impl Objects {
     }
     pub fn get(&self, id: TransferId, sequence: u64, token: &CancellationToken) -> Result<Vec<u8>> {
         let key = Self::key(id, sequence);
+        let backend = self.backend.clone();
         let bytes = self.run(
-            async {
-                let metadata = self.backend.head(&key).await?;
+            async move {
+                let metadata = backend.head(&key).await?;
                 if metadata.size > MAX_FRAME_BYTES as u64 {
                     return Err(Error::Invalid("object exceeds segment cap".into()));
                 }
-                Ok::<_, Error>(self.backend.get_range(&key, 0..metadata.size).await?)
+                Ok::<_, Error>(backend.get_range(&key, 0..metadata.size).await?)
             },
             token,
         )?;
@@ -662,44 +665,67 @@ impl Objects {
     }
     fn run<T, F>(&self, operation: F, token: &CancellationToken) -> Result<T>
     where
-        F: std::future::Future<Output = Result<T>>,
+        F: std::future::Future<Output = Result<T>> + Send + 'static,
+        T: Send + 'static,
     {
         require(
             !self.poisoned.load(Ordering::Acquire),
             "object-store worker is poisoned",
         )?;
         token.check()?;
-        let poisoned = self.poisoned.clone();
-        let operation_timeout = self.operation_timeout;
-        let future = async move {
-            let mut operation = std::pin::pin!(operation);
-            let deadline = Instant::now() + operation_timeout;
-            loop {
-                if token.check().is_err() {
-                    poisoned.store(true, Ordering::Release);
-                    return Err(Error::Invalid(
-                        "object-store I/O cancelled; worker poisoned".into(),
-                    ));
-                }
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    poisoned.store(true, Ordering::Release);
-                    token.cancel();
-                    return Err(Error::Invalid(
-                        "object-store I/O deadline exceeded; worker poisoned".into(),
-                    ));
-                }
-                if let Ok(result) =
-                    tokio::time::timeout(remaining.min(IO_POLL_INTERVAL), operation.as_mut()).await
+        let (response, result) = mpsc::sync_channel(1);
+        let keepalive = self.root_guard.clone();
+        thread::Builder::new()
+            .name("ade-object-io".into())
+            .spawn(move || {
+                // The detached owner retains both its backend (in the future) and
+                // any ephemeral filesystem root until a non-cooperative poll exits.
+                let _keepalive = keepalive;
+                let outcome = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
                 {
-                    return result;
+                    Ok(runtime) => {
+                        let outcome = runtime.block_on(operation);
+                        // Provider work may have left blocking tasks behind. Keep
+                        // teardown bounded on this detached owner too.
+                        runtime.shutdown_timeout(Duration::ZERO);
+                        outcome
+                    }
+                    Err(error) => Err(Error::Io(error)),
+                };
+                let _ = response.send(outcome);
+            })
+            .map_err(Error::Io)?;
+        let deadline = Instant::now() + self.operation_timeout;
+        loop {
+            if token.check().is_err() {
+                self.poisoned.store(true, Ordering::Release);
+                return Err(Error::Invalid(
+                    "object-store I/O cancelled; worker poisoned".into(),
+                ));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                self.poisoned.store(true, Ordering::Release);
+                token.cancel();
+                return Err(Error::Invalid(
+                    "object-store I/O deadline exceeded; worker poisoned".into(),
+                ));
+            }
+            match result.recv_timeout(remaining.min(IO_POLL_INTERVAL)) {
+                Ok(Ok(value)) => return Ok(value),
+                Ok(Err(error)) => {
+                    self.poisoned.store(true, Ordering::Release);
+                    return Err(error);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.poisoned.store(true, Ordering::Release);
+                    return Err(Error::Invalid("object-store I/O owner disconnected".into()));
                 }
             }
-        };
-        self.runtime
-            .as_ref()
-            .expect("object-store runtime")
-            .block_on(future)
+        }
     }
     pub fn metrics(&self) -> RetentionMetrics {
         let mut metrics = self.metrics.lock().expect("object metrics").clone();
@@ -708,15 +734,8 @@ impl Objects {
         metrics
     }
 }
-impl Drop for Objects {
-    fn drop(&mut self) {
-        if let Some(runtime) = self.runtime.take() {
-            // A provider may have left blocking work behind after cancellation. Never
-            // make worker teardown wait indefinitely for that provider thread.
-            runtime.shutdown_timeout(Duration::ZERO);
-        }
-    }
-}
+// Object I/O owners are detached. Their captured backend and filesystem root outlive
+// the failed exchange if a provider poll does not return promptly.
 
 #[cfg(test)]
 mod tests {
@@ -754,8 +773,8 @@ mod tests {
         inner: object_store::memory::InMemory,
         put_started: TestSender<()>,
         get_started: TestSender<()>,
-        put_release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
-        get_release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+        put_release: Mutex<Option<TestReceiver<()>>>,
+        get_release: Mutex<Option<TestReceiver<()>>>,
     }
     impl std::fmt::Debug for HangingStore {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -776,8 +795,14 @@ mod tests {
             options: object_store::PutOptions,
         ) -> object_store::Result<object_store::PutResult> {
             let _ = self.put_started.send(());
-            let release = self.put_release.lock().unwrap().take().unwrap();
-            let _ = release.await;
+            // Deliberately block in the first poll: Tokio timers cannot preempt this.
+            self.put_release
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .recv()
+                .unwrap();
             self.inner.put_opts(location, payload, options).await
         }
         async fn put_multipart_opts(
@@ -793,8 +818,14 @@ mod tests {
             options: object_store::GetOptions,
         ) -> object_store::Result<object_store::GetResult> {
             let _ = self.get_started.send(());
-            let release = self.get_release.lock().unwrap().take().unwrap();
-            let _ = release.await;
+            // Deliberately block in the first poll, matching a non-cooperative provider.
+            self.get_release
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .recv()
+                .unwrap();
             self.inner.get_opts(location, options).await
         }
         fn delete_stream(
@@ -1008,9 +1039,9 @@ mod tests {
                 )
                 .is_err()
         );
-        objects
-            .runtime
-            .as_ref()
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
             .unwrap()
             .block_on(objects.backend.delete(&Objects::key(id, 0)))
             .unwrap();
@@ -1045,8 +1076,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let (put_started, put_started_rx) = mpsc::channel();
         let (get_started, _get_started_rx) = mpsc::channel();
-        let (put_release_tx, put_release_rx) = tokio::sync::oneshot::channel();
-        let (_get_release_tx, get_release_rx) = tokio::sync::oneshot::channel();
+        let (put_release_tx, put_release_rx) = mpsc::channel();
+        let (_get_release_tx, get_release_rx) = mpsc::channel();
         let config = ObjectStoreConfig {
             backend: "hanging_test".into(),
             durability: ObjectStoreDurability::Ephemeral,
@@ -1077,13 +1108,14 @@ mod tests {
         token.cancel();
         assert!(write.join().unwrap().is_err());
         assert!(poisoned.load(Ordering::Acquire));
+        assert!(objects.put(id, 1, vec![4], &token).is_err());
         let _ = put_release_tx.send(());
 
         let root = tempfile::tempdir().unwrap();
         let (put_started, _put_started_rx) = mpsc::channel();
         let (get_started, get_started_rx) = mpsc::channel();
-        let (put_release_tx, put_release_rx) = tokio::sync::oneshot::channel();
-        let (get_release_tx, get_release_rx) = tokio::sync::oneshot::channel();
+        let (put_release_tx, put_release_rx) = mpsc::channel();
+        let (get_release_tx, get_release_rx) = mpsc::channel();
         let backend = ObjectStoreBackend::new(
             ObjectStoreConfig {
                 backend: "hanging_get_test".into(),

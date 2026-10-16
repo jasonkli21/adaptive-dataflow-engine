@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP01";
+const MAGIC: &[u8; 8] = b"ADETCP02";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -241,7 +241,8 @@ mod tests {
         )
         .unwrap();
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..bytes.len() - 1]).is_err());
-        bytes[7] = b'2';
+        // Reject Phase 4 peers before decoding the incompatible Phase 5 schema.
+        bytes[7] = b'1';
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..]).is_err());
         let mut large = MAGIC.to_vec();
         large.extend_from_slice(&u32::MAX.to_le_bytes());

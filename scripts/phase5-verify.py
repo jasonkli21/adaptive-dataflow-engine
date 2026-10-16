@@ -4,16 +4,63 @@ import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
+expected_commit = sys.argv[2]
 fingerprint = json.loads((root / 'datafusion.json').read_text())['result_fingerprint']
+manifest = json.loads((root / 'manifest.json').read_text())
+manifest_fingerprint = None
+expected_cases = {
+    '2-normal-buffered', '2-normal-adaptive', '2-slow-direct',
+    '2-slow-spill', '2-slow-adaptive', '4-slow-adaptive',
+}
 summary = {}
-for path in sorted(root.glob('*-result.json')):
+paths = sorted(root.glob('*-result.json'))
+assert {p.name.removesuffix('-result.json') for p in paths} == expected_cases
+environment_identity = None
+dataset_identity = None
+for path in paths:
     case = path.name.removesuffix('-result.json')
     workers, profile, mode = case.split('-')
     result = json.loads(path.read_text())
     assert result['valid']
     config = result['engine']['configuration']
+    assert result['repository'] == {'git_commit': expected_commit, 'git_dirty': False}
+    identity = (result['environment'], result['build'], result['repository'])
+    assert environment_identity is None or identity == environment_identity
+    environment_identity = identity
+    assert result['dataset'] == manifest
+    if manifest_fingerprint is None:
+        manifest_fingerprint = result['dataset_manifest_fingerprint']
+    assert result['dataset_manifest_fingerprint'] == manifest_fingerprint
+    data_identity = (result['dataset']['logical_fingerprint'], result['workload']['id'],
+                     result['workload']['version'])
+    assert dataset_identity is None or data_identity == dataset_identity
+    dataset_identity = data_identity
+    assert result['run_config']['warmups'] == 1
+    assert result['run_config']['iterations'] == 5
+    assert len(result['warmups']) == 1 and len(result['iterations']) == 5
     assert config['exchange_mode'] == mode
-    assert config['research_delay_ms'] == ('750' if profile == 'slow' else '0')
+    assert config['workers'] == workers
+    for key, value in {
+        'memory_limit_bytes': '33554432',
+        'exchange_buffer_bytes': '1048576',
+        'prefetch_batches': '1',
+        'batch_size': '8192',
+        'spill_enabled': 'true',
+    }.items():
+        assert config[key] == value
+    pressure = {
+        'research_slow_partition': '0' if profile == 'slow' else 'off',
+        'research_delay_after_segments': '1' if profile == 'slow' else '0',
+        'research_delay_ms': '750' if profile == 'slow' else '0',
+    }
+    for key, value in pressure.items():
+        assert config[key] == value
+    if mode == 'adaptive':
+        assert config['adaptive_policy'] == 'threshold_v1'
+        assert config['adaptive_buffer_high_pct'] == '100'
+        assert config['adaptive_remote_after_bytes'] == '1048576'
+    else:
+        assert not any(k.startswith('adaptive_') for k in config)
     for iteration in result['warmups'] + result['iterations']:
         assert iteration['outcome']['validated']
         assert iteration['outcome']['result_fingerprint'] == fingerprint

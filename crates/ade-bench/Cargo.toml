@@ -10,7 +10,7 @@ build = "build.rs"
 workspace = true
 
 [dependencies]
-ade-distributed = { path = "../ade-distributed" }
+ade-distributed = { path = "../ade-distributed", features = ["research-hooks"] }
 ade-exec = { path = "../ade-exec" }
 arrow.workspace = true
 parquet.workspace = true

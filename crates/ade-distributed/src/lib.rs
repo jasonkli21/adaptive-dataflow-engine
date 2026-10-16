@@ -1,9 +1,11 @@
 //! Distributed aggregation with static topology and selectable retention; no recovery.
 pub mod adaptive;
 mod retention;
+#[cfg(feature = "research-hooks")]
+pub use retention::PressureConfig;
 pub use retention::{
     ExchangeConfig, ExchangeMode, ObjectStoreBackend, ObjectStoreConfig, ObjectStoreDurability,
-    PressureConfig, RetentionMetrics,
+    RetentionMetrics,
 };
 pub mod coordinator;
 pub mod exchange;

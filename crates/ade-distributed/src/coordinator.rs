@@ -44,7 +44,7 @@ pub struct JobOutput {
 pub fn validate_topology(workers: &[WorkerEndpoint]) -> Result<()> {
     require(
         (2..=4).contains(&workers.len()),
-        "Phase 4 requires 2..4 workers",
+        "distributed execution requires 2..4 workers",
     )?;
     let mut addresses = BTreeSet::new();
     for (i, worker) in workers.iter().enumerate() {

@@ -5,6 +5,13 @@
 # The initial 80% experiment and its failed divergence check remain preserved.
 # Spill is reported as a second adversarial baseline, not selected after measuring.
 set -euo pipefail
+repo=$(git rev-parse --show-toplevel)
+cd "$repo"
+source_commit=$(git -C "$repo" rev-parse HEAD)
+if [[ -n $(git -C "$repo" status --porcelain --untracked-files=all) ]]; then
+  echo "Phase 5 acceptance requires a clean source checkout" >&2
+  exit 1
+fi
 bin=${ADE_BENCH_BIN:-target/release/ade-bench}
 data=${ADE_PHASE5_DATA:-benchmarks/datasets/phase5-acceptance-20261016}
 results=${ADE_PHASE5_RESULTS:-benchmarks/results/phase5-acceptance-20261016}
@@ -27,4 +34,4 @@ for case in 2-normal-buffered 2-normal-adaptive 2-slow-direct 2-slow-spill 2-slo
   "$bin" run "${options[@]}" --spec "$spec" --dataset "$data" --verify-data full --warmups 1 --iterations 5 --output "$stem-result.json" > "$stem-run.log"
   "$bin" check-result "$stem-result.json" > "$stem-check.json"
 done
-python3 scripts/phase5-verify.py "$results"
+python3 scripts/phase5-verify.py "$results" "$source_commit"

@@ -265,13 +265,41 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             lost,
         } = tasks(job, producers, finals)?;
         crate::recovery::validate_producers(job.id, job.workers.len(), &producers)?;
+        if let Some(cost) = &job.config.exchange.cost {
+            for producer in producers.values() {
+                require(
+                    producer.materializations.len() == job.workers.len(),
+                    "materialization fact coverage mismatch",
+                )?;
+                for (partition, manifest) in &producer.manifests {
+                    let fact = producer.materializations.get(partition).ok_or_else(|| {
+                        Error::Invalid("missing materialization partition".into())
+                    })?;
+                    require(
+                        fact.decision.observation.operator_work_ns
+                            == producer.production.operator_work_ns
+                            && fact.decision.observation.source_bytes
+                                == producer.production.source_bytes
+                            && fact.decision.observation.source_requests
+                                == producer.production.source_requests,
+                        "production observation mismatch",
+                    )?;
+                    crate::recovery::validate_fact(
+                        fact,
+                        manifest,
+                        cost,
+                        &job.config.exchange.object_store,
+                    )?;
+                }
+            }
+        }
         for (p, metrics) in &finals {
             gather.commit(*p, AttemptId(0), &metrics.sent)?;
         }
         let mut recovery = crate::recovery::RecoveryMetrics::default();
         if !lost.is_empty() {
             let recovery_start = Instant::now();
-            let plan = crate::recovery::plan(
+            let mut plan = crate::recovery::plan(
                 job.id,
                 job.workers.len(),
                 job.snapshot.as_ref(),
@@ -279,6 +307,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 &finals.keys().copied().collect::<Vec<_>>(),
                 &lost,
             )?;
+            crate::recovery::select_cost_actions(&mut plan, &producers, &job.config.exchange)?;
             require(
                 protocol::rpc(
                     &job.workers[usize::try_from(lost[0])
@@ -311,6 +340,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             let Reply::Recovered {
                 final_metrics,
                 manifests,
+                work,
             } = reply
             else {
                 return Err(Error::Unrecoverable("invalid recovery response".into()));
@@ -331,12 +361,12 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 replayed_producer_tasks: plan
                     .closures
                     .iter()
-                    .filter(|closure| closure.original.segments > 0)
+                    .filter(|closure| closure.original.segments > 0 && closure.restore.is_none())
                     .count() as u64,
                 replayed_morsels: plan
                     .closures
                     .iter()
-                    .filter(|closure| closure.original.segments > 0)
+                    .filter(|closure| closure.original.segments > 0 && closure.restore.is_none())
                     .map(|closure| {
                         replay_snapshot
                             .producer_morsels(closure.producer, job.workers.len())
@@ -345,13 +375,44 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                     .sum(),
                 lost_segments: plan.closures.iter().map(|c| c.original.segments).sum(),
                 lost_payload_bytes: plan.closures.iter().map(|c| c.original.payload_bytes).sum(),
-                recomputed_segments: manifests.iter().map(|m| m.segments).sum(),
-                recomputed_payload_bytes: manifests.iter().map(|m| m.payload_bytes).sum(),
+                restored_segments: plan
+                    .closures
+                    .iter()
+                    .filter(|c| c.restore.is_some())
+                    .map(|c| c.original.segments)
+                    .sum(),
+                restored_payload_bytes: plan
+                    .closures
+                    .iter()
+                    .filter(|c| c.restore.is_some())
+                    .map(|c| c.original.payload_bytes)
+                    .sum(),
+                object_read_requests: work.object_read_requests,
+                object_read_elapsed_ns: work.object_read_elapsed_ns,
+                recomputed_operator_work_ns: work.recomputed_operator_work_ns,
+                recomputed_source_bytes: work.recomputed_source_bytes,
+                recomputed_source_requests: work.recomputed_source_requests,
+                recomputed_segments: plan
+                    .closures
+                    .iter()
+                    .filter(|c| c.restore.is_none())
+                    .map(|c| c.original.segments)
+                    .sum(),
+                recomputed_payload_bytes: plan
+                    .closures
+                    .iter()
+                    .filter(|c| c.restore.is_none())
+                    .map(|c| c.original.payload_bytes)
+                    .sum(),
                 recovery_elapsed_ms: u64::try_from(recovery_start.elapsed().as_millis())
                     .unwrap_or(u64::MAX),
                 full_job_restart_avoided: true,
-                planner_reason: "single_final_worker_loss_recompute_file_lineage_no_durable_copy"
-                    .into(),
+                planner_reason: if job.config.exchange.cost.is_some() {
+                    "single_final_worker_loss_validated_restore_or_recompute"
+                } else {
+                    "single_final_worker_loss_recompute_file_lineage_no_durable_copy"
+                }
+                .into(),
                 plan: Some(plan),
                 replay_manifests: manifests,
                 committed_attempts: BTreeMap::new(),
@@ -427,6 +488,34 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         state = JobState::Failed;
         eprintln!("ADE job {:?} state={state:?}", job.id);
     }
+    let mut result = result;
+    if job.config.exchange.cost.is_some() {
+        let mut cleaned = false;
+        for worker in &job.workers {
+            if protocol::rpc(worker, Request::Ping, Duration::from_millis(250)).is_ok() {
+                match protocol::rpc(
+                    worker,
+                    Request::CleanupMaterializations { job: job.id },
+                    job.task_timeout,
+                ) {
+                    Ok(Reply::Ready) => {
+                        cleaned = true;
+                        break;
+                    }
+                    other => eprintln!("ADE materialization cleanup failed: {other:?}"),
+                }
+            }
+        }
+        if !cleaned {
+            eprintln!(
+                "ADE materialization cleanup failed for job {:?}; parent teardown required",
+                job.id
+            );
+            if result.is_ok() {
+                result = Err(Error::Invalid("materialization cleanup failed".into()));
+            }
+        }
+    }
     // Success also releases worker-local exchange stores. Tasks have completed their RPCs.
     cancel(&job.workers, job.id);
     result.map(|mut output| {
@@ -445,16 +534,32 @@ impl LocalCluster {
     /// # Errors
     /// Returns process, readiness, or configuration failures; already spawned children are killed and waited.
     pub fn spawn(binary: &Path, workers: usize) -> Result<Self> {
+        Self::spawn_inner(binary, workers, false)
+    }
+    /// Parent-owned fixture survives child process loss, never host loss.
+    /// # Errors
+    /// Returns process, filesystem and readiness failures.
+    pub fn spawn_with_materialization(binary: &Path, workers: usize) -> Result<Self> {
+        Self::spawn_inner(binary, workers, true)
+    }
+    fn spawn_inner(binary: &Path, workers: usize, materialize: bool) -> Result<Self> {
         require((2..=4).contains(&workers), "workers must be 2..4")?;
         let mut cluster = Self {
             workers: Vec::new(),
             children: Vec::new(),
             root: tempfile::Builder::new().prefix("ade-workers-").tempdir()?,
         };
+        let shared = cluster.root.path().join("shared-objects");
+        if materialize {
+            std::fs::create_dir(&shared)?;
+        }
         for id in 0..workers {
-            let mut child = Command::new(binary)
-                .arg(id.to_string())
-                .arg(cluster.root.path())
+            let mut command = Command::new(binary);
+            command.arg(id.to_string()).arg(cluster.root.path());
+            if materialize {
+                command.arg(&shared);
+            }
+            let mut child = command
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::inherit())

@@ -192,8 +192,14 @@ fn verify_output_keys(output: coordinator::JobOutput, mode: ExchangeMode, keys: 
     assert!(output.metrics.gather.batches > 0);
     assert!(output.metrics.gather.payload_bytes > 0);
     assert!(output.metrics.elapsed_ms > 0);
-    for task in output.metrics.finals.values() {
+    for (partition, task) in &output.metrics.finals {
         let m = &task.retention;
+        if output.metrics.recovery.committed_attempts[partition]
+            == ade_distributed::ids::AttemptId(1)
+        {
+            assert_eq!(m.local_materialized_files, 2);
+            continue;
+        }
         match mode {
             ExchangeMode::Direct | ExchangeMode::Buffered => {
                 assert!(m.peak_buffer_bytes > 0 && m.peak_buffer_bytes <= 1024 * 1024);
@@ -422,4 +428,89 @@ fn real_worker_loss_without_replayable_lineage_fails_and_cleans_survivor() {
     )
     .unwrap();
     assert!(matches!(response, ade_distributed::protocol::Reply::Ready));
+}
+
+#[cfg(feature = "research-hooks")]
+fn files_below(root: &Path) -> usize {
+    if !root.exists() {
+        return 0;
+    }
+    std::fs::read_dir(root)
+        .unwrap()
+        .map(|e| {
+            let p = e.unwrap().path();
+            if p.is_dir() { files_below(&p) } else { 1 }
+        })
+        .sum()
+}
+#[cfg(feature = "research-hooks")]
+#[test]
+fn expected_cost_worker_loss_restores_or_recomputes_and_parent_cleans() {
+    use ade_distributed::{
+        ObjectStoreConfig, ObjectStoreDurability,
+        cost::{CostConfig, MaterializationMode},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let files = fixture(root.path());
+    for (mode, read_price, restored) in [
+        (MaterializationMode::Expected, 0, true),
+        (MaterializationMode::Always, 1_000_000, false),
+        (MaterializationMode::Never, 0, false),
+    ] {
+        let cluster = LocalCluster::spawn_with_materialization(
+            Path::new(env!("CARGO_BIN_EXE_ade-worker")),
+            2,
+        )
+        .unwrap();
+        let mut config = TaskConfig::default();
+        config.exchange.mode = ExchangeMode::Adaptive;
+        config.exchange.adaptive.remote_after_bytes = 0;
+        config.exchange.object_store = ObjectStoreConfig {
+            backend: "shared_local_fixture".into(),
+            durability: ObjectStoreDurability::WorkerProcessSurviving,
+        };
+        config.exchange.cost = Some(Box::new(CostConfig {
+            mode,
+            failure_probability_ppm: 1_000_000,
+            source_read_nano_usd_per_byte: 1000,
+            object_read_nano_usd_per_byte: read_price,
+            ..Default::default()
+        }));
+        let mut job = StaticAggregateJob {
+            id: JobId(300),
+            snapshot: Some(source_snapshot(&files)),
+            files: files.clone(),
+            workers: cluster.workers.clone(),
+            config,
+            task_timeout: Duration::from_secs(20),
+        };
+        let normal = coordinator::execute(&job).unwrap();
+        for producer in normal.metrics.producers.values() {
+            assert_eq!(producer.materializations.len(), 2);
+            for fact in producer.materializations.values() {
+                assert_eq!(fact.receipt.is_some(), mode != MaterializationMode::Never);
+                assert_eq!(
+                    fact.staging_write_bytes,
+                    fact.decision.observation.output_bytes
+                );
+            }
+        }
+        verify_output(normal, ExchangeMode::Adaptive);
+        let complete_root = cluster.temp_root().join("shared-objects/complete-v1");
+        assert_eq!(files_below(&complete_root), 0);
+        job.id = JobId(301);
+        job.config.research_exit_final_partition = Some(0);
+        let recovered = coordinator::execute(&job).unwrap();
+        let r = &recovered.metrics.recovery;
+        assert_eq!(r.worker_failures_detected, 1);
+        assert_eq!(r.restored_segments > 0, restored);
+        assert_eq!(r.recomputed_segments > 0, !restored);
+        assert_eq!(r.replayed_morsels, if restored { 0 } else { 4 });
+        assert_eq!(r.committed_attempts[&0], ade_distributed::ids::AttemptId(1));
+        assert_eq!(files_below(&complete_root), 0); // Cleanup after real writer loss.
+        verify_output(recovered, ExchangeMode::Adaptive);
+        let parent = cluster.temp_root().to_owned();
+        drop(cluster);
+        assert!(!parent.exists());
+    }
 }

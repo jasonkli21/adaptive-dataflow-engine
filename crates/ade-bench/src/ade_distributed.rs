@@ -55,8 +55,18 @@ impl AdeDistributedConfig {
             );
         }
         if self.task.exchange.mode == ExchangeMode::Adaptive {
-            info.configuration
-                .insert("adaptive_policy".into(), "threshold_v1".into());
+            info.configuration.insert(
+                "adaptive_policy".into(),
+                if self.task.exchange.cost.is_some() {
+                    "expected_cost_v1"
+                } else {
+                    "threshold_v1"
+                }
+                .into(),
+            );
+            if let Some(cost) = &self.task.exchange.cost {
+                add_cost_info(&mut info, cost);
+            }
             info.configuration.insert(
                 "adaptive_buffer_high_pct".into(),
                 self.task.exchange.adaptive.buffer_high_pct.to_string(),
@@ -95,6 +105,8 @@ impl AdeDistributedConfig {
         info.configuration
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
+        info.configuration
+            .insert("control_protocol".into(), "ADETCP05".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
             ade_distributed::exchange::MAX_FRAME_BYTES.to_string(),
@@ -105,6 +117,26 @@ impl AdeDistributedConfig {
         );
         info
     }
+}
+fn add_cost_info(info: &mut EngineInfo, cost: &ade_distributed::cost::CostConfig) {
+    for (key, value) in serde_json::to_value(cost)
+        .expect("cost config")
+        .as_object()
+        .expect("object")
+    {
+        info.configuration.insert(
+            format!("cost_{key}"),
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned),
+        );
+    }
+    info.configuration
+        .insert("object_store_backend".into(), "shared_local_fixture".into());
+    info.configuration.insert(
+        "materialization_failure_domain".into(),
+        "worker_process_surviving".into(),
+    );
 }
 pub struct AdeDistributedEngine {
     config: AdeDistributedConfig,
@@ -183,22 +215,24 @@ impl BenchmarkEngine for AdeDistributedEngine {
             } else if option.starts_with("adaptive_")
                 || option.starts_with("research_")
                 || option.starts_with("recovery_")
+                || option.starts_with("cost_")
             {
                 let (key, value) = option
                     .split_once('=')
                     .ok_or_else(|| Error::Invalid("option requires value".into()))?;
                 require(
-                    matches!(
-                        key,
-                        "recovery_enabled"
-                            | "adaptive_policy"
-                            | "adaptive_buffer_high_pct"
-                            | "adaptive_remote_after_bytes"
-                            | "research_slow_partition"
-                            | "research_delay_after_segments"
-                            | "research_delay_ms"
-                            | "research_exit_final_partition"
-                    ),
+                    key.starts_with("cost_")
+                        || matches!(
+                            key,
+                            "recovery_enabled"
+                                | "adaptive_policy"
+                                | "adaptive_buffer_high_pct"
+                                | "adaptive_remote_after_bytes"
+                                | "research_slow_partition"
+                                | "research_delay_after_segments"
+                                | "research_delay_ms"
+                                | "research_exit_final_partition"
+                        ),
                     "unknown adaptive/research option",
                 )?;
                 require(
@@ -222,6 +256,21 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 || !special.keys().any(|k| k.starts_with("adaptive_")),
             "adaptive options require adaptive mode",
         )?;
+        let expected = special
+            .get("adaptive_policy")
+            .is_some_and(|v| v == "expected_cost_v1");
+        require(
+            expected || !special.keys().any(|k| k.starts_with("cost_")),
+            "cost options require expected_cost_v1",
+        )?;
+        require(
+            !expected
+                || special
+                    .get("adaptive_remote_after_bytes")
+                    .is_none_or(|v| v == "0"),
+            "expected cost requires delivery remote escalation disabled",
+        )?;
+        let mut cost_values = serde_json::Map::new();
         for (key, value) in special {
             let number = || {
                 value
@@ -234,7 +283,10 @@ impl BenchmarkEngine for AdeDistributedEngine {
                         .parse::<bool>()
                         .map_err(|_| Error::Invalid("invalid recovery_enabled".into()))?;
                 }
-                "adaptive_policy" => require(value == "threshold_v1", "invalid adaptive_policy")?,
+                "adaptive_policy" => require(
+                    value == "threshold_v1" || value == "expected_cost_v1",
+                    "invalid adaptive_policy",
+                )?,
                 "adaptive_buffer_high_pct" => {
                     exchange.adaptive.buffer_high_pct = u8::try_from(number()?)
                         .map_err(|_| Error::Invalid("invalid adaptive percentage".into()))?;
@@ -255,8 +307,28 @@ impl BenchmarkEngine for AdeDistributedEngine {
                     require(p < workers as u64, "failure target outside topology")?;
                     exit_final = Some(p);
                 }
+                key if key.starts_with("cost_") => {
+                    let field = key.strip_prefix("cost_").expect("prefix");
+                    let v = if field == "mode" {
+                        serde_json::Value::String(value.clone())
+                    } else {
+                        serde_json::Value::from(number()?)
+                    };
+                    cost_values.insert(field.to_owned(), v);
+                }
                 _ => unreachable!(),
             }
+        }
+        if expected {
+            exchange.cost = Some(serde_json::from_value(serde_json::Value::Object(
+                cost_values,
+            ))?);
+            exchange.adaptive.remote_after_bytes = 0;
+            exchange.object_store = ade_distributed::ObjectStoreConfig {
+                backend: "shared_local_fixture".into(),
+                durability: ade_distributed::ObjectStoreDurability::WorkerProcessSurviving,
+            };
+            require(recovery_enabled, "expected cost requires recovery_enabled")?;
         }
         exchange.validate()?;
         Ok(AdeDistributedConfig {
@@ -324,7 +396,11 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 .collect(),
         };
         snapshot.validate(&files)?;
-        let cluster = LocalCluster::spawn(&worker_binary()?, config.workers)?;
+        let cluster = if config.task.exchange.cost.is_some() {
+            LocalCluster::spawn_with_materialization(&worker_binary()?, config.workers)?
+        } else {
+            LocalCluster::spawn(&worker_binary()?, config.workers)?
+        };
         Ok(Self {
             config: config.clone(),
             files,
@@ -354,6 +430,21 @@ impl BenchmarkEngine for AdeDistributedEngine {
             snapshot: self.config.recovery_enabled.then(|| self.snapshot.clone()),
         };
         let output = ade_distributed::coordinator::execute(&job)?;
+        // The harness intentionally captures child stderr. This explicit diagnostic
+        // sidecar retains actual observations from isolated measured children
+        // without changing their outcome/result schema or independent oracle.
+        if let Some(path) = std::env::var_os("ADE_DISTRIBUTED_METRICS_FILE") {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
+            serde_json::to_writer(
+                &mut file,
+                &serde_json::json!({ "process_id": std::process::id(), "metrics": output.metrics }),
+            )?;
+            file.write_all(b"\n")?;
+        }
         tracing::debug!(metrics = %serde_json::to_string(&output.metrics)?, "ADE distributed execution");
         Ok(output.batches)
     }
@@ -364,6 +455,64 @@ impl BenchmarkEngine for AdeDistributedEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cost_configuration_is_explicit_effective_and_strict() {
+        let config = AdeDistributedEngine::parse_config(&[
+            "exchange_mode=adaptive".into(),
+            "adaptive_policy=expected_cost_v1".into(),
+            "cost_failure_probability_ppm=900000".into(),
+        ])
+        .unwrap();
+        assert_eq!(
+            config.info().configuration["adaptive_policy"],
+            "expected_cost_v1"
+        );
+        assert_eq!(
+            config.info().configuration["cost_failure_probability_ppm"],
+            "900000"
+        );
+        for options in [
+            vec!["cost_failure_probability_ppm=1"],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "cost_unknown=1",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "cost_mode=unknown",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "cost_object_read_bytes_per_second=0",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "cost_failure_probability_ppm=1000001",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "recovery_enabled=false",
+            ],
+            vec![
+                "exchange_mode=adaptive",
+                "adaptive_policy=expected_cost_v1",
+                "cost_failure_probability_ppm=1",
+                "cost_failure_probability_ppm=2",
+            ],
+        ] {
+            assert!(
+                AdeDistributedEngine::parse_config(
+                    &options.into_iter().map(str::to_owned).collect::<Vec<_>>()
+                )
+                .is_err()
+            );
+        }
+    }
     #[tokio::test]
     async fn configuration_is_effective_and_strict() {
         let config = AdeDistributedEngine::parse_config(&[

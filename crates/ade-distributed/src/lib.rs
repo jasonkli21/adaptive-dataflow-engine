@@ -1,5 +1,7 @@
 //! Distributed aggregation with static topology and selectable retention and bounded lineage recovery.
 pub mod adaptive;
+pub mod cost;
+pub mod materialization;
 mod retention;
 #[cfg(feature = "research-hooks")]
 pub use retention::PressureConfig;

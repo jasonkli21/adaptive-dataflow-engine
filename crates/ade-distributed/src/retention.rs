@@ -56,6 +56,7 @@ pub enum ObjectStoreDurability {
     #[default]
     Ephemeral,
     Durable,
+    WorkerProcessSurviving,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +77,7 @@ impl Default for ObjectStoreConfig {
 /// A worker-session object store supplied by its caller.
 #[derive(Clone)]
 pub struct ObjectStoreBackend {
-    config: ObjectStoreConfig,
+    pub(crate) config: ObjectStoreConfig,
     store: Arc<dyn ObjectStore>,
 }
 impl std::fmt::Debug for ObjectStoreBackend {
@@ -114,6 +115,8 @@ pub struct ExchangeConfig {
     pub mode: ExchangeMode,
     #[serde(default)]
     pub adaptive: crate::adaptive::AdaptiveConfig,
+    #[serde(default)]
+    pub cost: Option<Box<crate::cost::CostConfig>>,
     #[cfg(feature = "research-hooks")]
     #[serde(default)]
     pub pressure: PressureConfig,
@@ -126,6 +129,7 @@ impl Default for ExchangeConfig {
         Self {
             mode: ExchangeMode::LocalMaterialized,
             adaptive: crate::adaptive::AdaptiveConfig::default(),
+            cost: None,
             #[cfg(feature = "research-hooks")]
             pressure: PressureConfig::default(),
             buffer_bytes: 4 * MAX_FRAME_BYTES,
@@ -138,6 +142,21 @@ impl ExchangeConfig {
     /// Rejects zero/excessive limits; buffered mode must fit the largest valid frame.
     pub fn validate(&self) -> Result<()> {
         self.adaptive.validate()?;
+        if let Some(cost) = &self.cost {
+            cost.validate()?;
+            require(
+                self.object_store.durability == ObjectStoreDurability::WorkerProcessSurviving,
+                "expected cost requires worker-process-surviving backend",
+            )?;
+            require(
+                self.mode == ExchangeMode::Adaptive,
+                "expected cost requires adaptive mode",
+            )?;
+            require(
+                self.adaptive.remote_after_bytes == 0,
+                "expected cost disables delivery remote escalation",
+            )?;
+        }
         #[cfg(feature = "research-hooks")]
         require(
             self.pressure.delay_ms <= 2000
@@ -427,7 +446,7 @@ struct FileSpillLog {
     write_offset: u64,
 }
 impl FileSpillLog {
-    fn new(file: File) -> Self {
+    pub(crate) fn new(file: File) -> Self {
         Self {
             file,
             read_offset: 0,
@@ -480,11 +499,11 @@ impl SpillLog for FileSpillLog {
 /// A private blocking-I/O owner. Callers wait with a deadline/cancellation check;
 /// a wedged filesystem can strand only this detached thread, then poison its worker.
 #[derive(Debug)]
-struct SpoolIo {
+pub(crate) struct SpoolIo {
     commands: Sender<SpoolCommand>,
 }
 impl SpoolIo {
-    fn new(file: File, poisoned: Arc<AtomicBool>) -> Self {
+    pub(crate) fn new(file: File, poisoned: Arc<AtomicBool>) -> Self {
         Self::with_log(FileSpillLog::new(file), poisoned)
     }
     fn with_log(log: impl SpillLog, poisoned: Arc<AtomicBool>) -> Self {
@@ -512,21 +531,21 @@ impl SpoolIo {
         });
         Self { commands }
     }
-    fn enqueue_write(&self, bytes: Vec<u8>) -> Result<Receiver<std::io::Result<usize>>> {
+    pub(crate) fn enqueue_write(&self, bytes: Vec<u8>) -> Result<Receiver<std::io::Result<usize>>> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
             .send(SpoolCommand::Write(bytes, response))
             .map_err(|_| Error::Invalid("spill I/O worker stopped".into()))?;
         Ok(result)
     }
-    fn enqueue_read(&self) -> Result<Receiver<std::io::Result<Option<Vec<u8>>>>> {
+    pub(crate) fn enqueue_read(&self) -> Result<Receiver<std::io::Result<Option<Vec<u8>>>>> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
             .send(SpoolCommand::Read(response))
             .map_err(|_| Error::Invalid("spill I/O worker stopped".into()))?;
         Ok(result)
     }
-    fn wait<T>(
+    pub(crate) fn wait<T>(
         response: &Receiver<std::io::Result<T>>,
         token: &CancellationToken,
         poisoned: &AtomicBool,
@@ -579,6 +598,7 @@ pub(crate) struct Objects {
     poisoned: Arc<AtomicBool>,
     operation_timeout: Duration,
     metrics: Mutex<RetentionMetrics>,
+    complete_namespace: bool,
 }
 impl Objects {
     pub fn configured(
@@ -613,12 +633,26 @@ impl Objects {
             poisoned,
             operation_timeout: RETENTION_IO_TIMEOUT,
             metrics: Mutex::new(RetentionMetrics::default()),
+            complete_namespace: false,
         })
     }
-    fn key(id: TransferId, sequence: u64) -> Path {
+    pub(crate) fn complete(mut self) -> Self {
+        self.complete_namespace = true;
+        self
+    }
+    fn key(&self, id: TransferId, sequence: u64) -> Path {
         Path::from(format!(
-            "job-{}/exchange-{}/partition-{}/producer-{}/attempt-{}/segment-{sequence}.arrow",
-            id.job.0, id.exchange.0, id.partition.0, id.producer.0, id.attempt.0
+            "{}job-{}/exchange-{}/partition-{}/producer-{}/attempt-{}/segment-{sequence}.arrow",
+            if self.complete_namespace {
+                "complete-v1/"
+            } else {
+                ""
+            },
+            id.job.0,
+            id.exchange.0,
+            id.partition.0,
+            id.producer.0,
+            id.attempt.0
         ))
     }
     pub fn put(
@@ -630,10 +664,11 @@ impl Objects {
     ) -> Result<()> {
         let length = bytes.len() as u64;
         let backend = self.backend.clone();
+        let key = self.key(id, sequence);
         self.run(
             async move {
                 backend
-                    .put(&Self::key(id, sequence), bytes.into())
+                    .put(&key, bytes.into())
                     .await
                     .map_err(Error::ObjectStore)
             },
@@ -645,7 +680,7 @@ impl Objects {
         Ok(())
     }
     pub fn get(&self, id: TransferId, sequence: u64, token: &CancellationToken) -> Result<Vec<u8>> {
-        let key = Self::key(id, sequence);
+        let key = self.key(id, sequence);
         let backend = self.backend.clone();
         let bytes = self.run(
             async move {
@@ -663,7 +698,7 @@ impl Objects {
             .object_read_bytes += bytes.len() as u64;
         Ok(bytes.to_vec())
     }
-    fn run<T, F>(&self, operation: F, token: &CancellationToken) -> Result<T>
+    pub(crate) fn run<T, F>(&self, operation: F, token: &CancellationToken) -> Result<T>
     where
         F: std::future::Future<Output = Result<T>> + Send + 'static,
         T: Send + 'static,
@@ -726,6 +761,24 @@ impl Objects {
                 }
             }
         }
+    }
+    pub(crate) fn cleanup_job(&self, job: crate::ids::JobId) -> Result<()> {
+        use futures::TryStreamExt;
+        let backend = self.backend.clone();
+        self.run(
+            async move {
+                let prefix = Path::from(format!("complete-v1/job-{}/", job.0));
+                let mut objects = backend.list(Some(&prefix));
+                while let Some(object) = objects.try_next().await? {
+                    match backend.delete(&object.location).await {
+                        Ok(()) | Err(object_store::Error::NotFound { .. }) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+                Ok(())
+            },
+            &CancellationToken::default(),
+        )
     }
     pub fn metrics(&self) -> RetentionMetrics {
         let mut metrics = self.metrics.lock().expect("object metrics").clone();
@@ -1043,7 +1096,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(objects.backend.delete(&Objects::key(id, 0)))
+            .block_on(objects.backend.delete(&objects.key(id, 0)))
             .unwrap();
         assert!(objects.get(id, 0, &token).is_err());
     }

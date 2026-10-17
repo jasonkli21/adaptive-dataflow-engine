@@ -22,6 +22,9 @@ use std::{
 };
 struct Job {
     spec: JobSpec,
+    parent: PathBuf,
+    copy: Option<crate::retention::Objects>,
+    copy_poison: Arc<AtomicBool>,
     store: Arc<Store>,
     producer_done: AtomicBool,
     producer_started: AtomicBool,
@@ -83,6 +86,10 @@ fn task_metrics(
         ..Default::default()
     }
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "Producer observations and terminal copy completion share one task lifetime."
+)]
 fn producer(
     job: &Job,
     files: &[PathBuf],
@@ -94,11 +101,16 @@ fn producer(
     let token = job.store.cancellation.clone();
     // Do not hold idle receiver connections while a blocking aggregate builds.
     let open = |p: usize| {
-        Sender::new(
+        let sender = Sender::new(
             target.map_or(job.spec.workers[p].exchange, |(_, address)| address),
             transfer(job.spec.job, 0, p as u64, task.0).with_attempt(attempt),
             token.clone(),
-        )
+        )?;
+        if target.is_none() && job.copy.is_some() {
+            sender.stage(&job.parent, job.copy_poison.clone())
+        } else {
+            Ok(sender)
+        }
     };
     let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
     let mut metrics = if files.is_empty() {
@@ -136,8 +148,24 @@ fn producer(
                 }
                 Ok(())
             })?;
-        task_metrics(start, &output, files.len())
+        let mut metrics = task_metrics(start, &output, files.len());
+        metrics.production.operator_work_ns =
+            output.operators.values().try_fold(0u64, |sum, m| {
+                let ns = u64::try_from(m.work_time.as_nanos())
+                    .map_err(|_| Error::Invalid("work observation overflow".into()))?;
+                sum.checked_add(ns)
+                    .ok_or_else(|| Error::Invalid("work observation overflow".into()))
+            })?;
+        metrics
     };
+    metrics.production.wall_elapsed_ns = crate::materialization::ns(start);
+    metrics.production.source_requests = files.len() as u64;
+    metrics.production.source_bytes = files.iter().try_fold(0u64, |sum, path| {
+        sum.checked_add(std::fs::metadata(path)?.len())
+            .ok_or_else(|| Error::Invalid("source bytes overflow".into()))
+    })?;
+    metrics.production.consumer_count = 1;
+    let mut staged = Vec::with_capacity(senders.len());
     for (p, sender) in senders.into_iter().enumerate() {
         if target.is_some_and(|(partition, _)| partition != p) {
             continue;
@@ -146,12 +174,42 @@ fn producer(
             Some(sender) => sender,
             None => open(p)?,
         };
-        let (sent, manifest) = sender.finish_manifest()?;
+        let id = transfer(job.spec.job, 0, p as u64, task.0).with_attempt(attempt);
+        let (sent, manifest, staging) = sender.finish_staged()?;
+        if let Some(staging) = staging {
+            staged.push((p, id, manifest.clone(), staging, sent.clone()));
+        }
         metrics.manifests.insert(p as u64, manifest);
         metrics.sent.add(&sent);
         metrics.destinations.insert(p as u64, sent);
     }
+    // Close every delivery stream before object I/O; a slow upload must not
+    // leave other receivers waiting for their terminal past socket inactivity.
+    for (p, id, manifest, staging, sent) in staged {
+        let mut observation = metrics.production.clone();
+        observation.output_bytes = sent.payload_bytes;
+        observation.output_segments = sent.batches;
+        let decision = job
+            .spec
+            .config
+            .exchange
+            .cost
+            .as_ref()
+            .expect("copy policy")
+            .decide(observation)?;
+        let fact = staging.complete(
+            id,
+            &manifest,
+            decision,
+            job.copy.as_ref().expect("copy backend"),
+            &job.spec.config.exchange.object_store,
+            &token,
+        )?;
+        metrics.materializations.insert(p as u64, fact);
+    }
     token.check()?;
+    metrics.production.output_bytes = metrics.sent.payload_bytes;
+    metrics.production.output_segments = metrics.sent.batches;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     Ok(metrics)
@@ -197,7 +255,8 @@ fn final_task(
                     .as_ref()
                     .is_some_and(|sender| sender.metrics.batches == 1)
             {
-                research_exit_after_first_gather_batch(job, task, &token)?;
+                research_exit_after_first_gather_batch(job, task, &token)
+                    .map_err(local_sink_error)?;
             }
             Ok(())
         },
@@ -257,11 +316,18 @@ fn recover(
         "recovery already attempted",
     )?;
     let result = recover_inner(state, &original, plan, gather);
+    if original.copy_poison.load(Ordering::Acquire) {
+        state.poisoned.store(true, Ordering::Release);
+    }
     if result.is_err() {
         original.store.cancellation.cancel();
     }
     result
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "One recovery episode validates every transfer before final aggregation."
+)]
 fn recover_inner(
     state: &State,
     original: &Job,
@@ -297,6 +363,9 @@ fn recover_inner(
     })?;
     let replay = Job {
         spec: original.spec.clone(),
+        parent: state.parent.clone(),
+        copy: None,
+        copy_poison: original.copy_poison.clone(),
         store,
         producer_done: AtomicBool::new(false),
         producer_started: AtomicBool::new(false),
@@ -306,6 +375,7 @@ fn recover_inner(
         release_final: AtomicBool::new(false),
     };
     let mut manifests = Vec::with_capacity(count);
+    let mut work = crate::recovery::RecoveryMetrics::default();
     for (p, closure) in plan.closures.iter().enumerate() {
         require(
             closure.producer == TaskId(p as u64)
@@ -318,16 +388,30 @@ fn recover_inner(
             plan.ranges[p].start == 0 && plan.ranges[p].end_exclusive == closure.original.segments,
             "recovery requires full transfer range",
         )?;
-        let manifest = if closure.original.segments == 0 {
+        let manifest = if let Some(receipt) = &closure.restore {
+            let objects = original
+                .copy
+                .as_ref()
+                .ok_or_else(|| Error::Invalid("no restore backend".into()))?;
+            let (manifest, elapsed) = crate::materialization::restore(
+                receipt,
+                &closure.original,
+                &original.spec.config.exchange.object_store,
+                objects,
+                receiver.address,
+                &original.store.cancellation,
+            )?;
+            work.object_read_requests += receipt.original.segments * 2;
+            work.object_read_elapsed_ns += elapsed;
+            manifest
+        } else if closure.original.segments == 0 {
             // Preserve exact empty-transfer coverage without reopening source files.
             finish_empty_replay(
                 receiver.address,
-                transfer(plan.job, 0, plan.partition.0, p as u64)
-                    .with_attempt(AttemptId(1)),
+                transfer(plan.job, 0, plan.partition.0, p as u64).with_attempt(AttemptId(1)),
                 original.store.cancellation.clone(),
             )?
-            .1;
-            manifest
+            .1
         } else {
             let morsels = snapshot.producer_morsels(closure.producer, count);
             crate::lineage::SourceSnapshot::verify(&morsels)?;
@@ -342,6 +426,9 @@ fn recover_inner(
                     receiver.address,
                 )),
             )?;
+            work.recomputed_operator_work_ns += metrics.production.operator_work_ns;
+            work.recomputed_source_bytes += metrics.production.source_bytes;
+            work.recomputed_source_requests += metrics.production.source_requests;
             metrics.manifests[&plan.partition.0].clone()
         };
         closure.original.validate_replay(&manifest)?;
@@ -357,6 +444,7 @@ fn recover_inner(
     Ok(Reply::Recovered {
         final_metrics,
         manifests,
+        work,
     })
 }
 
@@ -364,7 +452,10 @@ fn finish_empty_replay(
     gather: SocketAddr,
     id: crate::ids::TransferId,
     token: CancellationToken,
-) -> Result<(crate::metrics::NetworkMetrics, crate::lineage::TransferManifest)> {
+) -> Result<(
+    crate::metrics::NetworkMetrics,
+    crate::lineage::TransferManifest,
+)> {
     Sender::new(gather, id, token)?.finish_manifest()
 }
 #[allow(
@@ -438,8 +529,34 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 state.object_backend.as_ref(),
             )?);
             let accepted_job_id = spec.job;
+            let copy_poison = Arc::new(AtomicBool::new(false));
+            let copy = if spec.config.exchange.cost.is_some() {
+                require(
+                    spec.snapshot.as_ref().is_some_and(|s| s.replayable),
+                    "expected cost requires replayable snapshot",
+                )?;
+                require(
+                    spec.config.exchange.object_store.durability
+                        == crate::ObjectStoreDurability::WorkerProcessSurviving,
+                    "expected cost requires worker-process-surviving backend",
+                )?;
+                Some(
+                    crate::retention::Objects::configured(
+                        &state.parent,
+                        spec.config.exchange.object_store.clone(),
+                        state.object_backend.as_ref(),
+                        copy_poison.clone(),
+                    )?
+                    .complete(),
+                )
+            } else {
+                None
+            };
             *current = Some(Arc::new(Job {
                 spec,
+                parent: state.parent.clone(),
+                copy,
+                copy_poison,
                 store,
                 producer_done: AtomicBool::new(false),
                 producer_started: AtomicBool::new(false),
@@ -457,11 +574,28 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             Ok(Reply::Ready)
         }
         Request::RecoverFinal { plan, gather } => recover(state, &plan, gather),
+        Request::CleanupMaterializations { job: id } => {
+            require(
+                *state.last_job_id.lock().expect("job watermark") == Some(id),
+                "cleanup job mismatch",
+            )?;
+            if let Some(backend) = &state.object_backend {
+                crate::retention::Objects::configured(
+                    &state.parent,
+                    backend.config.clone(),
+                    Some(backend),
+                    Arc::default(),
+                )?
+                .complete()
+                .cleanup_job(id)?;
+            }
+            Ok(Reply::Ready)
+        }
         Request::CancelJob { job: id } => {
             let mut current = state.job.lock().expect("job lock");
             if current.as_ref().is_some_and(|j| j.spec.job == id) {
                 let old = current.take().expect("job");
-                if old.store.is_poisoned() {
+                if old.store.is_poisoned() || old.copy_poison.load(Ordering::Acquire) {
                     state.poisoned.store(true, Ordering::Release);
                 }
                 old.store.cancellation.cancel();
@@ -533,7 +667,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             if result.is_err() {
                 job.store.cancellation.cancel();
             }
-            if job.store.is_poisoned() {
+            if job.store.is_poisoned() || job.copy_poison.load(Ordering::Acquire) {
                 state.poisoned.store(true, Ordering::Release);
             }
             result.map(Reply::Task)
@@ -817,25 +951,16 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let logical = transfer(JobId(90), 0, 1, 0);
         let original_store = Arc::new(
-            Store::new(
-                root.path(),
-                [logical].into(),
-                CancellationToken::default(),
-            )
-            .unwrap(),
+            Store::new(root.path(), [logical].into(), CancellationToken::default()).unwrap(),
         );
         let receiving = original_store.clone();
         let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
             Ok(receiving.clone())
         })
         .unwrap();
-        let original = finish_empty_replay(
-            receiver.address,
-            logical,
-            CancellationToken::default(),
-        )
-        .unwrap()
-        .1;
+        let original = finish_empty_replay(receiver.address, logical, CancellationToken::default())
+            .unwrap()
+            .1;
         assert_eq!(original.segments, 0);
         drop(receiver);
 

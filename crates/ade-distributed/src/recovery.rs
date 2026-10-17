@@ -1,4 +1,4 @@
-//! Pure capability-based planner. No files, network, cost model or retry loop.
+//! Pure bounded recovery planning; cost choices never bypass capability validation.
 use crate::{
     Error, Result,
     ids::{AttemptId, JobId, PartitionId, TaskId, WorkerId, transfer},
@@ -33,6 +33,8 @@ impl SegmentRange {
 pub struct ReplayClosure {
     pub producer: TaskId,
     pub original: TransferManifest,
+    pub restore: Option<crate::materialization::MaterializationReceipt>,
+    pub action_reason: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,6 +56,13 @@ pub struct RecoveryMetrics {
     pub replayed_morsels: u64,
     pub lost_segments: u64,
     pub lost_payload_bytes: u64,
+    pub restored_segments: u64,
+    pub restored_payload_bytes: u64,
+    pub object_read_requests: u64,
+    pub object_read_elapsed_ns: u64,
+    pub recomputed_operator_work_ns: u64,
+    pub recomputed_source_bytes: u64,
+    pub recomputed_source_requests: u64,
     pub recomputed_segments: u64,
     pub recomputed_payload_bytes: u64,
     pub recovery_elapsed_ms: u64,
@@ -161,6 +170,8 @@ pub fn plan(
             closures.push(ReplayClosure {
                 producer: TaskId(p),
                 original,
+                restore: None,
+                action_reason: "no_complete_copy_recompute".into(),
             });
         }
         Ok(RecoveryPlan {
@@ -173,6 +184,56 @@ pub fn plan(
         })
     };
     build().map_err(|e: Error| Error::Unrecoverable(e.to_string()))
+}
+
+/// # Errors
+/// Rejects forged receipts or decision observations, rather than using invalid copies.
+pub fn select_cost_actions(
+    plan: &mut RecoveryPlan,
+    producers: &BTreeMap<u64, TaskMetrics>,
+    config: &crate::ExchangeConfig,
+) -> Result<()> {
+    let Some(cost) = &config.cost else {
+        return Ok(());
+    };
+    for closure in &mut plan.closures {
+        let fact = producers[&closure.producer.0]
+            .materializations
+            .get(&plan.partition.0)
+            .ok_or_else(|| Error::Invalid("missing expected-cost fact".into()))?;
+        validate_fact(fact, &closure.original, cost, &config.object_store)?;
+        if let Some(receipt) = &fact.receipt {
+            // Failure has occurred: compare direct costs with SLO; never apply p again.
+            if fact.decision.restore_nano_usd < fact.decision.recompute_nano_usd {
+                closure.restore = Some(receipt.clone());
+                closure.action_reason = "valid_complete_copy_restore_cheaper".into();
+            } else {
+                closure.action_reason = "valid_copy_recompute_cheaper_or_tie".into();
+            }
+        }
+    }
+    Ok(())
+}
+pub(crate) fn validate_fact(
+    fact: &crate::materialization::MaterializationFact,
+    original: &TransferManifest,
+    cost: &crate::cost::CostConfig,
+    backend: &crate::ObjectStoreConfig,
+) -> Result<()> {
+    let o = &fact.decision.observation;
+    require(
+        o.output_bytes == original.payload_bytes
+            && o.output_segments == original.segments
+            && fact.decision.config == *cost
+            && cost.decide(o.clone())? == fact.decision
+            && fact.decision.persist == fact.receipt.is_some()
+            && fact.staging_write_bytes == original.payload_bytes,
+        "invalid materialization decision fact",
+    )?;
+    if let Some(receipt) = &fact.receipt {
+        receipt.validate(original, backend)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -284,6 +345,74 @@ mod tests {
     }
 
     #[test]
+    fn mixed_restore_recompute_and_forged_fact_refusal() {
+        use crate::{
+            cost::{CostConfig, MaterializationMode, Production},
+            materialization::{MaterializationFact, MaterializationReceipt},
+        };
+        let (snapshot, mut producers) = facts();
+        let cost = CostConfig {
+            mode: MaterializationMode::Always,
+            failure_probability_ppm: 1_000_000,
+            ..Default::default()
+        };
+        let backend = crate::ObjectStoreConfig {
+            backend: "fixture".into(),
+            durability: crate::ObjectStoreDurability::WorkerProcessSurviving,
+        };
+        for (p, task) in &mut producers {
+            for (d, original) in &task.manifests {
+                let observation = Production {
+                    operator_work_ns: p * 100_000,
+                    output_bytes: original.payload_bytes,
+                    output_segments: original.segments,
+                    consumer_count: 1,
+                    ..Default::default()
+                };
+                task.materializations.insert(
+                    *d,
+                    MaterializationFact {
+                        decision: cost.decide(observation).unwrap(),
+                        receipt: Some(MaterializationReceipt {
+                            version: 1,
+                            original: original.clone(),
+                            backend: backend.clone(),
+                            namespace: "complete-v1".into(),
+                            write_bytes: original.payload_bytes,
+                            write_requests: original.segments,
+                            write_elapsed_ns: 0,
+                        }),
+                        staging_write_bytes: original.payload_bytes,
+                        staging_read_bytes: original.payload_bytes,
+                        staging_write_ns: 0,
+                        staging_read_ns: 0,
+                    },
+                );
+            }
+        }
+        let config = crate::ExchangeConfig {
+            cost: Some(Box::new(cost)),
+            object_store: backend,
+            ..Default::default()
+        };
+        let mut plan = plan(JobId(42), 2, Some(&snapshot), &producers, &[0], &[1]).unwrap();
+        select_cost_actions(&mut plan, &producers, &config).unwrap();
+        assert!(plan.closures[0].restore.is_none()); // Exact direct-cost tie skips restore.
+        assert!(plan.closures[1].restore.is_some());
+        producers
+            .get_mut(&1)
+            .unwrap()
+            .materializations
+            .get_mut(&1)
+            .unwrap()
+            .receipt
+            .as_mut()
+            .unwrap()
+            .original
+            .fingerprint = "b".repeat(64);
+        assert!(select_cost_actions(&mut plan, &producers, &config).is_err());
+    }
+    #[test]
     fn admitted_large_snapshot_is_not_duplicated_in_recovery_request() {
         let (mut snapshot, producers) = facts();
         snapshot.morsels = (0..5_000)
@@ -315,6 +444,10 @@ mod tests {
         };
         let encoded = serde_json::to_vec(&request).unwrap();
         assert!(encoded.len() < crate::protocol::MAX_CONTROL_BYTES);
-        assert!(!String::from_utf8(encoded).unwrap().contains("partition-00000"));
+        assert!(
+            !String::from_utf8(encoded)
+                .unwrap()
+                .contains("partition-00000")
+        );
     }
 }

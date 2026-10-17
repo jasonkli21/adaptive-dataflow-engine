@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP04";
+const MAGIC: &[u8; 8] = b"ADETCP05";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -30,6 +30,10 @@ pub struct JobSpec {
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "One bounded control request per task; no per-segment messages."
+)]
 pub enum Request {
     Ping,
     PrepareJob(JobSpec),
@@ -53,6 +57,9 @@ pub enum Request {
     ReleaseFinal {
         job: JobId,
     },
+    CleanupMaterializations {
+        job: JobId,
+    },
     CancelJob {
         job: JobId,
     },
@@ -71,6 +78,7 @@ pub enum Reply {
     Recovered {
         final_metrics: TaskMetrics,
         manifests: Vec<crate::lineage::TransferManifest>,
+        work: crate::recovery::RecoveryMetrics,
     },
     Error {
         code: String,
@@ -258,7 +266,7 @@ mod tests {
         .unwrap();
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..bytes.len() - 1]).is_err());
         // Reject the prior recovery plan shape before decoding its payload.
-        bytes[7] = b'3';
+        bytes[7] = b'4';
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..]).is_err());
         let mut large = MAGIC.to_vec();
         large.extend_from_slice(&u32::MAX.to_le_bytes());

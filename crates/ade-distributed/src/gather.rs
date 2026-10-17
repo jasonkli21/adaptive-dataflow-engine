@@ -99,7 +99,10 @@ impl Gather {
         loop {
             let batches = store.observed_batches(id)?;
             if batches > 0 {
-                require(batches == 1, "research failure did not leave a one-batch prefix")?;
+                require(
+                    batches == 1,
+                    "research failure did not leave a one-batch prefix",
+                )?;
                 return Ok(());
             }
             require(

@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 6 lineage recovery v1 implemented.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified lineage replay on a survivor. Other failures cancel the job.
+**Phase 7 expected-cost materialization v1 implemented; release evidence is recorded in the Phase 7 report.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-6-implementation-plan.md`](docs/plans/phase-6-implementation-plan.md) — Phase 6 implementation contract.
+4. [`docs/plans/phase-7-implementation-plan.md`](docs/plans/phase-7-implementation-plan.md) — Phase 7 implementation contract.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -226,8 +226,10 @@ unaffected finals are reused. One recovery episode is allowed.
 This supports a narrow final-worker-loss window. Incomplete producers, multiple
 losses, source drift, replay mismatch, poisoning, ambiguous gather state or failed
 recovery return no partial output. File morsels are whole manifest files; there
-is no row-group replay, durable object restore, worker replacement, coordinator HA
-or Phase 7 cost model. Inputs must remain immutable during the job.
+is no row-group replay, worker replacement or coordinator HA. The default
+Phase 6 path recomputes; explicitly selected Phase 7 expected-cost policy can
+restore verified complete copies as described below. Inputs must remain immutable
+during the job.
 
 The research build accepts `research_exit_final_partition=0` (default off), which
 exits that real process after sending the first non-empty gather batch, before
@@ -249,3 +251,43 @@ execution, five static modes and limited adaptive two/four-worker regressions,
 with independent oracle validation and source/build provenance. There is no
 recovery timing threshold. See [ADR-0013](docs/adr/0013-lineage-recovery-v1.md) and
 the [Phase 6 report](docs/reports/phase-6-implementation-report.md).
+
+### Expected-cost complete materialization
+
+Select `exchange_mode=adaptive adaptive_policy=expected_cost_v1` explicitly.
+Default/static and `adaptive_policy=threshold_v1` behavior remains available.
+Expected-cost delivery uses direct/buffer/spill; a separate complete transfer copy
+may survive a worker process loss. The adapter installs a parent-owned shared
+filesystem fixture, **not host/AZ/cloud durability**. Snapshot/recovery must be
+available. The existing one-final-worker-loss envelope and attempt-safe gather
+commit remain; corrupt/missing retained objects fail cleanly.
+
+Options use `cost_` plus the field names in
+[`CostConfig`](crates/ade-distributed/src/cost.rs), with explicit units. Defaults,
+all prices, configured throughputs/probability, measured work/source/output and
+each decision are recorded. For example:
+
+```bash
+cargo run -p ade-bench -- validate --engine ade-distributed \
+  --engine-option exchange_mode=adaptive \
+  --engine-option adaptive_policy=expected_cost_v1 \
+  --engine-option cost_failure_probability_ppm=900000 \
+  --engine-option cost_source_read_nano_usd_per_byte=1000 \
+  --spec benchmarks/specs/aggregate-high-cardinality.toml --dataset YOUR_DATASET
+```
+
+`cost_mode=always|never` are full-copy acceptance baselines, default `expected`.
+Cost options require expected-cost selection. The pure comparison is
+`write + p*restore + margin < p*recompute`, including configured lateness penalties;
+ties skip. After a failure, restore is selected only if its direct cost is lower
+than recomputation. Staging overhead is real and separately measured. Control
+framing is `ADETCP05`; transfer wire v2/hash v1/result schema v1 remain.
+
+See [ADR-0014](docs/adr/0014-expected-cost-materialization-v1.md) and the
+[Phase 7 report](docs/reports/phase-7-implementation-report.md). Release economic
+acceptance: `bash scripts/phase7-acceptance.sh` from a clean checkout; raw results
+are ignored under `benchmarks/results/phase7-acceptance`.
+
+For raw measured-child diagnostics, set `ADE_DISTRIBUTED_METRICS_FILE` to an
+append-only JSONL artifact path. This opt-in sidecar records PID and distributed
+metrics; benchmark result schema v1 is unchanged. Phase 7 acceptance uses it.

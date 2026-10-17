@@ -24,6 +24,8 @@ impl NetworkMetrics {
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
     pub source_files: usize,
+    pub production: crate::cost::Production,
+    pub materializations: BTreeMap<u64, crate::materialization::MaterializationFact>,
     pub input_rows: usize,
     pub output_rows: usize,
     pub elapsed_ms: u64,

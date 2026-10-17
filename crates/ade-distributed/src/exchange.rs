@@ -153,6 +153,7 @@ fn validate_batch(batch: &RecordBatch) -> Result<()> {
 }
 pub struct Sender {
     fingerprint: blake3::Hasher,
+    staging: Option<crate::materialization::Staging>,
     id: TransferId,
     socket: TcpStream,
     pub metrics: NetworkMetrics,
@@ -177,6 +178,7 @@ impl Sender {
         fingerprint.update(&serde_json::to_vec(&id.logical())?);
         Ok(Self {
             fingerprint,
+            staging: None,
             id,
             socket,
             metrics: NetworkMetrics::default(),
@@ -197,22 +199,38 @@ impl Sender {
             writer.write(batch)?;
             writer.finish()?;
         }
+        self.send_encoded(&encoded.0, batch.num_rows() as u64)
+    }
+    pub(crate) fn stage(mut self, parent: &Path, poison: Arc<AtomicBool>) -> Result<Self> {
+        self.staging = Some(crate::materialization::Staging::new(parent, poison)?);
+        Ok(self)
+    }
+    pub(crate) fn encoded(&mut self, bytes: &[u8]) -> Result<()> {
+        self.cancellation.check()?;
+        require(bytes.len() <= MAX_FRAME_BYTES, "restore frame exceeds cap")?;
+        let rows = decode(bytes)?.num_rows() as u64;
+        require(rows > 0, "empty restored frame")?;
+        self.send_encoded(bytes, rows)
+    }
+    fn send_encoded(&mut self, bytes: &[u8], rows: u64) -> Result<()> {
+        if let Some(staging) = &mut self.staging {
+            staging.push(bytes, &self.cancellation)?;
+        }
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
         socket.write_all(
-            &u32::try_from(encoded.0.len())
-                .map_err(|_| Error::Invalid("frame length overflow".into()))?
+            &u32::try_from(bytes.len())
+                .expect("bounded frame")
                 .to_le_bytes(),
         )?;
         socket.write_all(&self.metrics.batches.to_le_bytes())?;
-        socket.write_all(&encoded.0)?;
+        socket.write_all(bytes)?;
         self.fingerprint.update(&self.metrics.batches.to_le_bytes());
-        self.fingerprint
-            .update(&(encoded.0.len() as u64).to_le_bytes());
-        self.fingerprint.update(&encoded.0);
+        self.fingerprint.update(&(bytes.len() as u64).to_le_bytes());
+        self.fingerprint.update(bytes);
         self.metrics.batches += 1;
-        self.metrics.rows += batch.num_rows() as u64;
-        self.metrics.payload_bytes += encoded.0.len() as u64;
-        self.metrics.peak_frame_bytes = self.metrics.peak_frame_bytes.max(encoded.0.len());
+        self.metrics.rows += rows;
+        self.metrics.payload_bytes += bytes.len() as u64;
+        self.metrics.peak_frame_bytes = self.metrics.peak_frame_bytes.max(bytes.len());
         Ok(())
     }
     /// # Errors
@@ -223,7 +241,16 @@ impl Sender {
     /// Return terminal evidence only after the destination ACK validates.
     /// # Errors
     /// Returns transport, cancellation or completion errors.
-    pub fn finish_manifest(mut self) -> Result<(NetworkMetrics, crate::lineage::TransferManifest)> {
+    pub fn finish_manifest(self) -> Result<(NetworkMetrics, crate::lineage::TransferManifest)> {
+        self.finish_staged().map(|(m, t, _)| (m, t))
+    }
+    pub(crate) fn finish_staged(
+        mut self,
+    ) -> Result<(
+        NetworkMetrics,
+        crate::lineage::TransferManifest,
+        Option<crate::materialization::Staging>,
+    )> {
         self.cancellation.check()?;
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
         socket.write_all(&0u32.to_le_bytes())?;
@@ -246,7 +273,7 @@ impl Sender {
             payload_bytes: self.metrics.payload_bytes,
             fingerprint: self.fingerprint.finalize().to_hex().to_string(),
         };
-        Ok((self.metrics, manifest))
+        Ok((self.metrics, manifest, self.staging))
     }
 }
 #[derive(Default)]
@@ -651,7 +678,7 @@ impl Store {
         Ok(())
     }
 }
-fn decode(encoded: &[u8]) -> Result<RecordBatch> {
+pub(crate) fn decode(encoded: &[u8]) -> Result<RecordBatch> {
     validate_ipc_envelope(encoded)?;
     let mut reader = StreamReader::try_new(Cursor::new(encoded), None)?;
     require(

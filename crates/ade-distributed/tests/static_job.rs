@@ -50,6 +50,7 @@ fn failure_cleanup(mut cluster: LocalCluster, job: &mut StaticAggregateJob) {
     // Install state on the survivor before losing its peer, so failure must clean it.
     let spec = ade_distributed::protocol::JobSpec {
         job: job.id,
+        execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
         workers: cluster.workers.clone(),
         config: job.config.clone(),
         snapshot: None,
@@ -74,6 +75,7 @@ fn failure_cleanup(mut cluster: LocalCluster, job: &mut StaticAggregateJob) {
     assert!(matches!(reply, ade_distributed::protocol::Reply::Pong(_)));
     let spec = ade_distributed::protocol::JobSpec {
         job: JobId(51),
+        execution_namespace: "7b9b1bbf-929e-4b5e-a86e-8ed9bb5ed5b4".into(),
         workers: cluster.workers.clone(),
         config: job.config.clone(),
         snapshot: None,
@@ -420,6 +422,7 @@ fn real_worker_loss_without_replayable_lineage_fails_and_cleans_survivor() {
         &cluster.workers[1],
         ade_distributed::protocol::Request::PrepareJob(ade_distributed::protocol::JobSpec {
             job: JobId(201),
+            execution_namespace: "715e945f-bc9f-4ea3-a274-7f3163dc89fb".into(),
             workers: cluster.workers.clone(),
             config: TaskConfig::default(),
             snapshot: None,

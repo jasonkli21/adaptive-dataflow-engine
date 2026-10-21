@@ -277,16 +277,19 @@ cargo run -p ade-bench -- validate --engine ade-distributed \
 ```
 
 `cost_mode=always|never` are full-copy acceptance baselines, default `expected`.
-Cost options require expected-cost selection. The pure comparison is
-`write + p*restore + margin < p*recompute`, including configured lateness penalties;
-ties skip. After a failure, restore is selected only if its direct cost is lower
-than recomputation. Staging overhead is real and separately measured. Control
-framing is `ADETCP05`; transfer wire v2/hash v1/result schema v1 remain.
+Cost options require expected-cost selection. Deadline penalties use the complete
+write-before-loss plus restore-after-loss path, and recovery closures share elapsed
+slack as they run. The explicit request-cost scope is the PUT/HEAD/GET transfer
+proxy; later cleanup LIST/DELETE charges are excluded. Staging overhead is real and
+separately measured. Control framing is `ADETCP06`; transfer wire v2/hash v1/result
+schema v1 remain.
 
 See [ADR-0014](docs/adr/0014-expected-cost-materialization-v1.md) and the
 [Phase 7 report](docs/reports/phase-7-implementation-report.md). Release economic
 acceptance: `bash scripts/phase7-acceptance.sh` from a clean checkout; raw results
-are ignored under `benchmarks/results/phase7-acceptance`.
+are ignored under `benchmarks/results/phase7-acceptance`. Package a successful
+run with `python3 scripts/phase7-bundle.py RESULTS_DIR OUTPUT.tar.gz` to create a
+checksummed, self-identifying evidence bundle.
 
 For raw measured-child diagnostics, set `ADE_DISTRIBUTED_METRICS_FILE` to an
 append-only JSONL artifact path. This opt-in sidecar records PID and distributed

@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP05";
+const MAGIC: &[u8; 8] = b"ADETCP06";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -24,6 +24,8 @@ pub struct Envelope<T> {
 #[serde(deny_unknown_fields)]
 pub struct JobSpec {
     pub job: JobId,
+    /// Unique execution scope for shared object-store keys; excluded from logical transfer IDs.
+    pub execution_namespace: String,
     pub workers: Vec<WorkerEndpoint>,
     pub config: TaskConfig,
     pub snapshot: Option<crate::lineage::SourceSnapshot>,
@@ -59,6 +61,7 @@ pub enum Request {
     },
     CleanupMaterializations {
         job: JobId,
+        execution_namespace: String,
     },
     CancelJob {
         job: JobId,

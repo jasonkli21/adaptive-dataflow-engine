@@ -38,6 +38,7 @@ struct State {
     job: Mutex<Option<Arc<Job>>>,
     // Retained after cancellation so delayed traffic can never target a reused ID.
     last_job_id: Mutex<Option<JobId>>,
+    last_execution_namespace: Mutex<Option<String>>,
     producer_busy: AtomicBool,
     final_busy: AtomicBool,
     poisoned: AtomicBool,
@@ -466,6 +467,10 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
     match request {
         Request::Ping => Ok(Reply::Pong(state.endpoint.clone())),
         Request::PrepareJob(spec) => {
+            require(
+                uuid::Uuid::parse_str(&spec.execution_namespace).is_ok(),
+                "invalid execution namespace",
+            )?;
             spec.config.validate()?;
             crate::coordinator::validate_topology(&spec.workers)?;
             #[cfg(feature = "research-hooks")]
@@ -529,6 +534,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 state.object_backend.as_ref(),
             )?);
             let accepted_job_id = spec.job;
+            let accepted_execution_namespace = spec.execution_namespace.clone();
             let copy_poison = Arc::new(AtomicBool::new(false));
             let copy = if spec.config.exchange.cost.is_some() {
                 require(
@@ -547,7 +553,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                         state.object_backend.as_ref(),
                         copy_poison.clone(),
                     )?
-                    .complete(),
+                    .complete(accepted_execution_namespace.clone())?,
                 )
             } else {
                 None
@@ -566,6 +572,10 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 release_final: AtomicBool::new(false),
             }));
             *last_job_id = Some(accepted_job_id);
+            *state
+                .last_execution_namespace
+                .lock()
+                .expect("execution namespace lock") = Some(accepted_execution_namespace);
             Ok(Reply::Ready)
         }
         #[cfg(feature = "research-hooks")]
@@ -574,10 +584,22 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             Ok(Reply::Ready)
         }
         Request::RecoverFinal { plan, gather } => recover(state, &plan, gather),
-        Request::CleanupMaterializations { job: id } => {
+        Request::CleanupMaterializations {
+            job: id,
+            execution_namespace,
+        } => {
             require(
                 *state.last_job_id.lock().expect("job watermark") == Some(id),
                 "cleanup job mismatch",
+            )?;
+            require(
+                state
+                    .last_execution_namespace
+                    .lock()
+                    .expect("execution namespace lock")
+                    .as_deref()
+                    == Some(execution_namespace.as_str()),
+                "cleanup execution namespace mismatch",
             )?;
             if let Some(backend) = &state.object_backend {
                 crate::retention::Objects::configured(
@@ -586,7 +608,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                     Some(backend),
                     Arc::default(),
                 )?
-                .complete()
+                .complete(execution_namespace)?
                 .cleanup_job(id)?;
             }
             Ok(Reply::Ready)
@@ -767,6 +789,7 @@ fn serve_inner(
         endpoint: endpoint.clone(),
         job: Mutex::new(None),
         last_job_id: Mutex::new(None),
+        last_execution_namespace: Mutex::new(None),
         producer_busy: AtomicBool::new(false),
         final_busy: AtomicBool::new(false),
         poisoned: AtomicBool::new(false),
@@ -854,6 +877,7 @@ mod tests {
             endpoint: endpoint.clone(),
             job: Mutex::new(None),
             last_job_id: Mutex::new(None),
+            last_execution_namespace: Mutex::new(None),
             producer_busy: AtomicBool::new(false),
             final_busy: AtomicBool::new(false),
             poisoned: AtomicBool::new(false),
@@ -878,6 +902,7 @@ mod tests {
         ];
         let spec = |id| JobSpec {
             job: id,
+            execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
             workers: workers.clone(),
             config: crate::TaskConfig::default(),
             snapshot: None,

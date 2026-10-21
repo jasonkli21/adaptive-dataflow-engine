@@ -31,20 +31,33 @@ probability/zero throughput, config values above 10^12, overflowing capacity rat
 and overflowing observed calculations fail explicitly. No saturating policy math;
 only lateness clamps negative slack usage to zero.
 
-Let `R` be measured work price + whole-source reread byte/request prices + estimated
-recompute lateness penalty. Let `D` be object read byte/request prices + estimated
-restore lateness penalty. Let `W` be write byte/request + expected capacity price +
-estimated write lateness penalty. Recompute time is measured operator work plus
-estimated source read time; restore/write times use encoded payload and configured
-throughputs. Restore performs HEAD + range GET, so it prices **two** requests per
-segment. Writes use one PUT per segment. Consumer count must equal one; unsupported
-fanout is rejected rather than projected into this topology.
+Let `R` be measured work price + whole-source reread byte/request prices +
+`Penalty(recompute_ms)`. Let `D` be object read byte/request prices +
+`Penalty(write_ms + restore_ms)`. Let `W` be write byte/request + expected
+capacity price, excluding SLO penalty. Recompute time is measured operator work
+plus estimated source read time; restore/write times use encoded payload and
+configured throughputs. Restore performs HEAD + range GET, so it prices two
+requests per segment. Writes use one PUT per segment. Consumer count must equal
+one; unsupported fanout is rejected rather than projected into this topology.
 
-Persist iff `1_000_000*W + p*D + 1_000_000*minimum_margin < p*R`.
-Ties skip. `cost_mode=always|never` are explicitly labelled full-copy research
-baselines using the same staging mechanism. Recovery compares direct `D < R`,
-without applying probability again; ties recompute. Deadline is an estimated
-penalty objective, not an admission guarantee/hard deadline scheduler.
+Slack is remaining time at the start of the transfer's materialization decision
+path. Because producer upload finishes before the supported loss boundary and
+restore follows loss, the combined failure-path latency receives one deadline
+clamp. The success path pays only the write penalty. Persist iff
+`1_000_000*W + (1_000_000-p)*Penalty(write_ms) + p*D +
+1_000_000*minimum_margin < p*R` (p in ppm). Ties skip.
+`cost_mode=always|never` are explicitly labelled full-copy research baselines
+using the same staging mechanism. After loss, recovery compares direct costs with
+the remaining shared slack; its sequential closures update accumulated time, seeded
+by the slowest producer's measured total copy-write time. Producer overlap before
+loss is approximated by that slowest producer path. Deadline is an estimated
+penalty objective, not an admission guarantee or hard-deadline scheduler.
+
+The modeled and empirical object request prices are explicitly scoped as
+`put_head_get_proxy_v1`: selected transfers charge PUTs and restores charge HEAD
+plus GET. Job-prefix cleanup LIST/DELETE calls remain outside this Phase 7 proxy;
+the decision output carries the scope so it cannot be mistaken for full provider
+lifecycle billing. The verifier independently checks this declared scope.
 
 ## Producer staging and complete-copy facts
 
@@ -68,14 +81,17 @@ it includes client/thread/runtime overhead. Restore elapsed includes validation
 and sending into the recovery store, not just provider time.
 
 Expected-cost delivery uses the existing direct/buffer/spill threshold mechanism,
-with remote suffix escalation disabled. Complete copies use `complete-v1/job-J/`
-plus exchange/partition/producer/original-attempt and sequence; legacy delivery
-objects cannot yield a receipt. Job IDs increase on reused workers; each cluster
-owns its own backend root. Receipt version 1 binds original manifest, backend,
-failure domain, layout version, write bytes/requests and elapsed. No object-key
-list is sent. Coordinator validates decision reconstruction, coverage and receipts
-before recovery. Workers validate restored logical identity, all sequences,
-schema/counts/content fingerprint and attempt-1 equality against attempt 0.
+with remote suffix escalation disabled. Complete copies use
+`complete-v1/{execution-uuid}/job-J/` plus exchange/partition/producer/original-
+attempt and sequence; legacy delivery objects cannot yield a receipt. The
+coordinator creates one UUID per execution and sends it to all workers. It is
+recorded in receipts and cleanup requests, and it does not change logical transfer
+identity. Receipt version 1 binds original manifest, backend, failure domain,
+layout version, execution namespace, write bytes/requests and elapsed. No object-
+key list is sent. Coordinator validates decision reconstruction, coverage,
+namespace and receipts before recovery. Workers validate restored logical
+identity, all sequences, schema/counts/content fingerprint and attempt-1 equality
+against attempt 0.
 
 ## Failure domain, restore and cleanup
 
@@ -92,11 +108,13 @@ store. All transfer manifests validate before final aggregation/gather commit.
 Missing/corrupt objects fail the episode cleanly, with no partial output and no
 fallback after partial restore. Existing attempt fencing and one episode remain.
 
-The coordinator requests job-prefix cleanup from a reachable survivor on success
+The coordinator requests cleanup of the exact
+`complete-v1/{execution-uuid}/job-J/` prefix from a reachable survivor on success
 and failure, even if task cancellation already removed worker job state. Cleanup
-validates the worker's job watermark and streams object enumeration/deletion;
-metadata is independent of segment count. Failure is logged and invalidates an
-otherwise successful execution; failed jobs preserve their original error. A
+validates both the worker's job watermark and execution namespace, then streams
+object enumeration/deletion; metadata is independent of segment count. Failure is
+logged and invalidates an otherwise successful execution; failed jobs preserve
+their original error. A
 poisoned/unresponsive provider can prevent timely deletion; parent-owned fixture
 teardown after children die is the final safety net. Normal cleanup after real
 writer loss is tested before cluster teardown. No persistent catalog or cross-job
@@ -104,8 +122,9 @@ reuse is added.
 
 ## Protocol and bounds
 
-Control framing `ADETCP04` -> `ADETCP05` rejects the prior version before payload
-decode. Transfer header/frame/terminal/ACK shape remains exchange wire v2; hash
+Control framing `ADETCP04` -> `ADETCP05` -> `ADETCP06` rejects prior versions
+before payload decode. ADETCP06 carries the execution namespace in job setup and
+cleanup. Transfer header/frame/terminal/ACK shape remains exchange wire v2; hash
 and benchmark result schema remain v1. The control framing also envelopes exchange
 headers/ACKs. No v3 transfer payload is needed because observations/receipts travel
 in producer control replies. Control cap remains 1 MiB. Plans/facts/decisions are

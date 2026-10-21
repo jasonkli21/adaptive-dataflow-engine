@@ -11,6 +11,13 @@ pub enum MaterializationMode {
     Always,
     Never,
 }
+/// Object request prices cover the transfer path only. Job-prefix cleanup
+/// LIST/DELETE billing is outside this deliberately narrow v1 proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectRequestCostScope {
+    PutHeadGetProxyV1,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CostConfig {
@@ -85,6 +92,7 @@ pub struct Decision {
     pub persist_nano_usd_ppm: u128,
     pub persist: bool,
     pub reason: String,
+    pub object_request_cost_scope: ObjectRequestCostScope,
 }
 fn overflow() -> Error {
     Error::Invalid("cost arithmetic overflow".into())
@@ -100,6 +108,15 @@ fn sum(values: &[u64]) -> Result<u64> {
 fn time_ms(bytes: u64, throughput: u64) -> Result<u64> {
     u64::try_from((u128::from(bytes) * 1000).div_ceil(u128::from(throughput)))
         .map_err(|_| overflow())
+}
+#[derive(Debug, Clone, Copy)]
+struct Estimates {
+    recompute_base: u64,
+    restore_base: u64,
+    write_base: u64,
+    recompute_ms: u64,
+    restore_ms: u64,
+    write_ms: u64,
 }
 impl CostConfig {
     /// # Errors
@@ -135,24 +152,13 @@ impl CostConfig {
         )?;
         Ok(())
     }
-    fn penalty(&self, ms: u64) -> Result<u64> {
+    fn penalty_after(&self, elapsed_ms: u64) -> Result<u64> {
         product(
-            ms.saturating_sub(self.deadline_slack_ms),
+            elapsed_ms.saturating_sub(self.deadline_slack_ms),
             self.slo_penalty_nano_usd_per_ms,
         )
     }
-    /// # Errors
-    /// Rejects invalid topology, configuration or overflowing observed economics.
-    pub fn decide(&self, o: Production) -> Result<Decision> {
-        self.validate()?;
-        require(
-            o.consumer_count == 1,
-            "v1 requires one consumer per transfer",
-        )?;
-        require(
-            (o.output_segments == 0) == (o.output_bytes == 0),
-            "cost output coverage mismatch",
-        )?;
+    fn estimates(&self, o: &Production) -> Result<Estimates> {
         // Phase 6 synthesizes empty replay terminals without reopening the producer
         // closure. Keep observed production intact but price the actual zero-work action.
         let (replay_work, reread_bytes, reread_requests) = if o.output_segments == 0 {
@@ -166,21 +172,19 @@ impl CostConfig {
         ])?;
         let restore_ms = time_ms(o.output_bytes, self.object_read_bytes_per_second)?;
         let write_ms = time_ms(o.output_bytes, self.object_write_bytes_per_second)?;
-        let recompute = sum(&[
+        let recompute_base = sum(&[
             product(replay_work, self.compute_nano_usd_per_work_ns)?,
             product(reread_bytes, self.source_read_nano_usd_per_byte)?,
             product(reread_requests, self.source_read_nano_usd_per_request)?,
-            self.penalty(recompute_ms)?,
         ])?;
-        let restore = sum(&[
+        let restore_base = sum(&[
             product(o.output_bytes, self.object_read_nano_usd_per_byte)?,
             product(
                 product(o.output_segments, 2)?,
                 self.object_read_nano_usd_per_request,
             )?,
-            self.penalty(restore_ms)?,
         ])?;
-        let write = sum(&[
+        let write_base = sum(&[
             product(o.output_bytes, self.object_write_nano_usd_per_byte)?,
             product(o.output_segments, self.object_write_nano_usd_per_request)?,
             product(
@@ -190,11 +194,78 @@ impl CostConfig {
                     self.expected_retention_ms,
                 )?,
             )?,
-            self.penalty(write_ms)?,
         ])?;
+        Ok(Estimates {
+            recompute_base,
+            restore_base,
+            write_base,
+            recompute_ms,
+            restore_ms,
+            write_ms,
+        })
+    }
+    /// Compare recovery actions after the supplied portion of the job's critical
+    /// path has elapsed. This lets sequential recovery closures consume one shared
+    /// deadline budget instead of each receiving the original static slack.
+    /// # Errors
+    /// Rejects arithmetic overflow in modeled work, cost, or elapsed time.
+    pub(crate) fn recovery_action_costs(
+        &self,
+        o: &Production,
+        elapsed_before_ms: u64,
+    ) -> Result<(u64, u64, u64, u64)> {
+        let estimates = self.estimates(o)?;
+        let recompute_elapsed = elapsed_before_ms
+            .checked_add(estimates.recompute_ms)
+            .ok_or_else(overflow)?;
+        let restore_elapsed = elapsed_before_ms
+            .checked_add(estimates.restore_ms)
+            .ok_or_else(overflow)?;
+        Ok((
+            sum(&[
+                estimates.recompute_base,
+                self.penalty_after(recompute_elapsed)?,
+            ])?,
+            sum(&[estimates.restore_base, self.penalty_after(restore_elapsed)?])?,
+            estimates.recompute_ms,
+            estimates.restore_ms,
+        ))
+    }
+    /// # Errors
+    /// Rejects invalid topology, configuration or overflowing observed economics.
+    pub fn decide(&self, o: Production) -> Result<Decision> {
+        self.validate()?;
+        require(
+            o.consumer_count == 1,
+            "v1 requires one consumer per transfer",
+        )?;
+        require(
+            (o.output_segments == 0) == (o.output_bytes == 0),
+            "cost output coverage mismatch",
+        )?;
+        let estimates = self.estimates(&o)?;
+        let recompute = sum(&[
+            estimates.recompute_base,
+            self.penalty_after(estimates.recompute_ms)?,
+        ])?;
+        // A persisted failure path is sequential: the producer PUT finishes before
+        // the loss gate, and restore begins only after that loss. Keep the two
+        // durations together before applying the one deadline clamp.
+        let persist_failure_elapsed = estimates
+            .write_ms
+            .checked_add(estimates.restore_ms)
+            .ok_or_else(overflow)?;
+        let restore = sum(&[
+            estimates.restore_base,
+            self.penalty_after(persist_failure_elapsed)?,
+        ])?;
+        let write = estimates.write_base;
         let no_persist = u128::from(self.failure_probability_ppm) * u128::from(recompute);
+        let p = u128::from(self.failure_probability_ppm);
         let persist_cost = u128::from(write) * 1_000_000
-            + u128::from(self.failure_probability_ppm) * u128::from(restore);
+            + u128::from(1_000_000 - self.failure_probability_ppm)
+                * u128::from(self.penalty_after(estimates.write_ms)?)
+            + p * u128::from(restore);
         let (persist, reason) = match self.mode {
             MaterializationMode::Always => (true, "forced_complete_copy_baseline"),
             MaterializationMode::Never => (false, "never_complete_copy_baseline"),
@@ -210,13 +281,14 @@ impl CostConfig {
             recompute_nano_usd: recompute,
             restore_nano_usd: restore,
             write_nano_usd: write,
-            recompute_ms,
-            restore_ms,
-            write_ms,
+            recompute_ms: estimates.recompute_ms,
+            restore_ms: estimates.restore_ms,
+            write_ms: estimates.write_ms,
             no_persist_nano_usd_ppm: no_persist,
             persist_nano_usd_ppm: persist_cost,
             persist,
             reason: reason.into(),
+            object_request_cost_scope: ObjectRequestCostScope::PutHeadGetProxyV1,
         })
     }
 }
@@ -245,6 +317,10 @@ mod tests {
         let a = c.decide(observation()).unwrap();
         assert!(a.persist);
         assert_eq!(a, c.decide(observation()).unwrap());
+        assert_eq!(
+            a.object_request_cost_scope,
+            ObjectRequestCostScope::PutHeadGetProxyV1
+        );
         c.min_expected_savings_nano_usd =
             a.recompute_nano_usd - a.restore_nano_usd - a.write_nano_usd;
         assert!(!c.decide(observation()).unwrap().persist);
@@ -327,5 +403,73 @@ mod tests {
         assert!(c.decide(o).is_err());
         c.object_read_bytes_per_second = 0;
         assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn sequential_write_then_restore_uses_one_deadline_penalty() {
+        let o = Production {
+            operator_work_ns: 90_000_000,
+            source_bytes: 1_000,
+            source_requests: 0,
+            output_bytes: 70,
+            output_segments: 1,
+            consumer_count: 1,
+            ..Default::default()
+        };
+        let c = CostConfig {
+            failure_probability_ppm: 1_000_000,
+            compute_nano_usd_per_work_ns: 1,
+            object_write_nano_usd_per_byte: 0,
+            object_write_nano_usd_per_request: 0,
+            object_read_nano_usd_per_byte: 0,
+            object_read_nano_usd_per_request: 0,
+            source_read_bytes_per_second: 1_000_000,
+            object_write_bytes_per_second: 1_000,
+            object_read_bytes_per_second: 1_000,
+            deadline_slack_ms: 100,
+            slo_penalty_nano_usd_per_ms: 3_000_000,
+            ..Default::default()
+        };
+        let decision = c.decide(o.clone()).unwrap();
+        assert_eq!(decision.recompute_ms, 91);
+        assert_eq!(decision.write_ms, 70);
+        assert_eq!(decision.restore_ms, 70);
+        assert_eq!(decision.restore_nano_usd, 120_000_000);
+        assert!(!decision.persist);
+
+        let mut relaxed = c;
+        relaxed.deadline_slack_ms = 200;
+        assert!(relaxed.decide(o).unwrap().persist);
+    }
+
+    #[test]
+    fn sequential_recovery_closures_share_remaining_slack() {
+        let c = CostConfig {
+            compute_nano_usd_per_work_ns: 1,
+            source_read_bytes_per_second: 1_000,
+            object_read_bytes_per_second: 1_000,
+            deadline_slack_ms: 100,
+            slo_penalty_nano_usd_per_ms: 1_000_000,
+            ..Default::default()
+        };
+        let o = Production {
+            operator_work_ns: 10_000_000,
+            source_bytes: 30,
+            source_requests: 0,
+            output_bytes: 60,
+            output_segments: 1,
+            consumer_count: 1,
+            ..Default::default()
+        };
+        let (first_recompute, first_restore, _, first_restore_ms) =
+            c.recovery_action_costs(&o, 0).unwrap();
+        assert!(first_restore < first_recompute);
+        assert_eq!(first_restore_ms, 60);
+
+        // Each restore alone is within 100 ms. After the first 60 ms restore,
+        // a second restore would finish at 120 ms while recompute still fits.
+        let (second_recompute, second_restore, _, _) =
+            c.recovery_action_costs(&o, first_restore_ms).unwrap();
+        assert!(second_recompute < second_restore);
     }
 }

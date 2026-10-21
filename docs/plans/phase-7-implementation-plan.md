@@ -492,11 +492,21 @@ expected_no_persist =
 
 expected_persist =
     persist_now_cost
-  + SLOPenalty(estimated_write_time, deadline_slack)
+  + (1 - P(failure)) * SLOPenalty(estimated_write_time, deadline_slack)
   + P(failure)
       * (restore_if_failed_cost
-         + SLOPenalty(estimated_restore_time, deadline_slack))
+         + SLOPenalty(estimated_write_time + estimated_restore_time,
+                      deadline_slack))
 ```
+
+The slack input is the remaining budget at the start of this transfer's
+materialization decision path. The write finishes before the supported loss
+boundary and restore happens after it, so the failure penalty must clamp their
+combined critical-path time once. It must not add two independently clamped
+penalties. This per-transfer model does not claim to model overlap among
+producers. After a real loss, recovery compares direct action costs using elapsed
+time accumulated across the sequential replay closures, seeded by the slowest
+producer's measured selected-copy write total.
 
 Persist only when:
 
@@ -741,7 +751,7 @@ Phase 7 is likely to change both:
 
 Recommended version discipline:
 
-- bump private control framing from `ADETCP04` to `ADETCP05` if control payload compatibility changes;
+- bump private control framing from `ADETCP04` to `ADETCP05` for the original receipt schema, and to `ADETCP06` when the execution namespace is added;
 - bump exchange wire from v2 to v3 if terminal/ACK bytes change;
 - add focused tests proving old versions are rejected before incompatible decoding;
 - do not bump unrelated public benchmark result schema unless the artifact schema itself truly changes.
@@ -1345,11 +1355,19 @@ The main limitations to carry forward should remain explicit:
 
 ## Implementation reconciliation
 
-Current main exactly matched the reviewed baseline. ADR-0014 accepts producer-side
-staging and post-destination-ACK complete-copy upload, with receipts in producer
-control replies before the failure gate. Terminal/ACK payloads remain unchanged:
-control framing advances to ADETCP05, exchange wire stays v2. Complete copies use
-an isolated complete-v1 namespace and explicit worker_process_surviving capability.
-Missing/corrupt objects fail cleanly before final aggregation; no fallback retry.
-The predeclared suite/empirical formula and fixed overhead criterion are in
-ADR-0014 and scripts/phase7-verify.py. The report records actual exit evidence.
+The original implementation accepts producer-side staging and post-destination-
+ACK complete-copy upload, with receipts in producer control replies before the
+failure gate. The independent review added two contract corrections: SLO penalties
+use whole sequential paths and recovery carries elapsed time across closures;
+complete-copy keys carry a coordinator-created execution UUID, independent of
+logical transfer IDs. These control schema changes advance framing to ADETCP06;
+exchange wire stays v2. The complete-copy prefix is
+`complete-v1/{execution-uuid}/job-J/`, and cleanup/restore validate the same
+namespace. Missing/corrupt objects still fail before final aggregation, with no
+fallback retry.
+
+The decision and verifier expose `put_head_get_proxy_v1` as the request-cost
+scope: per-transfer writes use PUT prices and restores use HEAD+GET prices.
+Cleanup LIST/DELETE costs are excluded, so this is not a full provider lifecycle
+request-cost objective. The report qualifies the older ignored benchmark evidence
+and the bundle script packages future successful clean-checkout runs for sharing.

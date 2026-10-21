@@ -23,6 +23,8 @@ pub struct MaterializationReceipt {
     pub backend: crate::ObjectStoreConfig,
     /// complete-v1 + original `TransferId` + sequence; no per-segment keys.
     pub namespace: String,
+    /// Unique execution scope; does not alter logical transfer identity.
+    pub execution_namespace: String,
     pub write_bytes: u64,
     pub write_requests: u64,
     pub write_elapsed_ns: u64,
@@ -34,10 +36,12 @@ impl MaterializationReceipt {
         &self,
         original: &TransferManifest,
         backend: &crate::ObjectStoreConfig,
+        execution_namespace: &str,
     ) -> Result<()> {
         require(
             self.version == 1
                 && self.namespace == "complete-v1"
+                && self.execution_namespace == execution_namespace
                 && self.original == *original
                 && original.attempt == AttemptId(0)
                 && self.backend == *backend
@@ -67,7 +71,10 @@ pub(crate) fn restore(
     address: std::net::SocketAddr,
     token: &CancellationToken,
 ) -> Result<(TransferManifest, u64)> {
-    receipt.validate(original, backend)?;
+    let execution_namespace = objects
+        .execution_namespace()
+        .ok_or_else(|| crate::Error::Invalid("restore requires an execution namespace".into()))?;
+    receipt.validate(original, backend, execution_namespace)?;
     let id = TransferId {
         job: original.logical.job,
         exchange: original.logical.exchange,
@@ -180,11 +187,21 @@ impl Staging {
             original: manifest.clone(),
             backend: backend.clone(),
             namespace: "complete-v1".into(),
+            execution_namespace: objects
+                .execution_namespace()
+                .ok_or_else(|| {
+                    crate::Error::Invalid("materialization requires an execution namespace".into())
+                })?
+                .to_owned(),
             write_bytes: fact.staging_read_bytes,
             write_requests: manifest.segments,
             write_elapsed_ns,
         };
-        receipt.validate(manifest, backend)?;
+        receipt.validate(
+            manifest,
+            backend,
+            objects.execution_namespace().expect("complete namespace"),
+        )?;
         fact.receipt = Some(receipt);
         Ok(fact)
     }
@@ -204,6 +221,7 @@ mod tests {
         record_batch::RecordBatch,
     };
     use std::net::TcpListener;
+    const RUN_A: &str = "8abade70-a479-4c7e-9bd8-989ed8f1a1d7";
     fn receive(root: &Path, id: TransferId) -> (Arc<Store>, Receiver) {
         let store = Arc::new(Store::new(root, [id].into(), CancellationToken::default()).unwrap());
         let receiving = store.clone();
@@ -233,7 +251,8 @@ mod tests {
         let objects = || {
             Objects::configured(root.path(), config.clone(), Some(&backend), Arc::default())
                 .unwrap()
-                .complete()
+                .complete(RUN_A.into())
+                .unwrap()
         };
         let writer = objects();
         let (store, receiver) = receive(root.path(), id);
@@ -297,13 +316,18 @@ mod tests {
         drop(receiver);
         let mut forged = receipt.clone();
         forged.original.rows += 1;
-        assert!(forged.validate(&manifest, &config).is_err());
+        assert!(forged.validate(&manifest, &config, RUN_A).is_err());
         forged = receipt.clone();
         forged.namespace = "delivery_suffix".into();
-        assert!(forged.validate(&manifest, &config).is_err());
+        assert!(forged.validate(&manifest, &config, RUN_A).is_err());
         let mut ephemeral = config.clone();
         ephemeral.durability = ObjectStoreDurability::Ephemeral;
-        assert!(receipt.validate(&manifest, &ephemeral).is_err());
+        assert!(receipt.validate(&manifest, &ephemeral, RUN_A).is_err());
+        assert!(
+            receipt
+                .validate(&manifest, &config, "7b9b1bbf-929e-4b5e-a86e-8ed9bb5ed5b4")
+                .is_err()
+        );
         // Corrupt an existing full-copy object; no aggregate/committed result escapes.
         survivor
             .put(id, 7, vec![0; 16], &CancellationToken::default())
@@ -351,7 +375,8 @@ mod tests {
         let objects =
             Objects::configured(root.path(), config.clone(), Some(&backend), Arc::default())
                 .unwrap()
-                .complete();
+                .complete(RUN_A.into())
+                .unwrap();
         let (_store, receiver) = receive(root.path(), id);
         let sender = Sender::new(receiver.address, id, CancellationToken::default())
             .unwrap()

@@ -16,6 +16,7 @@ import json
 import pathlib
 import statistics
 import sys
+import uuid
 
 root = pathlib.Path(sys.argv[1])
 def load(name):
@@ -57,6 +58,44 @@ def observation_score(m, prices):
         score += retention['object_read_bytes'] * read + retention['object_count'] * 2000
     return score
 
+def ceil_div(a, b):
+    return (a + b - 1) // b
+
+def estimates(o, c):
+    if o['output_segments']:
+        replay_work = o['operator_work_ns']
+        reread_bytes = o['source_bytes']
+        reread_requests = o['source_requests']
+    else:
+        replay_work = reread_bytes = reread_requests = 0
+    recompute_ms = ceil_div(replay_work, 1_000_000) + ceil_div(
+        reread_bytes * 1000, c['source_read_bytes_per_second'])
+    restore_ms = ceil_div(o['output_bytes'] * 1000, c['object_read_bytes_per_second'])
+    write_ms = ceil_div(o['output_bytes'] * 1000, c['object_write_bytes_per_second'])
+    recompute_base = (replay_work * c['compute_nano_usd_per_work_ns']
+                      + reread_bytes * c['source_read_nano_usd_per_byte']
+                      + reread_requests * c['source_read_nano_usd_per_request'])
+    restore_base = (o['output_bytes'] * c['object_read_nano_usd_per_byte']
+                    + 2 * o['output_segments'] * c['object_read_nano_usd_per_request'])
+    write_base = (o['output_bytes'] * c['object_write_nano_usd_per_byte']
+                  + o['output_segments'] * c['object_write_nano_usd_per_request']
+                  + o['output_bytes'] * c['object_capacity_nano_usd_per_byte_ms']
+                    * c['expected_retention_ms'])
+    return recompute_base, restore_base, write_base, recompute_ms, restore_ms, write_ms
+
+def penalty(c, elapsed_ms):
+    return max(0, elapsed_ms - c['deadline_slack_ms']) * c['slo_penalty_nano_usd_per_ms']
+
+def recovery_actions(m, closure, elapsed_ms):
+    producer = m['producers'][str(closure['producer'])]
+    fact = producer['materializations'].get(str(closure['original']['logical']['partition']))
+    assert fact is not None
+    o, c = fact['decision']['observation'], fact['decision']['config']
+    recompute_base, restore_base, _, recompute_ms, restore_ms, _ = estimates(o, c)
+    recompute = recompute_base + penalty(c, elapsed_ms + recompute_ms)
+    restore = restore_base + penalty(c, elapsed_ms + restore_ms)
+    return fact, recompute, restore, recompute_ms, restore_ms
+
 for regime, prices in regimes.items():
     p, source, write, read = prices
     outcomes = {}
@@ -88,6 +127,7 @@ for regime, prices in regimes.items():
                 assert r['committed_attempts'] == {'0': int(loss), '1': 0}
                 assert r['recomputed_segments'] + r['restored_segments'] == r['lost_segments']
                 assert r['recomputed_payload_bytes'] + r['restored_payload_bytes'] == r['lost_payload_bytes']
+                run_namespaces = set()
                 for producer in m['producers'].values():
                     assert len(producer['materializations']) == (0 if policy == 'threshold' else 2)
                     for d, fact in producer['materializations'].items():
@@ -95,6 +135,7 @@ for regime, prices in regimes.items():
                         decision = fact['decision']
                         o = decision['observation']
                         c = decision['config']
+                        assert decision['object_request_cost_scope'] == 'put_head_get_proxy_v1'
                         assert o['consumer_count'] == 1
                         assert o['source_bytes'] == producer['production']['source_bytes']
                         assert o['operator_work_ns'] == producer['production']['operator_work_ns']
@@ -102,16 +143,23 @@ for regime, prices in regimes.items():
                         assert o['output_segments'] == terminal['segments']
                         assert c['failure_probability_ppm'] == p
                         assert (c['source_read_nano_usd_per_byte'], c['object_write_nano_usd_per_byte'], c['object_read_nano_usd_per_byte']) == (source, write, read)
-                        # Independently reconstruct all alternatives used in this declared suite.
-                        recompute = o['operator_work_ns'] + o['source_bytes'] * source if o['output_segments'] else 0
-                        restore = o['output_bytes'] * read + 2 * o['output_segments'] * 1000
-                        now = o['output_bytes'] * write + o['output_segments'] * 1000
+                        # Independently reconstruct estimates and compose the complete
+                        # write-before-loss plus restore-after-loss deadline path.
+                        recompute_base, restore_base, now, recompute_ms, restore_ms, write_ms = estimates(o, c)
+                        recompute = recompute_base + penalty(c, recompute_ms)
+                        restore = restore_base + penalty(c, write_ms + restore_ms)
+                        persist_cost = (now * 1_000_000
+                                        + (1_000_000 - p) * penalty(c, write_ms)
+                                        + p * restore)
+                        assert decision['recompute_ms'] == recompute_ms
+                        assert decision['restore_ms'] == restore_ms
+                        assert decision['write_ms'] == write_ms
                         assert decision['recompute_nano_usd'] == recompute
                         assert decision['restore_nano_usd'] == restore
                         assert decision['write_nano_usd'] == now
                         assert decision['no_persist_nano_usd_ppm'] == p * recompute
-                        assert decision['persist_nano_usd_ppm'] == now * 1_000_000 + p * restore
-                        expected_persist = policy == 'always' or (policy == 'expected' and now * 1_000_000 + p * restore < p * recompute)
+                        assert decision['persist_nano_usd_ppm'] == persist_cost
+                        expected_persist = policy == 'always' or (policy == 'expected' and persist_cost < p * recompute)
                         assert decision['persist'] == expected_persist
                         assert (fact['receipt'] is not None) == expected_persist
                         assert fact['staging_write_bytes'] == terminal['payload_bytes']
@@ -120,23 +168,48 @@ for regime, prices in regimes.items():
                             assert receipt['original'] == terminal
                             assert receipt['backend']['durability'] == 'worker_process_surviving'
                             assert receipt['namespace'] == 'complete-v1'
+                            parsed_namespace = str(uuid.UUID(receipt['execution_namespace']))
+                            assert parsed_namespace == receipt['execution_namespace']
+                            run_namespaces.add(parsed_namespace)
                             assert receipt['write_bytes'] == terminal['payload_bytes']
                             assert receipt['write_requests'] == terminal['segments']
+                assert len(run_namespaces) <= 1
                 if policy == 'expected':
                     decisions = [f['decision']['persist'] for t in m['producers'].values() for f in t['materializations'].values()]
                     assert all(decisions) if regime == 'high' else not any(decisions)
                 if loss:
+                    # Producer uploads finish before the injected loss. They overlap
+                    # between producers but each producer emits destination copies in
+                    # sequence, so seed recovery with the slowest producer's total.
+                    write_ms_by_producer = []
+                    for producer in m['producers'].values():
+                        total_ns = sum(
+                            fact['receipt']['write_elapsed_ns']
+                            for fact in producer['materializations'].values()
+                            if fact['receipt'])
+                        write_ms_by_producer.append(ceil_div(total_ns, 1_000_000))
+                    elapsed_ms = max(write_ms_by_producer, default=0)
                     expected_restored_segments = 0
                     replayed_morsels = 0
                     for closure in r['plan']['closures']:
                         producer = m['producers'][str(closure['producer'])]
-                        fact = producer['materializations'].get('0')
-                        should_restore = bool(fact and fact['receipt'] and fact['decision']['restore_nano_usd'] < fact['decision']['recompute_nano_usd'])
+                        fact = producer['materializations'].get(str(closure['original']['logical']['partition']))
+                        if fact is None:  # Legacy threshold has no cost facts or copies.
+                            assert closure['restore'] is None
+                            if closure['original']['segments']:
+                                replayed_morsels += 2
+                            continue
+                        fact, recompute_cost, restore_cost, recompute_ms, restore_ms = recovery_actions(m, closure, elapsed_ms)
+                        should_restore = bool(fact['receipt'] and restore_cost < recompute_cost)
                         assert (closure['restore'] is not None) == should_restore
                         if should_restore:
                             expected_restored_segments += closure['original']['segments']
+                            elapsed_ms += restore_ms
                         elif closure['original']['segments']:
                             replayed_morsels += 2
+                            elapsed_ms += recompute_ms
+                        else:
+                            elapsed_ms += recompute_ms
                     assert r['restored_segments'] == expected_restored_segments
                     assert r['replayed_morsels'] == replayed_morsels
                     assert r['object_read_requests'] == r['restored_segments'] * 2
@@ -161,6 +234,6 @@ for regime, prices in regimes.items():
     assert ratio <= 5, (regime, 'normal overhead bound exceeded', ratio)
     summary[regime] = {'outcomes': outcomes, 'normal_mean_query_ms': walls, 'normal_overhead_ratio': ratio}
 assert all(totals['expected'] < totals[baseline] for baseline in ['always', 'never', 'threshold']), totals
-verification = {'passed': True, 'source_commit': commit, 'criterion': 'oracle, regimes, aggregate below always/never/threshold, normal <=5x', 'suite_totals_nano_usd': totals, 'regimes': summary}
+verification = {'passed': True, 'source_commit': commit, 'criterion': 'oracle, regimes, aggregate below always/never/threshold, normal <=5x', 'object_request_cost_scope': 'put_head_get_proxy_v1', 'suite_totals_nano_usd': totals, 'regimes': summary}
 (root / 'verification.json').write_text(json.dumps(verification, indent=2) + '\n')
 print(json.dumps(verification, indent=2))

@@ -6,6 +6,19 @@ This report is completed with measured release evidence below before handoff.
 Final commit identity is provided by the single implementation commit containing
 this report and embedded verbatim in final acceptance `verification.json`.
 
+## Independent review evidence note — 2026-10-21
+
+The original acceptance figures below describe implementation commit
+`dc1796ed6b04821f032336142e0417190df270fa`. Its final results directory is
+gitignored and was not available in the independent review, so those reported
+numeric claims cannot be independently audited from this source tree alone. They
+are historical evidence for that commit, not evidence for the remediation in this
+report. A clean committed run can be packaged with
+`python3 scripts/phase7-bundle.py RESULTS_DIR OUTPUT.tar.gz`; the archive contains
+the raw results, verifier output, source commit, benchmark identity and checksums.
+The generated bundle remains a local ignored artifact until someone attaches or
+publishes it for other reviewers.
+
 ## Implemented contract
 
 `cost.rs` implements a pure checked integer model, `materialization.rs` complete
@@ -14,12 +27,17 @@ propagate and validate facts. The benchmark adapter preserves independent oracle
 ownership, strict options and static/threshold defaults. No Phase 8 topology work
 or broader recovery was introduced.
 
-Let R=recompute work + whole-source byte/request cost + recompute SLO penalty;
-D=restore byte/HEAD+GET request cost + restore SLO penalty;
-W=PUT byte/request + expected capacity + write SLO penalty. Persist iff
-`1_000_000*W + p*D + 1_000_000*margin < p*R` (p in ppm). Ties skip.
+Let R=recompute work + whole-source byte/request cost + `Penalty(recompute_ms)`;
+D=restore byte/HEAD+GET request cost + `Penalty(write_ms + restore_ms)`;
+W=PUT byte/request + expected capacity, without SLO penalty. Persist iff
+`1_000_000*W + (1_000_000-p)*Penalty(write_ms) + p*D + 1_000_000*margin < p*R`
+(p in ppm). The sequential failure path gets one deadline clamp. Ties skip.
 Recovery compares D<R directly, ties recompute. `cost_mode=always|never` are
 explicit baselines, not policy changes disguised as expected-cost decisions.
+
+After process loss, recovery carries elapsed time across its sequential closures,
+starting with the slowest producer's measured sum of complete-copy upload times.
+Producer overlap before loss is approximated by that slowest producer path.
 
 Measured: sum of exclusive producer operator work, producer wall time (separate),
 whole-producer source file count/byte sizes, encoded output counts/bytes,
@@ -45,8 +63,10 @@ before the producer task returns. The coordinator receives the compact fact befo
 the existing all-producer gate permits injected loss. Staging reuses contained
 spool I/O; one outstanding frame per log, topology-bounded decisions/receipts,
 no per-segment coordinator records or key arrays. Normal-case staging is charged
-and reported, not hidden in delivery metrics. Full copies use complete-v1;
-threshold suffix objects cannot be restore candidates.
+and reported, not hidden in delivery metrics. Full copies use
+`complete-v1/{execution-uuid}/job-J/`; the coordinator-created UUID is included
+in receipts and cleanup requests without changing logical IDs. Full copies use
+that isolated prefix; threshold suffix objects cannot be restore candidates.
 
 The parent LocalCluster fixture root survives an actual child worker exit and is
 shared by all workers through the provider-neutral object-store boundary.
@@ -71,7 +91,7 @@ Disk volume has no quota; local task budgets can overlap; exchange/staging/codec
 memory is separate and is not a process RSS cap. Non-cooperative I/O retains its
 owner and poisons the worker using existing containment semantics.
 
-Control framing is ADETCP05 (prior ADETCP04 rejected before decoding); the
+Control framing is ADETCP06 (prior ADETCP04/ADETCP05 rejected before decoding); the
 exchange header/data/terminal/ACK shapes stay wire v2; hash and benchmark result
 schema remain v1. Control payloads remain <=1 MiB. Source/plan facts are bounded
 by source file count and N² logical transfers for static N=2–4 workers.
@@ -257,9 +277,10 @@ Initial clean evidence is preserved under
 `benchmarks/results/phase7-phase6-regression-initial`, with matching dataset
 folders. Logs: `/tmp/ade-phase7-release-build.log`,
 `/tmp/ade-phase7-release-acceptance.log`, `/tmp/ade-phase7-phase6-regression.log`.
-The single commit is amended to include this measured report and README wording
-corrections. Runtime source is unchanged. After amendment, commit-bound release
-acceptance is rerun from the clean temporary checkout into distinct final paths:
+At the time, the single commit was amended to include this measured report and
+README wording corrections; runtime source was unchanged. After that amendment,
+commit-bound release acceptance was rerun from the clean temporary checkout into
+distinct final paths:
 `benchmarks/results/phase7-acceptance-final` and
 `benchmarks/results/phase7-phase6-regression-final`. Their `verification.json`
 files embed the literal final SHA and final pass status. The final handoff states
@@ -270,6 +291,27 @@ Source byte accounting is the sum of physical file **sizes** in the reopened
 producer closure, an explicit logical reread proxy. It is not a measured Parquet
 column/range read counter, OS device traffic or cache-miss count. Object requests
 are provider API operations in the shared filesystem fixture, not measured HTTP
-billing. Copy-verification CPU, final aggregation work and cleanup LIST/DELETE
-request prices are excluded from monetary scores; their wall overhead remains
-in the reported query time. No byte/request field is presented as a cloud bill.
+billing. The decision and empirical score expose `put_head_get_proxy_v1`; cleanup
+LIST/DELETE request prices remain excluded, so this is not a full provider
+lifecycle request-cost objective. Copy-verification CPU and final aggregation
+work also remain outside the monetary scores; their wall overhead remains in the
+reported query time. No byte/request field is presented as a cloud bill.
+
+## Review remediation evidence workflow
+
+For a clean checkout of the remediation commit, run the release suite into a
+distinct ignored directory, then package its passing verifier result:
+
+```bash
+ADE_PHASE7_DATA=benchmarks/datasets/phase7-review-remediation \
+ADE_PHASE7_RESULTS=benchmarks/results/phase7-review-remediation-final \
+bash scripts/phase7-acceptance.sh
+python3 scripts/phase7-bundle.py \
+  benchmarks/results/phase7-review-remediation-final \
+  benchmarks/results/phase7-review-remediation-bundle.tar.gz
+```
+
+The bundle records the source commit and benchmark identity, includes raw child
+results and verifier stdout, and carries per-file and archive SHA-256 checksums.
+It is intentionally ignored by Git; it must be attached or published separately
+before another reviewer can download it.

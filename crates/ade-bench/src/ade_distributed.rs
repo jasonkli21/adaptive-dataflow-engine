@@ -106,7 +106,7 @@ impl AdeDistributedConfig {
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration
-            .insert("control_protocol".into(), "ADETCP05".into());
+            .insert("control_protocol".into(), "ADETCP06".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
             ade_distributed::exchange::MAX_FRAME_BYTES.to_string(),

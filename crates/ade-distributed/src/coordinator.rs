@@ -204,6 +204,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     if let Some(snapshot) = &job.snapshot {
         snapshot.validate(&job.files)?;
     }
+    // JobId is intentionally cluster-local and remains part of logical transfer
+    // identity. Shared object stores also need a globally unique execution scope.
+    let execution_namespace = uuid::Uuid::new_v4().to_string();
     let mut state = JobState::Prepared;
     let result = (|| {
         for worker in &job.workers {
@@ -220,6 +223,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         for worker in &job.workers {
             let spec = JobSpec {
                 job: job.id,
+                execution_namespace: execution_namespace.clone(),
                 workers: job.workers.clone(),
                 config: job.config.clone(),
                 snapshot: job.snapshot.clone(),
@@ -289,6 +293,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                         manifest,
                         cost,
                         &job.config.exchange.object_store,
+                        &execution_namespace,
                     )?;
                 }
             }
@@ -307,7 +312,12 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 &finals.keys().copied().collect::<Vec<_>>(),
                 &lost,
             )?;
-            crate::recovery::select_cost_actions(&mut plan, &producers, &job.config.exchange)?;
+            crate::recovery::select_cost_actions(
+                &mut plan,
+                &producers,
+                &job.config.exchange,
+                &execution_namespace,
+            )?;
             require(
                 protocol::rpc(
                     &job.workers[usize::try_from(lost[0])
@@ -495,7 +505,10 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             if protocol::rpc(worker, Request::Ping, Duration::from_millis(250)).is_ok() {
                 match protocol::rpc(
                     worker,
-                    Request::CleanupMaterializations { job: job.id },
+                    Request::CleanupMaterializations {
+                        job: job.id,
+                        execution_namespace: execution_namespace.clone(),
+                    },
                     job.task_timeout,
                 ) {
                     Ok(Reply::Ready) => {

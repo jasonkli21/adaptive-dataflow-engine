@@ -598,7 +598,7 @@ pub(crate) struct Objects {
     poisoned: Arc<AtomicBool>,
     operation_timeout: Duration,
     metrics: Mutex<RetentionMetrics>,
-    complete_namespace: bool,
+    complete_namespace: Option<String>,
 }
 impl Objects {
     pub fn configured(
@@ -633,21 +633,26 @@ impl Objects {
             poisoned,
             operation_timeout: RETENTION_IO_TIMEOUT,
             metrics: Mutex::new(RetentionMetrics::default()),
-            complete_namespace: false,
+            complete_namespace: None,
         })
     }
-    pub(crate) fn complete(mut self) -> Self {
-        self.complete_namespace = true;
-        self
+    pub(crate) fn complete(mut self, execution_namespace: String) -> Result<Self> {
+        require(
+            uuid::Uuid::parse_str(&execution_namespace).is_ok(),
+            "invalid materialization execution namespace",
+        )?;
+        self.complete_namespace = Some(execution_namespace);
+        Ok(self)
+    }
+    pub(crate) fn execution_namespace(&self) -> Option<&str> {
+        self.complete_namespace.as_deref()
     }
     fn key(&self, id: TransferId, sequence: u64) -> Path {
         Path::from(format!(
             "{}job-{}/exchange-{}/partition-{}/producer-{}/attempt-{}/segment-{sequence}.arrow",
-            if self.complete_namespace {
-                "complete-v1/"
-            } else {
-                ""
-            },
+            self.complete_namespace
+                .as_ref()
+                .map_or_else(String::new, |namespace| format!("complete-v1/{namespace}/")),
             id.job.0,
             id.exchange.0,
             id.partition.0,
@@ -764,10 +769,15 @@ impl Objects {
     }
     pub(crate) fn cleanup_job(&self, job: crate::ids::JobId) -> Result<()> {
         use futures::TryStreamExt;
+        let namespace = self
+            .complete_namespace
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("complete-copy namespace is required".into()))?
+            .clone();
         let backend = self.backend.clone();
         self.run(
             async move {
-                let prefix = Path::from(format!("complete-v1/job-{}/", job.0));
+                let prefix = Path::from(format!("complete-v1/{namespace}/job-{}/", job.0));
                 let mut objects = backend.list(Some(&prefix));
                 while let Some(object) = objects.try_next().await? {
                     match backend.delete(&object.location).await {
@@ -794,6 +804,44 @@ impl Objects {
 mod tests {
     use super::*;
     use std::sync::mpsc::{Receiver as TestReceiver, Sender as TestSender};
+
+    #[test]
+    fn execution_namespaces_isolate_shared_store_cleanup_for_reused_job_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let config = ObjectStoreConfig {
+            backend: "shared_fixture".into(),
+            durability: ObjectStoreDurability::WorkerProcessSurviving,
+        };
+        let backend = ObjectStoreBackend::new(
+            config.clone(),
+            Arc::new(object_store::memory::InMemory::new()),
+        )
+        .unwrap();
+        let run_a = "8abade70-a479-4c7e-9bd8-989ed8f1a1d7";
+        let run_b = "7b9b1bbf-929e-4b5e-a86e-8ed9bb5ed5b4";
+        let objects_a =
+            Objects::configured(root.path(), config.clone(), Some(&backend), Arc::default())
+                .unwrap()
+                .complete(run_a.into())
+                .unwrap();
+        let objects_b =
+            Objects::configured(root.path(), config.clone(), Some(&backend), Arc::default())
+                .unwrap()
+                .complete(run_b.into())
+                .unwrap();
+        let id = crate::ids::transfer(crate::ids::JobId(0), 0, 0, 0);
+        let token = CancellationToken::default();
+
+        // Independent clusters can reuse the same logical/job IDs in one store.
+        objects_a.put(id, 0, b"cluster-a".to_vec(), &token).unwrap();
+        objects_b.put(id, 0, b"cluster-b".to_vec(), &token).unwrap();
+        assert_eq!(objects_a.get(id, 0, &token).unwrap(), b"cluster-a");
+        assert_eq!(objects_b.get(id, 0, &token).unwrap(), b"cluster-b");
+
+        objects_a.cleanup_job(id.job).unwrap();
+        assert_eq!(objects_b.get(id, 0, &token).unwrap(), b"cluster-b");
+        assert!(objects_a.get(id, 0, &token).is_err());
+    }
 
     #[derive(Clone, Copy)]
     enum SpillOperation {

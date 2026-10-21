@@ -192,24 +192,66 @@ pub fn select_cost_actions(
     plan: &mut RecoveryPlan,
     producers: &BTreeMap<u64, TaskMetrics>,
     config: &crate::ExchangeConfig,
+    execution_namespace: &str,
 ) -> Result<()> {
     let Some(cost) = &config.cost else {
         return Ok(());
     };
+    // Producer tasks upload selected complete copies before the all-producer
+    // failure gate. Those uploads run independently per producer, but a producer
+    // writes its destinations serially; use the slowest producer's measured total
+    // as the pre-loss critical-path approximation.
+    let mut elapsed_ms = producers
+        .values()
+        .map(|producer| {
+            let elapsed_ns = producer
+                .materializations
+                .values()
+                .filter_map(|fact| fact.receipt.as_ref())
+                .try_fold(0u64, |total, receipt| {
+                    total
+                        .checked_add(receipt.write_elapsed_ns)
+                        .ok_or_else(|| Error::Invalid("recovery elapsed time overflow".into()))
+                })?;
+            Ok::<u64, Error>(elapsed_ns.div_ceil(1_000_000))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .max()
+        .unwrap_or(0);
     for closure in &mut plan.closures {
         let fact = producers[&closure.producer.0]
             .materializations
             .get(&plan.partition.0)
             .ok_or_else(|| Error::Invalid("missing expected-cost fact".into()))?;
-        validate_fact(fact, &closure.original, cost, &config.object_store)?;
+        validate_fact(
+            fact,
+            &closure.original,
+            cost,
+            &config.object_store,
+            execution_namespace,
+        )?;
+        let (recompute_cost, restore_cost, recompute_ms, restore_ms) =
+            cost.recovery_action_costs(&fact.decision.observation, elapsed_ms)?;
         if let Some(receipt) = &fact.receipt {
-            // Failure has occurred: compare direct costs with SLO; never apply p again.
-            if fact.decision.restore_nano_usd < fact.decision.recompute_nano_usd {
+            // Failure has occurred: compare direct costs with the remaining shared
+            // deadline budget; never apply p a second time.
+            if restore_cost < recompute_cost {
                 closure.restore = Some(receipt.clone());
                 closure.action_reason = "valid_complete_copy_restore_cheaper".into();
+                elapsed_ms = elapsed_ms
+                    .checked_add(restore_ms)
+                    .ok_or_else(|| Error::Invalid("recovery elapsed time overflow".into()))?;
             } else {
                 closure.action_reason = "valid_copy_recompute_cheaper_or_tie".into();
+                elapsed_ms = elapsed_ms
+                    .checked_add(recompute_ms)
+                    .ok_or_else(|| Error::Invalid("recovery elapsed time overflow".into()))?;
             }
+        } else {
+            elapsed_ms = elapsed_ms
+                .checked_add(recompute_ms)
+                .ok_or_else(|| Error::Invalid("recovery elapsed time overflow".into()))?;
         }
     }
     Ok(())
@@ -219,6 +261,7 @@ pub(crate) fn validate_fact(
     original: &TransferManifest,
     cost: &crate::cost::CostConfig,
     backend: &crate::ObjectStoreConfig,
+    execution_namespace: &str,
 ) -> Result<()> {
     let o = &fact.decision.observation;
     require(
@@ -231,7 +274,7 @@ pub(crate) fn validate_fact(
         "invalid materialization decision fact",
     )?;
     if let Some(receipt) = &fact.receipt {
-        receipt.validate(original, backend)?;
+        receipt.validate(original, backend, execution_namespace)?;
     }
     Ok(())
 }
@@ -378,6 +421,7 @@ mod tests {
                             original: original.clone(),
                             backend: backend.clone(),
                             namespace: "complete-v1".into(),
+                            execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
                             write_bytes: original.payload_bytes,
                             write_requests: original.segments,
                             write_elapsed_ns: 0,
@@ -396,7 +440,13 @@ mod tests {
             ..Default::default()
         };
         let mut plan = plan(JobId(42), 2, Some(&snapshot), &producers, &[0], &[1]).unwrap();
-        select_cost_actions(&mut plan, &producers, &config).unwrap();
+        select_cost_actions(
+            &mut plan,
+            &producers,
+            &config,
+            "8abade70-a479-4c7e-9bd8-989ed8f1a1d7",
+        )
+        .unwrap();
         assert!(plan.closures[0].restore.is_none()); // Exact direct-cost tie skips restore.
         assert!(plan.closures[1].restore.is_some());
         producers
@@ -410,8 +460,108 @@ mod tests {
             .unwrap()
             .original
             .fingerprint = "b".repeat(64);
-        assert!(select_cost_actions(&mut plan, &producers, &config).is_err());
+        assert!(
+            select_cost_actions(
+                &mut plan,
+                &producers,
+                &config,
+                "8abade70-a479-4c7e-9bd8-989ed8f1a1d7"
+            )
+            .is_err()
+        );
     }
+    #[test]
+    fn recovery_action_selection_accumulates_elapsed_across_closures() {
+        use crate::{
+            cost::{CostConfig, MaterializationMode, Production},
+            materialization::{MaterializationFact, MaterializationReceipt},
+        };
+        let namespace = "8abade70-a479-4c7e-9bd8-989ed8f1a1d7";
+        let backend = crate::ObjectStoreConfig {
+            backend: "fixture".into(),
+            durability: crate::ObjectStoreDurability::WorkerProcessSurviving,
+        };
+        let cost = CostConfig {
+            mode: MaterializationMode::Always,
+            failure_probability_ppm: 1_000_000,
+            compute_nano_usd_per_work_ns: 1,
+            source_read_bytes_per_second: 1_000,
+            object_read_bytes_per_second: 1_000,
+            deadline_slack_ms: 100,
+            slo_penalty_nano_usd_per_ms: 1_000_000,
+            ..Default::default()
+        };
+        let mut producers = BTreeMap::new();
+        let mut closures = Vec::new();
+        for producer in 0..2 {
+            let original = TransferManifest {
+                logical: transfer(JobId(42), 0, 1, producer).logical(),
+                attempt: AttemptId(0),
+                segments: 1,
+                rows: 1,
+                payload_bytes: 60,
+                fingerprint: "a".repeat(64),
+            };
+            let observation = Production {
+                operator_work_ns: 10_000_000,
+                source_bytes: 30,
+                source_requests: 0,
+                output_bytes: 60,
+                output_segments: 1,
+                consumer_count: 1,
+                ..Default::default()
+            };
+            let mut metrics = TaskMetrics::default();
+            metrics.materializations.insert(
+                1,
+                MaterializationFact {
+                    decision: cost.decide(observation).unwrap(),
+                    receipt: Some(MaterializationReceipt {
+                        version: 1,
+                        original: original.clone(),
+                        backend: backend.clone(),
+                        namespace: "complete-v1".into(),
+                        execution_namespace: namespace.into(),
+                        write_bytes: original.payload_bytes,
+                        write_requests: original.segments,
+                        write_elapsed_ns: 0,
+                    }),
+                    staging_write_bytes: original.payload_bytes,
+                    staging_read_bytes: original.payload_bytes,
+                    staging_write_ns: 0,
+                    staging_read_ns: 0,
+                },
+            );
+            producers.insert(producer, metrics);
+            closures.push(ReplayClosure {
+                producer: TaskId(producer),
+                original,
+                restore: None,
+                action_reason: String::new(),
+            });
+        }
+        let mut plan = RecoveryPlan {
+            job: JobId(42),
+            partition: PartitionId(1),
+            host: WorkerId(0),
+            ranges: Vec::new(),
+            closures,
+            reused_partitions: vec![0],
+        };
+        let config = crate::ExchangeConfig {
+            cost: Some(Box::new(cost)),
+            object_store: backend,
+            ..Default::default()
+        };
+        select_cost_actions(&mut plan, &producers, &config, namespace).unwrap();
+        assert!(plan.closures[0].restore.is_some());
+        assert!(plan.closures[1].restore.is_none());
+        assert_eq!(
+            plan.closures[1].action_reason,
+            "valid_copy_recompute_cheaper_or_tie"
+        );
+    }
+
     #[test]
     fn admitted_large_snapshot_is_not_duplicated_in_recovery_request() {
         let (mut snapshot, producers) = facts();
@@ -432,6 +582,7 @@ mod tests {
             .collect();
         let prepare = crate::protocol::Request::PrepareJob(crate::protocol::JobSpec {
             job: JobId(42),
+            execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
             workers,
             config: crate::TaskConfig::default(),
             snapshot: Some(snapshot.clone()),

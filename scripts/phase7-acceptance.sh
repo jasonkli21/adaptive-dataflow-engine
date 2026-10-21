@@ -40,4 +40,4 @@ for regime in low high expensive_restore; do
     done
   done
 done
-python3 scripts/phase7-verify.py "$results"
+python3 scripts/phase7-verify.py "$results" | tee "$results/verifier.stdout.txt"

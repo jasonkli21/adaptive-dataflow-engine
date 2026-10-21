@@ -1916,7 +1916,13 @@ Arrow/Parquet/open protocols are reused where adequate.
 
 ---
 
-## 32. Initial ADR Backlog
+## 32. Initial ADR Backlog (Historical Proposal)
+
+This list records the original Phase 0 proposal, not the authoritative accepted
+ADR titles. The accepted records and current numbering are indexed in
+`docs/adr/README.md`. In particular, the accepted ADR-0012 is Adaptive Exchange
+v1, ADR-0013 is Lineage Recovery v1, and ADR-0014 is Expected-Cost Materialization
+v1; the proposed “Cost model API” item below was never accepted under ADR-0012.
 
 These decisions should be recorded as ADRs when implementation reaches them.
 
@@ -1931,9 +1937,9 @@ These decisions should be recorded as ADRs when implementation reaches them.
 9. **ADR-0009:** Initial exchange data transport.
 10. **ADR-0010:** Segment identity and checksum model.
 11. **ADR-0011:** Lineage representation.
-12. **ADR-0012:** Cost model API.
-13. **ADR-0013:** Streaming progress model.
-14. **ADR-0014:** State/checkpoint consistency model.
+12. **Proposed, unaccepted:** Cost model API. Accepted ADR-0012 is [Adaptive Exchange v1](../adr/0012-adaptive-exchange-v1.md).
+13. **Proposed, unaccepted:** Streaming progress model. Accepted ADR-0013 is [Lineage Recovery v1](../adr/0013-lineage-recovery-v1.md).
+14. **Proposed, unaccepted:** State/checkpoint consistency model. Accepted ADR-0014 is [Expected-Cost Materialization v1](../adr/0014-expected-cost-materialization-v1.md).
 
 Phase 0 should resolve only ADRs 0001–0004.
 

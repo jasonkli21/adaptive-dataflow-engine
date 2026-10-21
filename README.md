@@ -18,7 +18,7 @@ benchmark substrate
 
 ## Current status
 
-**Phase 7 expected-cost materialization v1 implemented; release evidence is recorded in the Phase 7 report.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
+**Phase 8 implementation candidate: correctness passes; primary performance gates failed, so Phase 8 remains incomplete.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-7-implementation-plan.md`](docs/plans/phase-7-implementation-plan.md) — Phase 7 implementation contract.
+4. [`docs/plans/phase-8-implementation-plan.md`](docs/plans/phase-8-implementation-plan.md) — active Phase 8 contract; see its implementation report for acceptance status.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -281,7 +281,7 @@ Cost options require expected-cost selection. Deadline penalties use the complet
 write-before-loss plus restore-after-loss path, and recovery closures share elapsed
 slack as they run. The explicit request-cost scope is the PUT/HEAD/GET transfer
 proxy; later cleanup LIST/DELETE charges are excluded. Staging overhead is real and
-separately measured. Control framing is `ADETCP06`; transfer wire v2/hash v1/result
+separately measured. Control framing is `ADETCP07`; transfer wire v2/hash v1/result
 schema v1 remain.
 
 See [ADR-0014](docs/adr/0014-expected-cost-materialization-v1.md) and the
@@ -294,3 +294,53 @@ checksummed, self-identifying evidence bundle.
 For raw measured-child diagnostics, set `ADE_DISTRIBUTED_METRICS_FILE` to an
 append-only JSONL artifact path. This opt-in sidecar records PID and distributed
 metrics; benchmark result schema v1 is unchanged. Phase 7 acceptance uses it.
+
+
+### Bounded runtime repartitioning (Phase 8)
+
+`partition_policy=static` remains the default. Explicit `sampled_v1` probes real
+assigned source prefixes after worker preparation and commits one immutable map
+of 48 key shards before exchange. Oversized base hash buckets can distribute
+**distinct keys** across final tasks. Tiny sampled workloads coalesce to fewer
+actual final aggregations; idle destinations verify their empty terminals and
+produce no gather output. Physical processes remain 2–4. One raw hot key stays
+indivisible. A biased sample can hurt speed but cannot change results.
+
+```bash
+cargo run -p ade-bench -- validate --engine ade-distributed \
+  --engine-option partition_policy=sampled_v1 \
+  --spec benchmarks/specs/aggregate-high-cardinality.toml --dataset YOUR_DATASET
+```
+
+Controls are `partition_sample_rows` (1–16384), `partition_rows_per_file`
+(1–4096), `partition_max_files` (1–4), `partition_sample_bytes` (1–16 MiB),
+`partition_split_min`, `partition_coalesce_max`, and `partition_min_gain_pct`.
+Tuning requires `sampled_v1`. Defaults cap reads at 8 MiB per producer, including
+Parquet metadata, and 16384 decoded keys; selected key chunks exceeding 2 MiB
+uncompressed are refused before decoding; exact distinct sampled keys form a
+post-partial-output proxy. File-prefix bias, actual rows/bytes, exclusive final
+operator work, source-pull wall time and probe/ACK costs appear in diagnostics.
+There is no full-producer/shuffle barrier added and no mid-exchange rerouting.
+
+Retention/cost selection is independent. Recovery retains the exact committed
+layout, source fingerprints, logical transfer identities, complete-copy UUIDs
+and attempt-safe gather. Only one active final-worker loss after all producers
+complete can recover; an inactive failure target is refused. See
+[ADR-0015](docs/adr/0015-runtime-repartition-v1.md) and
+[Phase 8 report](docs/reports/phase-8-implementation-report.md).
+
+Use `--distribution hash-bucket-skew` to generate distinct keys colliding into
+static bucket zero for 2/4 workers; this new generator variant is version 2.
+Existing uniform/hot-key version 1 manifests retain their interpretation.
+`bash scripts/phase8-acceptance.sh` requires a clean release checkout; it retains
+raw results and applies fixed skew/uniform gates. Package passing **or failed**
+evidence with `python3 scripts/phase8-bundle.py RESULTS_DIR OUTPUT.tar.gz`.
+
+
+`partition_policy=static_packed` is an explicit attribution diagnostic: static
+hash routing and all finals, with bounded destination frame packing. It performs
+no topology adaptation. Sampled routing also packs fragments into full frames;
+its pending buffers cap at N*1024 contributions (<=96 KiB), with separately
+reported capacity/peak rows and additional bounded Arrow/encoding transients.
+The release suite retains the original static comparator and a static_packed
+control so batching effects are visible.

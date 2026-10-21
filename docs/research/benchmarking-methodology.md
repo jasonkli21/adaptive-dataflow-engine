@@ -23,3 +23,22 @@ Result JSON is immutable and atomically published without overwriting existing f
 Git commit and dirty state are collected at build time from the ADE repository root and embedded in the executable. Runtime `cwd` cannot substitute another repository's identity; a source archive or source tree nested under an unrelated Git root records null Git fields. Build metadata records the Cargo profile, target, compiler, debug assertions, allocator, and known effective settings such as optimization level, debug information, LTO, codegen units and whitelisted explicit target CPU/features. No repository paths, hostname, username, home path, serial, network address or arbitrary environment variables are collected.
 
 Use dedicated, controlled hosts before drawing product conclusions. CI checks correctness and tiny smoke flows only, with no timing thresholds. Criterion microbenchmarks are an independent path and do not use macrobenchmark warmup/process semantics.
+
+
+## Phase 8 topology evidence
+
+ADR-0015 and `scripts/phase8-acceptance.sh` predeclare three primary regimes,
+2-worker static/sample comparisons, a limited 4-worker skew confirmation, one
+warmup and three isolated measured iterations. The engine-independent
+hash-bucket-skew generator v2 creates many distinct keys surviving partial
+aggregation; uniform and one raw hot key are explicit controls. Old fixtures
+retain generator v1. Correctness/oracle and clean source identity apply to every
+child. Preserve failed attempts. The verifier records measured-only medians,
+exclusive final operator work (including spill), source-pull wall latency
+(waiting + I/O/decoding), job wall latency, per-final counts/bytes, selected active
+set and probe/commit overhead. Do not label final elapsed as compute-skew tail.
+A sample is a biased distinct-prefix proxy, never full cardinality or raw-frequency
+load. Metered source reads include metadata/cache traffic, not physical disk I/O.
+Release requires >=20% skew maximum-work improvement without job-latency increase
+and <=1.30x uniform latency. Failed gates keep Phase 8 incomplete; timing stays
+outside CI. Evidence bundles contain raw data, clean source archive and checksums.

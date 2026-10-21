@@ -93,8 +93,10 @@ fn tasks(
     job: &StaticAggregateJob,
     producers: Vec<Request>,
     finals: Vec<Request>,
+    started: Instant,
 ) -> Result<TaskResults> {
-    let deadline = Instant::now() + job.task_timeout;
+    let task_started = Instant::now();
+    let deadline = task_started + job.task_timeout;
     thread::scope(|scope| {
         let (tx, rx) = mpsc::sync_channel(2 * job.workers.len());
         // Spawn final readers first. A producer may win CPU dispatch; bounded handoff
@@ -133,7 +135,8 @@ fn tasks(
                     }
                 };
             match response {
-                Ok(m) => {
+                Ok(mut m) => {
+                    m.coordinator_finished_ns = crate::materialization::ns(started);
                     if is_final {
                         finals.insert(worker.0, m);
                     } else {
@@ -237,11 +240,90 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             )?;
         }
         let parent = tempfile::tempdir()?;
-        let mut gather = crate::gather::Gather::new(parent.path(), job.id, job.workers.len())?;
         let mut assignments = vec![Vec::new(); job.workers.len()];
         for (i, file) in job.files.iter().enumerate() {
             assignments[i % job.workers.len()].push(file.clone());
         }
+        let mut topology = None;
+        let mut topology_commit_ns = 0;
+        let mut topology_probe_ns = 0;
+        if job.config.topology.policy == crate::topology::PartitionPolicy::SampledV1 {
+            let probe_started = Instant::now();
+            let deadline = probe_started + job.task_timeout;
+            let observations = thread::scope(|scope| {
+                let handles: Vec<_> = job
+                    .workers
+                    .iter()
+                    .zip(&assignments)
+                    .map(|(worker, files)| {
+                        scope.spawn(move || {
+                            match protocol::rpc_until(
+                                worker,
+                                Request::Probe {
+                                    timeout_ms: u64::try_from(
+                                        job.task_timeout.min(crate::TASK_TIMEOUT).as_millis(),
+                                    )
+                                    .unwrap_or(120_000),
+                                    job: job.id,
+                                    files: files.clone(),
+                                },
+                                deadline,
+                            )? {
+                                Reply::Probe(observation) => Ok(observation),
+                                _ => Err(Error::Invalid("invalid probe response".into())),
+                            }
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| {
+                        h.join()
+                            .map_err(|_| Error::Invalid("probe thread panic".into()))?
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })?;
+            let decision =
+                crate::topology::decide(&job.config.topology, job.workers.len(), observations)?;
+            topology_probe_ns = crate::materialization::ns(probe_started);
+            let commit_started = Instant::now();
+            for worker in &job.workers {
+                require(
+                    matches!(
+                        protocol::rpc_until(
+                            worker,
+                            Request::CommitLayout {
+                                job: job.id,
+                                layout: decision.layout.clone(),
+                            },
+                            deadline
+                        )?,
+                        Reply::Ready
+                    ),
+                    "layout ACK missing",
+                )?;
+            }
+            topology_commit_ns = crate::materialization::ns(commit_started);
+            topology = Some(decision);
+        }
+        let active = topology.as_ref().map_or_else(
+            || (0..job.workers.len() as u64).collect::<BTreeSet<_>>(),
+            |d| d.layout.active(),
+        );
+        let layout_digest = topology.as_ref().map(|d| d.layout.digest.clone());
+        #[cfg(feature = "research-hooks")]
+        require(
+            job.config
+                .research_exit_final_partition
+                .is_none_or(|p| active.contains(&p)),
+            "failure target is inactive under committed layout",
+        )?;
+        let mut gather = crate::gather::Gather::with_active(
+            parent.path(),
+            job.id,
+            job.workers.len(),
+            active.clone(),
+        )?;
         state = JobState::FinalsRunning;
         let producers = assignments
             .into_iter()
@@ -256,19 +338,42 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         let finals = job
             .workers
             .iter()
-            .map(|w| Request::RunFinalTask {
-                job: job.id,
-                task: TaskId(job.workers.len() as u64 + w.id.0),
-                attempt: AttemptId(0),
-                gather: gather.address(),
+            .map(|w| {
+                if active.contains(&w.id.0) {
+                    Request::RunFinalTask {
+                        job: job.id,
+                        task: TaskId(job.workers.len() as u64 + w.id.0),
+                        attempt: AttemptId(0),
+                        gather: gather.address(),
+                    }
+                } else {
+                    Request::VerifyInactive { job: job.id }
+                }
             })
             .collect();
         let TaskResults {
             producers,
             mut finals,
             lost,
-        } = tasks(job, producers, finals)?;
+        } = tasks(job, producers, finals, started)?;
         crate::recovery::validate_producers(job.id, job.workers.len(), &producers)?;
+        require(
+            producers
+                .values()
+                .chain(finals.values())
+                .all(|m| m.layout_digest == layout_digest),
+            "task layout digest mismatch",
+        )?;
+        require(
+            finals
+                .iter()
+                .all(|(p, m)| m.executed_final == active.contains(p)),
+            "actual final task set mismatch",
+        )?;
+        require(
+            lost.iter().all(|p| active.contains(p)),
+            "inactive worker loss is unsupported",
+        )?;
         if let Some(cost) = &job.config.exchange.cost {
             for producer in producers.values() {
                 require(
@@ -288,6 +393,14 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                                 == producer.production.source_requests,
                         "production observation mismatch",
                     )?;
+                    require(
+                        fact.topology_digest == layout_digest
+                            && fact
+                                .receipt
+                                .as_ref()
+                                .is_none_or(|r| r.topology_digest == layout_digest),
+                        "materialization topology mismatch",
+                    )?;
                     crate::recovery::validate_fact(
                         fact,
                         manifest,
@@ -299,7 +412,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             }
         }
         for (p, metrics) in &finals {
-            gather.commit(*p, AttemptId(0), &metrics.sent)?;
+            if active.contains(p) {
+                gather.commit(*p, AttemptId(0), &metrics.sent)?;
+            }
         }
         let mut recovery = crate::recovery::RecoveryMetrics::default();
         if !lost.is_empty() {
@@ -312,6 +427,8 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 &finals.keys().copied().collect::<Vec<_>>(),
                 &lost,
             )?;
+            plan.layout_digest.clone_from(&layout_digest);
+            plan.reused_partitions.retain(|p| active.contains(p));
             crate::recovery::select_cost_actions(
                 &mut plan,
                 &producers,
@@ -348,7 +465,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             )
             .map_err(|e| Error::Unrecoverable(format!("recovery episode failed: {e}")))?;
             let Reply::Recovered {
-                final_metrics,
+                mut final_metrics,
                 manifests,
                 work,
             } = reply
@@ -362,6 +479,11 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             for (closure, manifest) in plan.closures.iter().zip(&manifests) {
                 closure.original.validate_replay(manifest)?;
             }
+            final_metrics.coordinator_finished_ns = crate::materialization::ns(started);
+            require(
+                final_metrics.layout_digest == layout_digest && final_metrics.executed_final,
+                "recovered layout/task mismatch",
+            )?;
             gather.commit(plan.partition.0, AttemptId(1), &final_metrics.sent)?;
             finals.insert(plan.partition.0, final_metrics);
             recovery = crate::recovery::RecoveryMetrics {
@@ -458,6 +580,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         let mut adaptive = crate::adaptive::AdaptiveSummary::default();
         if job.config.exchange.mode == crate::ExchangeMode::Adaptive {
             for (partition, task) in &finals {
+                if !active.contains(partition) {
+                    continue;
+                }
                 if recovery.committed_attempts[partition] == AttemptId(1) {
                     continue;
                 }
@@ -472,7 +597,20 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 adaptive.add(a);
             }
         }
+        let inactive_ids: Vec<_> = finals
+            .keys()
+            .filter(|p| !active.contains(p))
+            .copied()
+            .collect();
+        let inactive = inactive_ids
+            .into_iter()
+            .filter_map(|p| finals.remove(&p).map(|m| (p, m)))
+            .collect();
         let metrics = DistributedMetrics {
+            topology,
+            topology_commit_ns,
+            topology_probe_ns,
+            inactive,
             recovery,
             adaptive,
             worker_count: job.workers.len(),

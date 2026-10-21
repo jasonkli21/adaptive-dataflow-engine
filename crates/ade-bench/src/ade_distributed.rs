@@ -30,6 +30,7 @@ impl AdeDistributedConfig {
             execution: self.task.execution(),
         };
         let mut info = local.info();
+        add_topology_info(&mut info, &self.task.topology);
         info.name = "ade-distributed".into();
         info.configuration
             .insert("workers".into(), self.workers.to_string());
@@ -106,7 +107,7 @@ impl AdeDistributedConfig {
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration
-            .insert("control_protocol".into(), "ADETCP06".into());
+            .insert("control_protocol".into(), "ADETCP07".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
             ade_distributed::exchange::MAX_FRAME_BYTES.to_string(),
@@ -116,6 +117,18 @@ impl AdeDistributedConfig {
             ade_distributed::TASK_TIMEOUT.as_secs().to_string(),
         );
         info
+    }
+}
+fn add_topology_info(info: &mut EngineInfo, topology: &ade_distributed::topology::TopologyConfig) {
+    if let Ok(serde_json::Value::Object(values)) = serde_json::to_value(topology) {
+        for (key, value) in values {
+            info.configuration.insert(
+                format!("partition_{key}"),
+                value
+                    .as_str()
+                    .map_or_else(|| value.to_string(), str::to_owned),
+            );
+        }
     }
 }
 fn add_cost_info(info: &mut EngineInfo, cost: &ade_distributed::cost::CostConfig) {
@@ -176,6 +189,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
         reason = "Single strict adapter option parser keeps duplicate and mode checks together."
     )]
     fn parse_config(options: &[String]) -> Result<Self::Config> {
+        let mut topology_values = serde_json::Map::new();
         let mut workers = None;
         let mut exchange_mode = None;
         let mut exchange_buffer = None;
@@ -184,7 +198,25 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut exit_final = None;
         let mut recovery_enabled = true;
         for option in options {
-            if let Some(value) = option.strip_prefix("workers=") {
+            if option.starts_with("partition_") {
+                let (key, value) = option
+                    .split_once('=')
+                    .ok_or_else(|| Error::Invalid("topology option requires value".into()))?;
+                let field = key.strip_prefix("partition_").expect("prefix");
+                let v = if field == "policy" {
+                    serde_json::Value::String(value.to_owned())
+                } else {
+                    serde_json::Value::from(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| Error::Invalid("invalid topology number".into()))?,
+                    )
+                };
+                require(
+                    topology_values.insert(field.to_owned(), v).is_none(),
+                    "duplicate topology option",
+                )?;
+            } else if let Some(value) = option.strip_prefix("workers=") {
                 require(
                     workers.is_none(),
                     "duplicate ade-distributed option: workers",
@@ -243,6 +275,17 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 local.push(option.clone());
             }
         }
+        require(
+            topology_values.keys().all(|k| k == "policy")
+                || topology_values
+                    .get("policy")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("sampled_v1"),
+            "topology tuning requires sampled_v1",
+        )?;
+        let topology: ade_distributed::topology::TopologyConfig =
+            serde_json::from_value(serde_json::Value::Object(topology_values))?;
+        topology.validate()?;
         let workers = workers.unwrap_or(2);
         require((2..=4).contains(&workers), "workers must be 2..4")?;
         let local = crate::ade_local::AdeLocalEngine::parse_config(&local)?;
@@ -335,6 +378,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
             workers,
             recovery_enabled,
             task: TaskConfig {
+                topology,
                 exchange,
                 batch_size: local.batch_size,
                 memory_limit_bytes: local.execution.memory_limit_bytes,
@@ -524,6 +568,16 @@ mod tests {
         assert_eq!(config.info().configuration["workers"], "4");
         assert_eq!(config.info().configuration["memory_limit_bytes"], "1048576");
         for options in [
+            vec!["partition_policy=unknown"],
+            vec!["partition_policy=sampled_v1", "partition_sample_rows=16385"],
+            vec![
+                "partition_policy=sampled_v1",
+                "partition_sample_bytes=16777217",
+            ],
+            vec!["partition_policy=static", "partition_sample_rows=1"],
+            vec!["partition_policy=sampled_v1", "partition_unknown=1"],
+            vec!["partition_policy=sampled_v1", "partition_min_gain_pct=0"],
+            vec!["partition_policy=sampled_v1", "partition_policy=static"],
             vec!["research_exit_final_partition=2"],
             vec![
                 "research_exit_final_partition=0",

@@ -26,6 +26,28 @@ pub fn destination(key: u64, partitions: usize) -> Result<usize> {
 /// # Errors
 /// Rejects invalid partition arguments, schema, row bounds or Arrow kernel errors.
 pub fn select(batch: &RecordBatch, partition: usize, partitions: usize) -> Result<RecordBatch> {
+    select_routed(batch, partition, partitions, |key| {
+        destination(key, partitions)
+    })
+}
+pub(crate) fn select_layout(
+    batch: &RecordBatch,
+    partition: usize,
+    layout: &crate::topology::Layout,
+) -> Result<RecordBatch> {
+    select_routed(
+        batch,
+        partition,
+        layout.workers,
+        |key| Ok(layout.route(key)),
+    )
+}
+fn select_routed(
+    batch: &RecordBatch,
+    partition: usize,
+    partitions: usize,
+    route: impl Fn(u64) -> Result<usize>,
+) -> Result<RecordBatch> {
     require(partition < partitions, "partition out of range")?;
     require(batch.num_columns() == 3, "partition schema width")?;
     require(
@@ -40,7 +62,7 @@ pub fn select(batch: &RecordBatch, partition: usize, partitions: usize) -> Resul
     require(keys.null_count() == 0, "partition key nulls forbidden")?;
     let mut indices = Vec::with_capacity(batch.num_rows());
     for i in 0..batch.num_rows() {
-        if destination(keys.value(i), partitions)? == partition {
+        if route(keys.value(i))? == partition {
             indices.push(
                 u32::try_from(i).map_err(|_| crate::Error::Invalid("row index overflow".into()))?,
             );
@@ -93,5 +115,161 @@ mod tests {
         let mut keys = keys;
         keys.sort_unstable();
         assert_eq!(routed, keys);
+    }
+}
+
+/// At most one pending full frame per physical destination. No keyed reduction.
+pub(crate) struct FramePacker {
+    pending: Vec<Pending>,
+    pub peak_rows: usize,
+    rows: usize,
+}
+struct Pending {
+    keys: Vec<u64>,
+    sums: Vec<i64>,
+    counts: Vec<u64>,
+}
+impl Pending {
+    fn new() -> Self {
+        Self {
+            keys: Vec::with_capacity(crate::exchange::MAX_BATCH_ROWS),
+            sums: Vec::with_capacity(crate::exchange::MAX_BATCH_ROWS),
+            counts: Vec::with_capacity(crate::exchange::MAX_BATCH_ROWS),
+        }
+    }
+    fn take(&mut self) -> Result<Option<RecordBatch>> {
+        if self.keys.is_empty() {
+            return Ok(None);
+        }
+        let old = std::mem::replace(self, Self::new());
+        Ok(Some(RecordBatch::try_new(
+            crate::exchange::schema(),
+            vec![
+                std::sync::Arc::new(UInt64Array::from(old.keys)),
+                std::sync::Arc::new(arrow::array::Int64Array::from(old.sums)),
+                std::sync::Arc::new(UInt64Array::from(old.counts)),
+            ],
+        )?))
+    }
+}
+impl FramePacker {
+    pub fn new(destinations: usize) -> Self {
+        Self {
+            pending: (0..destinations).map(|_| Pending::new()).collect(),
+            peak_rows: 0,
+            rows: 0,
+        }
+    }
+    pub fn push(&mut self, destination: usize, batch: &RecordBatch) -> Result<Option<RecordBatch>> {
+        require(
+            batch.schema() == crate::exchange::schema()
+                && batch.num_rows() <= crate::exchange::MAX_BATCH_ROWS,
+            "packer schema/row bound",
+        )?;
+        let keys = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer key".into()))?;
+        let sums = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer sum".into()))?;
+        let counts = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer count".into()))?;
+        require(
+            batch.columns().iter().all(|c| c.null_count() == 0),
+            "packer nulls",
+        )?;
+        require(destination < self.pending.len(), "packer destination")?;
+        let mut full = None;
+        for row in 0..batch.num_rows() {
+            let p = &mut self.pending[destination];
+            p.keys.push(keys.value(row));
+            p.sums.push(sums.value(row));
+            p.counts.push(counts.value(row));
+            self.rows += 1;
+            self.peak_rows = self.peak_rows.max(self.rows);
+            if self.pending[destination].keys.len() == crate::exchange::MAX_BATCH_ROWS {
+                full = self.pending[destination].take()?;
+                self.rows -= crate::exchange::MAX_BATCH_ROWS;
+            }
+        }
+        Ok(full)
+    }
+    pub fn finish(&mut self, destination: usize) -> Result<Option<RecordBatch>> {
+        self.rows -= self.pending[destination].keys.len();
+        self.pending[destination].take()
+    }
+}
+#[cfg(test)]
+mod packer_tests {
+    use super::*;
+    #[test]
+    fn frame_boundaries_preserve_signed_rows_and_empty_destinations() {
+        for rows in [0, 511, 512, 1023, 1024, 1025, 2049] {
+            let mut packer = FramePacker::new(4);
+            let mut frames = Vec::new();
+            for start in (0..rows).step_by(511) {
+                let end = (start + 511).min(rows);
+                let batch = RecordBatch::try_new(
+                    crate::exchange::schema(),
+                    vec![
+                        std::sync::Arc::new(UInt64Array::from_iter_values(start..end)),
+                        std::sync::Arc::new(arrow::array::Int64Array::from_iter_values(
+                            (start..end).map(|r| -i64::try_from(r).unwrap()),
+                        )),
+                        std::sync::Arc::new(UInt64Array::from(vec![
+                            1;
+                            usize::try_from(end - start)
+                                .unwrap()
+                        ])),
+                    ],
+                )
+                .unwrap();
+                if let Some(frame) = packer.push(2, &batch).unwrap() {
+                    frames.push(frame);
+                }
+            }
+            if let Some(frame) = packer.finish(2).unwrap() {
+                frames.push(frame);
+            }
+            assert!(packer.finish(0).unwrap().is_none());
+            assert!(packer.peak_rows <= 4 * crate::exchange::MAX_BATCH_ROWS);
+            let values: Vec<_> = frames
+                .iter()
+                .flat_map(|b| {
+                    b.column(0)
+                        .as_any()
+                        .downcast_ref::<UInt64Array>()
+                        .unwrap()
+                        .values()
+                        .to_vec()
+                })
+                .collect();
+            assert_eq!(values, (0..rows).collect::<Vec<_>>());
+            for (index, frame) in frames.iter().enumerate() {
+                if index + 1 < frames.len() {
+                    assert_eq!(frame.num_rows(), crate::exchange::MAX_BATCH_ROWS);
+                }
+                let keys = frame
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                let sums = frame
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Int64Array>()
+                    .unwrap();
+                for row in 0..frame.num_rows() {
+                    assert_eq!(sums.value(row), -i64::try_from(keys.value(row)).unwrap());
+                }
+            }
+        }
     }
 }

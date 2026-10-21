@@ -29,13 +29,13 @@ An ADR can intentionally refine an architectural recommendation, but it must rec
 
 The active phase is the hard scope boundary.
 
-Phase 7 is the active/completed boundary, defined by
-`docs/plans/phase-7-implementation-plan.md`, ADR-0014 and its implementation report.
-Phases 2–6 remain accepted. Explicit `expected_cost_v1` adds checked fixed-point
-complete-transfer persistence, producer staging/receipts, a worker-process-surviving
-shared fixture and restore-versus-recompute choices inside the same single-final-
-worker-loss envelope. Default/static and explicit `threshold_v1` remain.
-Do not begin Phase 8 without a new explicit instruction.
+Phase 8 is the active boundary, defined by
+`docs/plans/phase-8-implementation-plan.md`, ADR-0015 and its implementation report.
+Phases 2–7 remain accepted. Explicit `sampled_v1` adds a bounded real-source probe,
+immutable 48-shard ownership and a real active-final subset on fixed 2–4 hosts.
+Static defaults and threshold/expected-cost retention remain independent.
+Check the Phase 8 report for empirical completion: implementation is not evidence
+of passing the predeclared skew and overhead gates. Do not begin Phase 9.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
@@ -48,7 +48,8 @@ Do not begin Phase 8 without a new explicit instruction.
 - Preserve the pure policy/mechanism boundary and static defaults. No adaptive scheduling, joins, SQL frontend or streaming/state.
 - Run focused tests during development, one final workspace gate/smoke and focused
   five-mode static regression and focused adaptive 2-worker/limited 4-worker release
-  acceptance evidence, plus Phase 6 normal/recovered/unrecoverable and Phase 7 empirical economic acceptance.
+  acceptance evidence, plus Phase 6 normal/recovered/unrecoverable, Phase 7 empirical economic acceptance
+  and Phase 8 split/coalesce, pinned recovery and fixed release skew/uniform gates.
   Keep CI correctness-only; timing guards remain local release evidence.
 
 A small coherent implementation is preferred to speculative architecture.
@@ -127,13 +128,13 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. Phase 7 is recorded in:
+Each phase ends with an implementation report. Phase 8 is recorded in:
 
-`docs/reports/phase-7-implementation-report.md`
+`docs/reports/phase-8-implementation-report.md`
 
 Include baseline/final identity, supported failure envelope, source snapshot and
 file morsel truthfulness, lost ranges/closure, terminal fingerprint validation,
 attempt-safe gather, bounded metadata, cancellation/poisoning, protocol version,
-commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 8
-handoff. Preserve failed experiments. Preserve Phase 7 decision provenance, complete-copy identity, explicit cleanup and
-predeclared empirical criteria. Do not broaden recovery or begin Phase 8 as cleanup.
+commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 9
+boundary. Preserve failed experiments. Preserve Phase 7 decision provenance, complete-copy identity, explicit cleanup and
+predeclared empirical criteria. Do not broaden recovery or begin Phase 9 as cleanup.

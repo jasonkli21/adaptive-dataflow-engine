@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP06";
+const MAGIC: &[u8; 8] = b"ADETCP07";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -39,6 +39,18 @@ pub struct JobSpec {
 pub enum Request {
     Ping,
     PrepareJob(JobSpec),
+    Probe {
+        timeout_ms: u64,
+        job: JobId,
+        files: Vec<PathBuf>,
+    },
+    CommitLayout {
+        job: JobId,
+        layout: crate::topology::Layout,
+    },
+    VerifyInactive {
+        job: JobId,
+    },
     RunProducerTask {
         job: JobId,
         task: TaskId,
@@ -77,6 +89,7 @@ pub enum Request {
 pub enum Reply {
     Pong(WorkerEndpoint),
     Ready,
+    Probe(crate::topology::Observation),
     Task(TaskMetrics),
     Recovered {
         final_metrics: TaskMetrics,
@@ -269,7 +282,7 @@ mod tests {
         .unwrap();
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..bytes.len() - 1]).is_err());
         // Reject the prior recovery plan shape before decoding its payload.
-        bytes[7] = b'4';
+        bytes[7] = b'6';
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..]).is_err());
         let mut large = MAGIC.to_vec();
         large.extend_from_slice(&u32::MAX.to_le_bytes());

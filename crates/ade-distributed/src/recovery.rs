@@ -39,6 +39,7 @@ pub struct ReplayClosure {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RecoveryPlan {
+    pub layout_digest: Option<String>,
     pub job: JobId,
     pub partition: PartitionId,
     pub host: WorkerId,
@@ -175,6 +176,7 @@ pub fn plan(
             });
         }
         Ok(RecoveryPlan {
+            layout_digest: None,
             job,
             partition: PartitionId(partition),
             host: WorkerId(successful_finals[0]),
@@ -197,6 +199,12 @@ pub fn select_cost_actions(
     let Some(cost) = &config.cost else {
         return Ok(());
     };
+    require(
+        producers
+            .values()
+            .all(|p| p.layout_digest == plan.layout_digest),
+        "recovery producer topology mismatch",
+    )?;
     // Producer tasks upload selected complete copies before the all-producer
     // failure gate. Those uploads run independently per producer, but a producer
     // writes its destinations serially; use the slowest producer's measured total
@@ -224,6 +232,11 @@ pub fn select_cost_actions(
             .materializations
             .get(&plan.partition.0)
             .ok_or_else(|| Error::Invalid("missing expected-cost fact".into()))?;
+        require(
+            fact.topology_digest == plan.layout_digest
+                && producers[&closure.producer.0].layout_digest == plan.layout_digest,
+            "recovery materialization layout mismatch",
+        )?;
         validate_fact(
             fact,
             &closure.original,
@@ -274,6 +287,10 @@ pub(crate) fn validate_fact(
         "invalid materialization decision fact",
     )?;
     if let Some(receipt) = &fact.receipt {
+        require(
+            receipt.topology_digest == fact.topology_digest,
+            "receipt topology mismatch",
+        )?;
         receipt.validate(original, backend, execution_namespace)?;
     }
     Ok(())
@@ -415,8 +432,10 @@ mod tests {
                 task.materializations.insert(
                     *d,
                     MaterializationFact {
+                        topology_digest: None,
                         decision: cost.decide(observation).unwrap(),
                         receipt: Some(MaterializationReceipt {
+                            topology_digest: None,
                             version: 1,
                             original: original.clone(),
                             backend: backend.clone(),
@@ -515,8 +534,10 @@ mod tests {
             metrics.materializations.insert(
                 1,
                 MaterializationFact {
+                    topology_digest: None,
                     decision: cost.decide(observation).unwrap(),
                     receipt: Some(MaterializationReceipt {
+                        topology_digest: None,
                         version: 1,
                         original: original.clone(),
                         backend: backend.clone(),
@@ -541,6 +562,7 @@ mod tests {
             });
         }
         let mut plan = RecoveryPlan {
+            layout_digest: None,
             job: JobId(42),
             partition: PartitionId(1),
             host: WorkerId(0),
@@ -599,6 +621,26 @@ mod tests {
             !String::from_utf8(encoded)
                 .unwrap()
                 .contains("partition-00000")
+        );
+    }
+    #[test]
+    fn foreign_layout_cannot_reuse_materialization_facts() {
+        let (snapshot, producers) = facts();
+        let mut plan = plan(JobId(42), 2, Some(&snapshot), &producers, &[1], &[0]).unwrap();
+        plan.layout_digest = Some("b".repeat(64));
+        // Even a cost-bearing original fact with no matching layout is refused.
+        let config = crate::ExchangeConfig {
+            cost: Some(Box::default()),
+            ..Default::default()
+        };
+        assert!(
+            select_cost_actions(
+                &mut plan,
+                &producers,
+                &config,
+                "8abade70-a479-4c7e-9bd8-989ed8f1a1d7"
+            )
+            .is_err()
         );
     }
 }

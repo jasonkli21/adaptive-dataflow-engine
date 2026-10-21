@@ -19,11 +19,25 @@ pub(crate) struct Gather {
     committed: BTreeMap<u64, AttemptId>,
     job: JobId,
     workers: usize,
+    active: std::collections::BTreeSet<u64>,
 }
 impl Gather {
+    #[cfg(test)]
     pub(crate) fn new(parent: &Path, job: JobId, workers: usize) -> Result<Self> {
+        Self::with_active(parent, job, workers, (0..workers as u64).collect())
+    }
+    pub(crate) fn with_active(
+        parent: &Path,
+        job: JobId,
+        workers: usize,
+        active: std::collections::BTreeSet<u64>,
+    ) -> Result<Self> {
+        require(
+            !active.is_empty() && active.iter().all(|p| *p < workers as u64),
+            "invalid gather active set",
+        )?;
         let mut stores = BTreeMap::new();
-        for p in 0..workers as u64 {
+        for p in active.iter().copied() {
             stores.insert(
                 (p, 0),
                 Arc::new(Store::new(
@@ -52,6 +66,7 @@ impl Gather {
             committed: BTreeMap::new(),
             job,
             workers,
+            active,
         })
     }
     pub(crate) fn address(&self) -> SocketAddr {
@@ -145,7 +160,11 @@ impl Gather {
         &self,
     ) -> Result<(Vec<arrow::record_batch::RecordBatch>, NetworkMetrics)> {
         require(
-            self.committed.len() == self.workers,
+            self.committed
+                .keys()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                == self.active,
             "incomplete gather partition set",
         )?;
         let mut batches = Vec::new();

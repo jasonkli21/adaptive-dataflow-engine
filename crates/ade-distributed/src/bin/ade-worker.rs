@@ -7,6 +7,36 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--verify-topology" {
+        use std::io::Read;
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Evidence {
+            config: ade_distributed::topology::TopologyConfig,
+            decision: ade_distributed::topology::Decision,
+        }
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .take(ade_distributed::protocol::MAX_CONTROL_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > ade_distributed::protocol::MAX_CONTROL_BYTES {
+            return Err("overlarge topology evidence".into());
+        }
+        let evidence: Evidence = serde_json::from_slice(&bytes)?;
+        evidence
+            .decision
+            .layout
+            .validate(evidence.decision.layout.workers)?;
+        let expected = ade_distributed::topology::decide(
+            &evidence.config,
+            evidence.decision.layout.workers,
+            evidence.decision.observations.clone(),
+        )?;
+        if expected != evidence.decision {
+            return Err("topology decision does not reproduce".into());
+        }
+        return Ok(());
+    }
     if !(3..=4).contains(&args.len()) {
         return Err("usage: ade-worker WORKER_ID TEMP_PARENT [SHARED_OBJECT_ROOT]".into());
     }

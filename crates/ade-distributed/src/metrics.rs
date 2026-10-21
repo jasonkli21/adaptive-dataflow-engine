@@ -23,6 +23,13 @@ impl NetworkMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
+    pub routing_buffer_peak_rows: usize,
+    pub routing_buffer_capacity_rows: usize,
+    pub layout_digest: Option<String>,
+    pub executed_final: bool,
+    pub operator_work_ns: u64,
+    pub coordinator_finished_ns: u64,
+    pub source_pull_ns: u64,
     pub source_files: usize,
     pub production: crate::cost::Production,
     pub materializations: BTreeMap<u64, crate::materialization::MaterializationFact>,
@@ -40,6 +47,10 @@ pub struct TaskMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    pub topology: Option<crate::topology::Decision>,
+    pub topology_commit_ns: u64,
+    pub topology_probe_ns: u64,
+    pub inactive: BTreeMap<u64, TaskMetrics>,
     pub recovery: crate::recovery::RecoveryMetrics,
     pub adaptive: crate::adaptive::AdaptiveSummary,
     pub worker_count: usize,

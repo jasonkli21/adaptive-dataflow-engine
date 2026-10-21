@@ -82,8 +82,11 @@ impl SyntheticConfig {
         )?;
         require(self.key_cardinality > 0, "key cardinality must be positive")?;
         require(
-            matches!(self.distribution.as_str(), "uniform" | "hot-key"),
-            "distribution must be uniform or hot-key",
+            matches!(
+                self.distribution.as_str(),
+                "uniform" | "hot-key" | "hash-bucket-skew"
+            ),
+            "distribution must be uniform, hot-key or hash-bucket-skew",
         )?;
         require(
             self.hot_key_fraction.is_finite() && (0.0..=1.0).contains(&self.hot_key_fraction),
@@ -93,6 +96,12 @@ impl SyntheticConfig {
             require(
                 self.hot_key_count > 0 && self.hot_key_count < self.key_cardinality,
                 "hot keys must be in 1..cardinality",
+            )?;
+        }
+        if self.distribution == "hash-bucket-skew" {
+            require(
+                self.key_cardinality <= u64::MAX / 4,
+                "hash bucket key domain overflow",
             )?;
         }
         compression(&self.compression)?;
@@ -209,7 +218,12 @@ impl DatasetManifest {
                 require(
                     c.rows == self.row_count
                         && c.files == self.files.len()
-                        && self.generator_version == "1",
+                        && self.generator_version
+                            == if c.distribution == "hash-bucket-skew" {
+                                "2"
+                            } else {
+                                "1"
+                            },
                     "generator manifest mismatch",
                 )?;
             }
@@ -257,6 +271,17 @@ fn mix(mut x: u64) -> u64 {
     x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     x ^ (x >> 31)
 }
+fn inverse_mix(mut x: u64) -> u64 {
+    x ^= x >> 31;
+    x ^= x >> 62;
+    x = x.wrapping_mul(0x3196_42b2_d24d_8ec3);
+    x ^= x >> 27;
+    x ^= x >> 54;
+    x = x.wrapping_mul(0x96de_1b17_3f11_9089);
+    x ^= x >> 30;
+    x ^= x >> 60;
+    x.wrapping_sub(0x9e37_79b9_7f4a_7c15)
+}
 /// Direct deterministic row oracle: (key, secondary, integer value).
 #[must_use]
 #[allow(
@@ -268,7 +293,12 @@ fn mix(mut x: u64) -> u64 {
 pub fn row(c: &SyntheticConfig, id: u64) -> (u64, u64, i64) {
     let x = mix(id ^ c.seed);
     let hot_rows = (c.rows as f64 * c.hot_key_fraction).floor() as u64;
-    let key = if c.distribution == "hot-key" {
+    let key = if c.distribution == "hash-bucket-skew" {
+        // Invert the published SplitMix64 permutation: distinct keys deliberately
+        // collide into physical hash bucket 0 for BOTH 2- and 4-worker controls.
+        // This remains an engine-independent deterministic data fixture.
+        inverse_mix(4 * (x % c.key_cardinality))
+    } else if c.distribution == "hot-key" {
         if (u128::from(id + 1) * u128::from(hot_rows) / u128::from(c.rows))
             > (u128::from(id) * u128::from(hot_rows) / u128::from(c.rows))
         {
@@ -413,7 +443,7 @@ pub fn generate(output: &Path, dataset_id: &str, c: &SyntheticConfig) -> Result<
                 .to_hex()
                 .to_string(),
             generator: "synthetic-events".into(),
-            generator_version: "1".into(),
+            generator_version: if c.distribution == "hash-bucket-skew" {"2"} else {"1"}.into(),
             encoding_version: "parquet-59.3.1".into(),
             format: "parquet".into(),
             row_count: c.rows,
@@ -635,5 +665,31 @@ mod tests {
         assert!(second_last.1 - second_last.0 <= 2);
         assert!(last.1 - last.0 <= 2);
         assert!(file_range(rows, files, files).is_err());
+    }
+}
+
+#[cfg(test)]
+mod topology_fixture_tests {
+    use super::*;
+    #[test]
+    fn engineered_keys_are_distinct_and_in_one_base_hash_bucket() {
+        let c = SyntheticConfig {
+            distribution: "hash-bucket-skew".into(),
+            key_cardinality: 1024,
+            ..Default::default()
+        };
+        for x in [0, 1, 2, u64::MAX, 123_456_789] {
+            assert_eq!(mix(inverse_mix(x)), x);
+        }
+        let mut keys = std::collections::BTreeSet::new();
+        let mut shards = std::collections::BTreeSet::new();
+        for id in 0..10000 {
+            let key = row(&c, id).0;
+            assert_eq!(mix(key) % 4, 0);
+            keys.insert(key);
+            shards.insert(mix(key) % 48);
+        }
+        assert!(keys.len() > 1000);
+        assert_eq!(shards.len(), 12);
     }
 }

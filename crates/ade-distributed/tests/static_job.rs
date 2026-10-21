@@ -517,3 +517,546 @@ fn expected_cost_worker_loss_restores_or_recomputes_and_parent_cleans() {
         assert!(!parent.exists());
     }
 }
+
+fn topology_fixture(root: &Path, keys: &[u64]) -> Vec<PathBuf> {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("key", DataType::UInt64, false),
+        Field::new("value_i64", DataType::Int64, false),
+    ]));
+    (0..4)
+        .map(|file| {
+            let path = root.join(format!("{file}.parquet"));
+            let batch = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(UInt64Array::from(keys.to_vec())),
+                    Arc::new(Int64Array::from_iter_values(
+                        keys.iter()
+                            .map(|key| file - i64::try_from(key % 1000).unwrap()),
+                    )),
+                ],
+            )
+            .unwrap();
+            let mut writer =
+                ArrowWriter::try_new(File::create(&path).unwrap(), schema.clone(), None).unwrap();
+            writer.write(&batch).unwrap();
+            writer.close().unwrap();
+            path
+        })
+        .collect()
+}
+fn assert_topology_output(output: &coordinator::JobOutput, keys: &[u64], workers: usize) {
+    let mut actual = BTreeMap::new();
+    for batch in &output.batches {
+        let k = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        let s = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let c = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        for i in 0..k.len() {
+            assert!(
+                actual
+                    .insert(k.value(i), (s.value(i), c.value(i)))
+                    .is_none()
+            );
+        }
+    }
+    let expected: BTreeMap<_, _> = keys
+        .iter()
+        .map(|key| (*key, (6 - 4 * i64::try_from(key % 1000).unwrap(), 4)))
+        .collect();
+    assert_eq!(actual, expected);
+    let decision = output.metrics.topology.as_ref().unwrap();
+    assert_eq!(
+        output
+            .metrics
+            .finals
+            .keys()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>(),
+        decision.layout.active()
+    );
+    assert_eq!(
+        output.metrics.finals.len() + output.metrics.inactive.len(),
+        workers
+    );
+    assert_eq!(
+        output.metrics.gather.transfers,
+        output.metrics.finals.len() as u64
+    );
+    for task in output.metrics.inactive.values() {
+        assert!(!task.executed_final);
+        assert_eq!(task.received.transfers, workers as u64);
+        assert_eq!(
+            task.received.rows + task.received.batches + task.received.payload_bytes,
+            0
+        );
+    }
+    for task in output
+        .metrics
+        .producers
+        .values()
+        .chain(output.metrics.finals.values())
+    {
+        assert_eq!(task.layout_digest.as_ref(), Some(&decision.layout.digest));
+    }
+}
+#[test]
+fn runtime_split_and_real_coalesce_across_two_three_four_workers_and_retention() {
+    use ade_distributed::topology::{PartitionPolicy, TopologyConfig};
+    for n in 2..=4 {
+        let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), n).unwrap();
+        let mut id = 0;
+        for tiny in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let keys: Vec<_> = if tiny {
+                vec![0, 1, 2, 3]
+            } else {
+                (0..)
+                    .filter(|key| ade_distributed::partition::destination(*key, n).unwrap() == 0)
+                    .take(2048)
+                    .collect()
+            };
+            let files = topology_fixture(root.path(), &keys);
+            for mode in [
+                ExchangeMode::Direct,
+                ExchangeMode::Buffered,
+                ExchangeMode::Spill,
+                ExchangeMode::LocalMaterialized,
+                ExchangeMode::ObjectStoreMaterialized,
+                ExchangeMode::Adaptive,
+            ] {
+                id += 1;
+                let mut config = TaskConfig {
+                    topology: TopologyConfig {
+                        policy: PartitionPolicy::SampledV1,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                config.exchange.mode = mode;
+                config.memory_limit_bytes = 1024 * 1024;
+                config.exchange.buffer_bytes = if mode == ExchangeMode::Spill {
+                    1
+                } else {
+                    1024 * 1024
+                };
+                let output = coordinator::execute(&StaticAggregateJob {
+                    id: JobId(id),
+                    snapshot: None,
+                    files: files.clone(),
+                    workers: cluster.workers.clone(),
+                    config,
+                    task_timeout: Duration::from_secs(20),
+                })
+                .unwrap();
+                assert_topology_output(&output, &keys, n);
+                let d = output.metrics.topology.as_ref().unwrap();
+                if tiny {
+                    assert_eq!(d.reason, "coalesce_tiny");
+                    assert_eq!(output.metrics.finals.len(), 1);
+                } else {
+                    assert_eq!(d.reason, "split_oversized_bucket");
+                    assert_eq!(output.metrics.finals.len(), n);
+                    assert!(d.moved_shards > 0);
+                }
+            }
+        }
+    }
+}
+#[cfg(feature = "research-hooks")]
+#[test]
+fn runtime_layout_survives_real_worker_loss_by_replay_or_complete_copy() {
+    use ade_distributed::{
+        ObjectStoreConfig, ObjectStoreDurability,
+        cost::{CostConfig, MaterializationMode},
+        topology::{PartitionPolicy, TopologyConfig},
+    };
+    for (tiny, cost) in [(false, false), (true, false), (false, true), (true, true)] {
+        let root = tempfile::tempdir().unwrap();
+        let keys: Vec<_> = if tiny {
+            vec![0, 1, 2, 3]
+        } else {
+            (0..)
+                .filter(|key| ade_distributed::partition::destination(*key, 2).unwrap() == 0)
+                .take(4096)
+                .collect()
+        };
+        let files = topology_fixture(root.path(), &keys);
+        let cluster = if cost {
+            LocalCluster::spawn_with_materialization(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2)
+        } else {
+            LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2)
+        }
+        .unwrap();
+        let mut config = TaskConfig {
+            topology: TopologyConfig {
+                policy: PartitionPolicy::SampledV1,
+                ..Default::default()
+            },
+            research_exit_final_partition: Some(0),
+            ..Default::default()
+        };
+        if cost {
+            config.exchange.mode = ExchangeMode::Adaptive;
+            config.exchange.adaptive.remote_after_bytes = 0;
+            config.exchange.object_store = ObjectStoreConfig {
+                backend: "shared_local_fixture".into(),
+                durability: ObjectStoreDurability::WorkerProcessSurviving,
+            };
+            config.exchange.cost = Some(Box::new(CostConfig {
+                mode: MaterializationMode::Always,
+                source_read_nano_usd_per_byte: 1000,
+                ..Default::default()
+            }));
+        }
+        let output = coordinator::execute(&StaticAggregateJob {
+            id: JobId(1),
+            snapshot: Some(source_snapshot(&files)),
+            files,
+            workers: cluster.workers.clone(),
+            config,
+            task_timeout: Duration::from_secs(30),
+        })
+        .unwrap();
+        assert_topology_output(&output, &keys, 2);
+        let recovery = &output.metrics.recovery;
+        assert_eq!(recovery.recovered_partitions, 1);
+        assert_eq!(
+            recovery.committed_attempts[&0],
+            ade_distributed::ids::AttemptId(1)
+        );
+        assert_eq!(
+            recovery.plan.as_ref().unwrap().layout_digest.as_ref(),
+            Some(&output.metrics.topology.as_ref().unwrap().layout.digest)
+        );
+        if cost {
+            assert!(recovery.restored_segments > 0);
+            assert_eq!(files_below(&cluster.temp_root().join("shared-objects")), 0);
+        } else {
+            assert!(recovery.recomputed_segments > 0);
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "One state-machine fixture covers admission, fencing and cleanup."
+)]
+fn sampled_protocol_fences_early_tasks_duplicate_commit_and_bounded_probe_failure() {
+    use ade_distributed::{
+        ids::{AttemptId, TaskId},
+        protocol::{self, JobSpec, Reply, Request},
+        topology::{Layout, PartitionPolicy, TopologyConfig},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let files = topology_fixture(root.path(), &[0, 1, 2, 3]);
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let config = TaskConfig {
+        topology: TopologyConfig {
+            policy: PartitionPolicy::SampledV1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let endpoint = &cluster.workers[0];
+    let rpc = |request| protocol::rpc(endpoint, request, Duration::from_secs(5));
+    let spec = JobSpec {
+        job: JobId(1),
+        execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
+        workers: cluster.workers.clone(),
+        config: config.clone(),
+        snapshot: None,
+    };
+    rpc(Request::PrepareJob(spec)).unwrap();
+    assert!(
+        rpc(Request::RunProducerTask {
+            job: JobId(1),
+            task: TaskId(0),
+            attempt: AttemptId(0),
+            files: files.clone()
+        })
+        .is_err()
+    );
+    assert!(
+        rpc(Request::CommitLayout {
+            job: JobId(1),
+            layout: Layout::static_layout(2).unwrap()
+        })
+        .is_err()
+    );
+    assert!(
+        ade_distributed::exchange::Sender::new(
+            endpoint.exchange,
+            ade_distributed::ids::transfer(JobId(1), 0, 0, 0),
+            ade_exec::CancellationToken::default()
+        )
+        .unwrap()
+        .finish()
+        .is_err()
+    );
+    assert!(matches!(
+        rpc(Request::Probe {
+            timeout_ms: 5000,
+            job: JobId(1),
+            files: files.clone()
+        })
+        .unwrap(),
+        Reply::Probe(_)
+    ));
+    assert!(
+        rpc(Request::Probe {
+            timeout_ms: 5000,
+            job: JobId(1),
+            files: files.clone()
+        })
+        .is_err()
+    );
+    let mut invalid = Layout::static_layout(2).unwrap();
+    invalid.digest.clear();
+    assert!(
+        rpc(Request::CommitLayout {
+            job: JobId(1),
+            layout: invalid
+        })
+        .is_err()
+    );
+    rpc(Request::CommitLayout {
+        job: JobId(1),
+        layout: Layout::static_layout(2).unwrap(),
+    })
+    .unwrap();
+    assert!(
+        rpc(Request::CommitLayout {
+            job: JobId(1),
+            layout: Layout::static_layout(2).unwrap()
+        })
+        .is_err()
+    );
+    rpc(Request::CancelJob { job: JobId(1) }).unwrap();
+    let mut bounded = config.clone();
+    bounded.topology.sample_bytes = 1;
+    let mut job = StaticAggregateJob {
+        id: JobId(2),
+        files,
+        workers: cluster.workers.clone(),
+        config: bounded,
+        task_timeout: Duration::from_secs(5),
+        snapshot: None,
+    };
+    let start = Instant::now();
+    assert!(coordinator::execute(&job).is_err());
+    assert!(start.elapsed() < Duration::from_secs(10));
+    job.id = JobId(3);
+    job.config = config;
+    assert!(coordinator::execute(&job).is_ok());
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "One partial-commit fixture proves source and cross-job fencing."
+)]
+fn biased_probe_and_partial_layout_commit_preserve_correctness_and_cleanup() {
+    use ade_distributed::{
+        protocol::{self, JobSpec, Request},
+        topology::{Layout, PartitionPolicy, TopologyConfig},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let keys: Vec<_> = (0..2048).collect();
+    let files = topology_fixture(root.path(), &keys);
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let config = TaskConfig {
+        topology: TopologyConfig {
+            policy: PartitionPolicy::SampledV1,
+            sample_rows: 1,
+            rows_per_file: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut job = StaticAggregateJob {
+        id: JobId(1),
+        files: files.clone(),
+        workers: cluster.workers.clone(),
+        config: config.clone(),
+        snapshot: Some(source_snapshot(&files)),
+        task_timeout: Duration::from_secs(20),
+    };
+    let output = coordinator::execute(&job).unwrap();
+    assert_topology_output(&output, &keys, 2);
+    assert_eq!(
+        output.metrics.topology.as_ref().unwrap().reason,
+        "unsplittable_single_shard"
+    );
+    for endpoint in &cluster.workers {
+        protocol::rpc(
+            endpoint,
+            Request::PrepareJob(JobSpec {
+                job: JobId(2),
+                execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
+                workers: cluster.workers.clone(),
+                config: config.clone(),
+                snapshot: job.snapshot.clone(),
+            }),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    }
+    let endpoint = &cluster.workers[0];
+    assert!(
+        protocol::rpc(
+            endpoint,
+            Request::Probe {
+                job: JobId(2),
+                files: files.clone(),
+                timeout_ms: 5000
+            },
+            Duration::from_secs(5)
+        )
+        .is_err()
+    );
+    protocol::rpc(
+        endpoint,
+        Request::Probe {
+            job: JobId(2),
+            files: vec![files[0].clone(), files[2].clone()],
+            timeout_ms: 5000,
+        },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    protocol::rpc(
+        endpoint,
+        Request::CommitLayout {
+            job: JobId(2),
+            layout: Layout::static_layout(2).unwrap(),
+        },
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    // Only endpoint 0 committed. Endpoint 1 cannot produce under the partial plan.
+    assert!(
+        protocol::rpc(
+            &cluster.workers[1],
+            Request::RunProducerTask {
+                job: JobId(2),
+                task: ade_distributed::ids::TaskId(1),
+                attempt: ade_distributed::ids::AttemptId(0),
+                files: vec![files[1].clone(), files[3].clone()]
+            },
+            Duration::from_secs(5)
+        )
+        .is_err()
+    );
+    for endpoint in &cluster.workers {
+        protocol::rpc(
+            endpoint,
+            Request::CancelJob { job: JobId(2) },
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    }
+    job.id = JobId(3);
+    assert_topology_output(&coordinator::execute(&job).unwrap(), &keys, 2);
+    assert!(
+        protocol::rpc(
+            endpoint,
+            Request::CommitLayout {
+                job: JobId(2),
+                layout: Layout::static_layout(2).unwrap()
+            },
+            Duration::from_secs(5)
+        )
+        .is_err()
+    );
+}
+
+#[cfg(feature = "research-hooks")]
+#[test]
+fn dynamic_unsupported_loss_and_source_drift_fail_closed() {
+    use ade_distributed::topology::{PartitionPolicy, TopologyConfig};
+    for (tiny, snapshot) in [(true, true), (false, false), (false, true)] {
+        let root = tempfile::tempdir().unwrap();
+        let keys: Vec<_> = if tiny {
+            vec![0, 1, 2, 3]
+        } else {
+            (0..4096).collect()
+        };
+        let files = topology_fixture(root.path(), &keys);
+        let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+        let config = TaskConfig {
+            topology: TopologyConfig {
+                policy: PartitionPolicy::SampledV1,
+                ..Default::default()
+            },
+            research_exit_final_partition: Some(u64::from(tiny)),
+            ..Default::default()
+        };
+        let job = StaticAggregateJob {
+            id: JobId(1),
+            snapshot: snapshot.then(|| source_snapshot(&files)),
+            files: files.clone(),
+            workers: cluster.workers.clone(),
+            config,
+            task_timeout: Duration::from_secs(20),
+        };
+        if snapshot && !tiny {
+            use std::io::Write;
+            File::options()
+                .append(true)
+                .open(&files[0])
+                .unwrap()
+                .write_all(b"drift")
+                .unwrap();
+        }
+        let error = coordinator::execute(&job).err().unwrap().to_string();
+        if tiny {
+            assert!(error.contains("inactive"), "{error}");
+        } else if !snapshot {
+            assert!(error.contains("source snapshot"), "{error}");
+        } else {
+            assert!(error.contains("source size mismatch"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn static_packed_is_an_explicit_static_diagnostic() {
+    let root = tempfile::tempdir().unwrap();
+    let files = fixture(root.path());
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let mut config = TaskConfig::default();
+    config.topology.policy = ade_distributed::topology::PartitionPolicy::StaticPacked;
+    let output = coordinator::execute(&StaticAggregateJob {
+        id: JobId(1),
+        files,
+        workers: cluster.workers.clone(),
+        config,
+        task_timeout: Duration::from_secs(20),
+        snapshot: None,
+    })
+    .unwrap();
+    assert!(output.metrics.topology.is_none());
+    assert!(
+        output
+            .metrics
+            .producers
+            .values()
+            .all(|p| p.layout_digest.is_none()
+                && p.routing_buffer_peak_rows <= p.routing_buffer_capacity_rows
+                && p.routing_buffer_capacity_rows == 2 * ade_distributed::exchange::MAX_BATCH_ROWS)
+    );
+    verify_output(output, ExchangeMode::LocalMaterialized);
+}

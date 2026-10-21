@@ -18,6 +18,7 @@ use std::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaterializationReceipt {
+    pub topology_digest: Option<String>,
     pub version: u32,
     pub original: TransferManifest,
     pub backend: crate::ObjectStoreConfig,
@@ -56,6 +57,7 @@ impl MaterializationReceipt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaterializationFact {
+    pub topology_digest: Option<String>,
     pub decision: Decision,
     pub receipt: Option<MaterializationReceipt>,
     pub staging_write_bytes: u64,
@@ -134,6 +136,7 @@ impl Staging {
             "staging coverage mismatch",
         )?;
         let mut fact = MaterializationFact {
+            topology_digest: None,
             decision,
             receipt: None,
             staging_write_bytes: self.bytes,
@@ -183,6 +186,7 @@ impl Staging {
             "staged manifest mismatch",
         )?;
         let receipt = MaterializationReceipt {
+            topology_digest: None,
             version: 1,
             original: manifest.clone(),
             backend: backend.clone(),

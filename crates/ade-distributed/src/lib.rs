@@ -16,8 +16,10 @@ pub mod ids;
 pub mod lineage;
 pub mod metrics;
 pub mod partition;
+mod probe;
 pub mod protocol;
 pub mod recovery;
+pub mod topology;
 pub mod worker;
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, time::Duration};
@@ -71,6 +73,7 @@ pub struct WorkerEndpoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskConfig {
+    pub topology: topology::TopologyConfig,
     pub batch_size: usize,
     pub memory_limit_bytes: usize,
     pub spill_enabled: bool,
@@ -82,6 +85,7 @@ pub struct TaskConfig {
 impl Default for TaskConfig {
     fn default() -> Self {
         Self {
+            topology: topology::TopologyConfig::default(),
             batch_size: 8192,
             memory_limit_bytes: 256 * 1024 * 1024,
             spill_enabled: true,
@@ -108,6 +112,7 @@ impl TaskConfig {
         require(self.batch_size > 0, "positive batch_size required")?;
         self.execution().validate()?;
         self.exchange.validate()?;
+        self.topology.validate()?;
         Ok(())
     }
 }

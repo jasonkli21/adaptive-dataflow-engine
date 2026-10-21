@@ -294,6 +294,7 @@ struct Registry {
 }
 /// One fixed expected transfer set and a unique execution-local root.
 pub struct Store {
+    layout: Mutex<Option<crate::topology::Layout>>,
     root: tempfile::TempDir,
     expected: BTreeSet<TransferId>,
     registry: Mutex<Registry>,
@@ -371,6 +372,7 @@ impl Store {
             None
         };
         Ok(Self {
+            layout: Mutex::new(None),
             root,
             config,
             buffer,
@@ -390,6 +392,17 @@ impl Store {
     }
     /// # Errors
     /// Returns cancellation or incomplete-transfer errors.
+    pub(crate) fn install_layout(&self, layout: crate::topology::Layout) -> Result<()> {
+        layout.validate(layout.workers)?;
+        let registry = self.registry.lock().expect("registry lock");
+        require(registry.started.is_empty(), "layout after exchange started")?;
+        let mut current = self.layout.lock().expect("layout lock");
+        require(current.is_none(), "layout already installed")?;
+        *current = Some(layout);
+        Ok(())
+    }
+    /// # Errors
+    /// Requires completed locally materialized transfers.
     pub fn paths(&self) -> Result<Vec<PathBuf>> {
         self.cancellation.check()?;
         require(
@@ -584,6 +597,22 @@ impl Store {
         }
         result
     }
+    fn validate_ownership(&self, batch: &RecordBatch, header: &Header) -> Result<()> {
+        if let Some(layout) = self.layout.lock().expect("layout lock").as_ref() {
+            let keys = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow::array::UInt64Array>()
+                .ok_or_else(|| Error::Invalid("routing key type".into()))?;
+            require(
+                keys.values()
+                    .iter()
+                    .all(|key| layout.route(*key) as u64 == header.id.partition.0),
+                "batch violates committed key ownership",
+            )?;
+        }
+        Ok(())
+    }
     fn receive_inner(&self, header: &Header, socket: &mut TcpStream) -> Result<()> {
         header.validate()?;
         self.cancellation.check()?;
@@ -629,6 +658,7 @@ impl Store {
             frame.read_exact(&mut encoded)?;
             let batch = decode(&encoded)?;
             require(batch.num_rows() > 0, "empty data segment")?;
+            self.validate_ownership(&batch, header)?;
             let rows = batch.num_rows() as u64;
             if let Some(writer) = &mut writer {
                 writer.write(&batch)?;
@@ -1663,5 +1693,49 @@ mod tests {
         let empty = run(0, vec![]);
         empty.validate_replay(&run(1, vec![])).unwrap();
         assert_ne!(empty.fingerprint, original.fingerprint);
+    }
+}
+
+#[cfg(test)]
+mod topology_tests {
+    use super::*;
+    #[test]
+    fn misrouted_but_row_conserving_batch_is_rejected() {
+        use crate::{
+            ids::{JobId, transfer},
+            topology::Layout,
+        };
+        use arrow::array::{Int64Array, UInt64Array};
+        let root = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(800), 0, 0, 0);
+        let store =
+            Arc::new(Store::new(root.path(), [id].into(), CancellationToken::default()).unwrap());
+        store
+            .install_layout(Layout::static_layout(2).unwrap())
+            .unwrap();
+        assert!(
+            store
+                .install_layout(Layout::static_layout(2).unwrap())
+                .is_err()
+        );
+        let receiving = store.clone();
+        let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+            Ok(receiving.clone())
+        })
+        .unwrap();
+        // hash_v1(0)%2 == 1, but counts/schema/transfer identity alone all look legal.
+        let batch = RecordBatch::try_new(
+            schema(),
+            vec![
+                Arc::new(UInt64Array::from(vec![0])),
+                Arc::new(Int64Array::from(vec![1])),
+                Arc::new(UInt64Array::from(vec![1])),
+            ],
+        )
+        .unwrap();
+        let mut sender = Sender::new(receiver.address, id, CancellationToken::default()).unwrap();
+        sender.batch(&batch).unwrap();
+        assert!(sender.finish().is_err());
+        assert!(store.cancellation.check().is_err());
     }
 }

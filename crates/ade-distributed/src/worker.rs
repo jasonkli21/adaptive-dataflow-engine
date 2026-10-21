@@ -21,6 +21,9 @@ use std::{
     time::{Duration, Instant},
 };
 struct Job {
+    layout: Mutex<Option<crate::topology::Layout>>,
+    probe_started: AtomicBool,
+    probe_files: Mutex<Option<Vec<PathBuf>>>,
     spec: JobSpec,
     parent: PathBuf,
     copy: Option<crate::retention::Objects>,
@@ -32,6 +35,38 @@ struct Job {
     recovery_started: AtomicBool,
     #[cfg(feature = "research-hooks")]
     release_final: AtomicBool,
+}
+fn committed_layout(job: &Job) -> Result<Option<crate::topology::Layout>> {
+    let layout = job.layout.lock().expect("layout lock").clone();
+    require(
+        job.spec.config.topology.policy != crate::topology::PartitionPolicy::SampledV1
+            || layout.is_some(),
+        "exchange/task before layout commitment",
+    )?;
+    Ok(layout)
+}
+#[derive(Debug)]
+struct TimedSource {
+    inner: Box<dyn ade_exec::BatchSource>,
+    pulls: Arc<std::sync::atomic::AtomicU64>,
+}
+impl ade_exec::BatchSource for TimedSource {
+    fn schema(&self) -> arrow::datatypes::SchemaRef {
+        self.inner.schema()
+    }
+    fn next_batch(
+        &mut self,
+        token: &CancellationToken,
+    ) -> ade_exec::Result<Option<arrow::record_batch::RecordBatch>> {
+        let start = Instant::now();
+        let result = self.inner.next_batch(token);
+        self.pulls
+            .fetch_add(crate::materialization::ns(start), Ordering::Relaxed);
+        result
+    }
+    fn shutdown(&mut self) {
+        self.inner.shutdown();
+    }
 }
 struct State {
     endpoint: WorkerEndpoint,
@@ -75,6 +110,11 @@ fn task_metrics(
 ) -> TaskMetrics {
     TaskMetrics {
         source_files,
+        operator_work_ns: output
+            .operators
+            .values()
+            .map(|m| u64::try_from(m.work_time.as_nanos()).unwrap_or(u64::MAX))
+            .sum(),
         input_rows: output
             .operators
             .values()
@@ -100,6 +140,7 @@ fn producer(
 ) -> Result<TaskMetrics> {
     let start = Instant::now();
     let token = job.store.cancellation.clone();
+    let layout = committed_layout(job)?;
     // Do not hold idle receiver connections while a blocking aggregate builds.
     let open = |p: usize| {
         let sender = Sender::new(
@@ -114,6 +155,8 @@ fn producer(
         }
     };
     let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
+    let mut packer = (job.spec.config.topology.policy != crate::topology::PartitionPolicy::Static)
+        .then(|| partition::FramePacker::new(job.spec.workers.len()));
     let mut metrics = if files.is_empty() {
         TaskMetrics::default()
     } else {
@@ -135,8 +178,17 @@ fn producer(
                     if target.is_some_and(|(partition, _)| partition != p) {
                         continue;
                     }
-                    let selected = partition::select(&batch, p, count).map_err(local_sink_error)?;
-                    if selected.num_rows() > 0 {
+                    let selected = match &layout {
+                        Some(layout) => partition::select_layout(&batch, p, layout),
+                        None => partition::select(&batch, p, count),
+                    }
+                    .map_err(local_sink_error)?;
+                    let selected = if let Some(packer) = &mut packer {
+                        packer.push(p, &selected).map_err(local_sink_error)?
+                    } else {
+                        Some(selected)
+                    };
+                    if let Some(selected) = selected.filter(|b| b.num_rows() > 0) {
                         if sender.is_none() {
                             *sender = Some(open(p).map_err(local_sink_error)?);
                         }
@@ -159,6 +211,19 @@ fn producer(
             })?;
         metrics
     };
+    if let Some(packer) = &mut packer {
+        for (p, sender) in senders.iter_mut().enumerate() {
+            if let Some(batch) = packer.finish(p)? {
+                if sender.is_none() {
+                    *sender = Some(open(p)?);
+                }
+                sender.as_mut().expect("opened").batch(&batch)?;
+            }
+        }
+        metrics.routing_buffer_peak_rows = packer.peak_rows;
+        metrics.routing_buffer_capacity_rows =
+            job.spec.workers.len() * crate::exchange::MAX_BATCH_ROWS;
+    }
     metrics.production.wall_elapsed_ns = crate::materialization::ns(start);
     metrics.production.source_requests = files.len() as u64;
     metrics.production.source_bytes = files.iter().try_fold(0u64, |sum, path| {
@@ -198,7 +263,7 @@ fn producer(
             .as_ref()
             .expect("copy policy")
             .decide(observation)?;
-        let fact = staging.complete(
+        let mut fact = staging.complete(
             id,
             &manifest,
             decision,
@@ -206,6 +271,10 @@ fn producer(
             &job.spec.config.exchange.object_store,
             &token,
         )?;
+        if let Some(receipt) = &mut fact.receipt {
+            receipt.topology_digest = layout.as_ref().map(|l| l.digest.clone());
+        }
+        fact.topology_digest = layout.as_ref().map(|l| l.digest.clone());
         metrics.materializations.insert(p as u64, fact);
     }
     token.check()?;
@@ -213,6 +282,7 @@ fn producer(
     metrics.production.output_segments = metrics.sent.batches;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
+    metrics.layout_digest = layout.as_ref().map(|l| l.digest.clone());
     Ok(metrics)
 }
 fn final_task(
@@ -235,8 +305,12 @@ fn final_task(
         )
     };
     let mut sender: Option<Sender> = None;
+    let pulls = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let output = ade_exec::execute_merge_source_to_sink(
-        job.store.reader(),
+        Box::new(TimedSource {
+            inner: job.store.reader(),
+            pulls: pulls.clone(),
+        }),
         job.spec.config.execution(),
         token.clone(),
         |batch| {
@@ -264,6 +338,9 @@ fn final_task(
     )?;
     job.store.validate_retention_drained()?;
     let mut metrics = task_metrics(start, &output, 0);
+    metrics.executed_final = true;
+    metrics.layout_digest = committed_layout(job)?.as_ref().map(|l| l.digest.clone());
+    metrics.source_pull_ns = pulls.load(Ordering::Relaxed);
     let sender = match sender {
         Some(sender) => sender,
         None => open()?,
@@ -362,7 +439,18 @@ fn recover_inner(
     let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0")?, move |_| {
         Ok(receiving.clone())
     })?;
+    let layout = committed_layout(original)?;
+    require(
+        plan.layout_digest == layout.as_ref().map(|l| l.digest.clone()),
+        "recovery layout mismatch",
+    )?;
+    if let Some(layout) = &layout {
+        store.install_layout(layout.clone())?;
+    }
     let replay = Job {
+        layout: Mutex::new(layout),
+        probe_started: AtomicBool::new(true),
+        probe_files: Mutex::new(None),
         spec: original.spec.clone(),
         parent: state.parent.clone(),
         copy: None,
@@ -390,6 +478,10 @@ fn recover_inner(
             "recovery requires full transfer range",
         )?;
         let manifest = if let Some(receipt) = &closure.restore {
+            require(
+                receipt.topology_digest == plan.layout_digest,
+                "restore layout mismatch",
+            )?;
             let objects = original
                 .copy
                 .as_ref()
@@ -559,6 +651,9 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 None
             };
             *current = Some(Arc::new(Job {
+                layout: Mutex::new(None),
+                probe_started: AtomicBool::new(false),
+                probe_files: Mutex::new(None),
                 spec,
                 parent: state.parent.clone(),
                 copy,
@@ -582,6 +677,118 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
         Request::ReleaseFinal { job: id } => {
             let _ = job(state, id)?;
             Ok(Reply::Ready)
+        }
+        Request::Probe {
+            job: id,
+            files,
+            timeout_ms,
+        } => {
+            let job = job(state, id)?;
+            require(
+                job.spec.config.topology.policy == crate::topology::PartitionPolicy::SampledV1,
+                "probe requires sampled_v1",
+            )?;
+            require(
+                (1..=120_000).contains(&timeout_ms),
+                "invalid probe deadline",
+            )?;
+            require(
+                !state.producer_busy.swap(true, Ordering::AcqRel),
+                "producer/probe role busy",
+            )?;
+            let _guard = TaskGuard(&state.producer_busy);
+            if let Some(snapshot) = &job.spec.snapshot {
+                let morsels =
+                    snapshot.producer_morsels(TaskId(state.endpoint.id.0), job.spec.workers.len());
+                require(
+                    morsels.iter().map(|m| &m.path).eq(files.iter()),
+                    "probe source assignment mismatch",
+                )?;
+                for morsel in morsels.iter().take(job.spec.config.topology.max_files) {
+                    require(
+                        std::fs::metadata(&morsel.path)?.len() == morsel.bytes,
+                        "probe source size mismatch",
+                    )?;
+                }
+            }
+            require(
+                !job.probe_started.swap(true, Ordering::AcqRel),
+                "duplicate probe",
+            )?;
+            let result = crate::probe::probe(
+                &files,
+                state.endpoint.id.0,
+                &job.spec.config.topology,
+                &job.store.cancellation,
+                Instant::now() + Duration::from_millis(timeout_ms),
+            );
+            match result {
+                Ok(observation) => {
+                    *job.probe_files.lock().expect("probe files") = Some(files);
+                    Ok(Reply::Probe(observation))
+                }
+                Err(error) => {
+                    job.store.cancellation.cancel();
+                    Err(error)
+                }
+            }
+        }
+        Request::CommitLayout { job: id, layout } => {
+            let job = job(state, id)?;
+            require(
+                job.spec.config.topology.policy == crate::topology::PartitionPolicy::SampledV1
+                    && job.probe_files.lock().expect("probe files").is_some(),
+                "layout before successful probe",
+            )?;
+            layout.validate(job.spec.workers.len())?;
+            let mut current = job.layout.lock().expect("layout lock");
+            require(
+                current.is_none()
+                    && !job.producer_started.load(Ordering::Acquire)
+                    && !job.final_started.load(Ordering::Acquire),
+                "duplicate/late layout commit",
+            )?;
+            job.store.install_layout(layout.clone())?;
+            *current = Some(layout);
+            Ok(Reply::Ready)
+        }
+        Request::VerifyInactive { job: id } => {
+            let job = job(state, id)?;
+            let layout = committed_layout(&job)?
+                .ok_or_else(|| Error::Invalid("inactive static destination".into()))?;
+            require(
+                !layout.active().contains(&state.endpoint.id.0),
+                "active destination cannot be idle",
+            )?;
+            require(
+                !state.final_busy.swap(true, Ordering::AcqRel),
+                "final role busy",
+            )?;
+            let _guard = TaskGuard(&state.final_busy);
+            require(
+                !job.final_started.swap(true, Ordering::AcqRel),
+                "duplicate inactive verification",
+            )?;
+            let mut source = job.store.reader();
+            require(
+                source.next_batch(&job.store.cancellation)?.is_none(),
+                "inactive destination contains data",
+            )?;
+            job.store.validate_retention_drained()?;
+            let received = job.store.metrics()?;
+            require(
+                received.transfers == job.spec.workers.len() as u64
+                    && received.rows == 0
+                    && received.batches == 0
+                    && received.payload_bytes == 0,
+                "invalid inactive terminals",
+            )?;
+            Ok(Reply::Task(TaskMetrics {
+                layout_digest: Some(layout.digest),
+                received,
+                retention: job.store.retention_metrics()?,
+                ..Default::default()
+            }))
         }
         Request::RecoverFinal { plan, gather } => recover(state, &plan, gather),
         Request::CleanupMaterializations {
@@ -663,8 +870,23 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 task_id == TaskId(expected) && attempt == AttemptId(0),
                 "task/attempt identity mismatch",
             )?;
+            let layout = committed_layout(&job)?;
+            if is_final {
+                require(
+                    layout
+                        .as_ref()
+                        .is_none_or(|l| l.active().contains(&state.endpoint.id.0)),
+                    "final task on inactive destination",
+                )?;
+            }
             let result = match task {
                 Request::RunProducerTask { files, .. } => {
+                    if layout.is_some() {
+                        require(
+                            job.probe_files.lock().expect("probe files").as_ref() == Some(&files),
+                            "producer differs from probed assignment",
+                        )?;
+                    }
                     require(
                         !job.producer_started.swap(true, Ordering::AcqRel),
                         "producer task already started",
@@ -799,7 +1021,9 @@ fn serve_inner(
     });
     let receiving = state.clone();
     let receiver = Receiver::start(exchange_listener, move |header| {
-        Ok(job(&receiving, header.id.job)?.store.clone())
+        let job = job(&receiving, header.id.job)?;
+        committed_layout(&job)?;
+        Ok(job.store.clone())
     })?;
     protocol::write_message(&mut ready, &endpoint)?;
     ready.flush()?;
@@ -954,6 +1178,7 @@ mod tests {
         );
         current.store.poison();
         let plan = crate::recovery::RecoveryPlan {
+            layout_digest: None,
             job: JobId(43),
             host: state.endpoint.id,
             partition: crate::ids::PartitionId(1),

@@ -719,7 +719,11 @@ remote shuffle
 object-store materialization
 ```
 
-The physical graph fixes the first. Runtime policy may adapt the second.
+The physical graph fixes the distribution semantics. Runtime policy may adapt
+retention. ADR-0015 refines hash distribution for Phase 8: bounded source
+observations choose one immutable key-shard ownership map and active final set
+inside a prepared running job, before the first exchange data. No mid-exchange
+routing-epoch switch is supported; hash v1 and fixed worker processes remain.
 
 ---
 

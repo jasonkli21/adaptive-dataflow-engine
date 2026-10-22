@@ -22,6 +22,8 @@ Document precedence for implementation work is:
 
 An accepted ADR may intentionally refine or supersede a recommendation here, but it must identify the affected section/invariant and explain why. **Illustrative Rust APIs in this document are not frozen interfaces.** They show responsibility boundaries, not exact signatures.
 
+An accepted ADR does not silently widen an active phase plan; changes to a phase deliverable or boundary must be reconciled in that plan while preserving PRD outcomes and architecture invariants.
+
 ## 1. Purpose
 
 This document translates the ADE product requirements into a durable system architecture.
@@ -722,7 +724,9 @@ object-store materialization
 The physical graph fixes the distribution semantics. Runtime policy may adapt
 retention. ADR-0015 refines hash distribution for Phase 8: bounded source
 observations choose one immutable key-shard ownership map and active final set
-inside a prepared running job, before the first exchange data. No mid-exchange
+inside a prepared running job, before the first exchange data. The observations
+come from bounded source-prefix probes; original partial aggregation has not
+started when the layout is committed. No in-flight transition or mid-exchange
 routing-epoch switch is supported; hash v1 and fixed worker processes remain.
 
 ---

@@ -1,4 +1,6 @@
-//! Distributed aggregation with static topology and selectable retention and bounded lineage recovery.
+//! Distributed aggregation on fixed worker hosts.
+//! Static routing is the default; optional pre-exchange key-shard routing,
+//! selectable retention and bounded lineage recovery are supported.
 pub mod adaptive;
 pub mod cost;
 pub mod materialization;

@@ -50,7 +50,21 @@ cargo bench -p ade-bench --bench smoke -- --test
 
 Criterion measures a stable BLAKE3 buffer operation independently of macrobench orchestration. Read [methodology](../docs/research/benchmarking-methodology.md) before interpreting results. `examples/result-v1.json` is an intentionally small schema example, not a performance claim.
 
-## Phase 3 static distributed adapter
+## Phase 8 sampled pre-exchange routing
+
+The distributed adapter can opt into `partition_policy=sampled_v1`; the static
+behavior described below remains the default baseline. Synthetic
+`hash-bucket-skew` uses generator version 2 and produces distinct keys that
+collide in the original worker bucket. The reported release workload is limited
+to 131072 keys by the current spillable aggregate's supported capacity; the
+original 262144-key attempt remains a preserved failed experiment. See the
+[Phase 8 plan](../docs/plans/phase-8-implementation-plan.md),
+[acceptance report](../docs/reports/phase-8-implementation-report.md), and
+[benchmark methodology](../docs/research/benchmarking-methodology.md) for fixed
+gates and evidence status. Phase 8 remains incomplete because its primary
+two-worker skew gates failed.
+
+## Phase 3 static distributed baseline
 
 Build with `cargo build --release --workspace` so `ade-worker` is present beside
 `ade-bench`. Use `--engine ade-distributed --engine-option workers=2` (or 4) with
@@ -58,6 +72,10 @@ any existing synthetic aggregate spec. Scan, filter/project, sort and Q1 are
 rejected by this adapter. The four local options listed above also apply; each
 worker runs one producer and one final task. Files come only from the manifest,
 assigned round robin. Gather concatenates disjoint partitions. No retries.
+
+This section records the original Phase 3 behavior. Phase 8 adds optional
+sampled pre-exchange routing and a bounded single-final recovery path; it does
+not rewrite the Phase 3 baseline. See the Phase 8 links above for current behavior.
 
 `ADE_LOG=debug` standalone validation emits structured per-worker source/input/
 partial/final rows, destination payload bytes/transfers/peak frames, durations,

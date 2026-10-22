@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP07";
+const MAGIC: &[u8; 8] = b"ADETCP08";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -281,8 +281,8 @@ mod tests {
         )
         .unwrap();
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..bytes.len() - 1]).is_err());
-        // Reject the prior recovery plan shape before decoding its payload.
-        bytes[7] = b'6';
+        // Reject the prior source-observation shape before decoding its payload.
+        bytes[7] = b'7';
         assert!(read_message::<Envelope<Request>>(&mut &bytes[..]).is_err());
         let mut large = MAGIC.to_vec();
         large.extend_from_slice(&u32::MAX.to_le_bytes());

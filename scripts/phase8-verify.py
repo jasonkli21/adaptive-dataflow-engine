@@ -36,7 +36,7 @@ def verify(root):
         assert manifest['synthetic']['key_cardinality'] == (4 if distribution == 'tiny' else 131072)
         config = run['engine']['configuration']
         assert config['partition_policy'] == policy and config['workers'] == str(workers)
-        assert config['control_protocol'] == 'ADETCP07' and config['exchange_wire_version'] == '2' and config['hash_version'] == '1'
+        assert config['control_protocol'] == 'ADETCP08' and config['exchange_wire_version'] == '2' and config['hash_version'] == '1'
         assert config['memory_limit_bytes'] == '33554432' and config['exchange_buffer_bytes'] == '1048576'
         assert config['prefetch_batches'] == '1' and config['research_slow_partition'] == 'off'
         assert config['exchange_mode'] == ('adaptive' if profile == 'restore' else 'spill')
@@ -79,14 +79,19 @@ def verify(root):
                     assert observation['producer'] == p and len(observation['counts']) == 48
                     assert sum(observation['counts']) <= observation['rows'] <= 16384
                     assert observation['files'] <= 4 and observation['read_bytes'] <= 8388608
+                    assert isinstance(observation['source_complete'], bool)
                 if distribution == 'hash-bucket-skew':
                     assert decision['reason'] == 'split_oversized_bucket' and decision['moved_shards'] > 0
                     assert len(active) == workers
                     assert max(decision['planned_load']) < max(decision['static_load'])
                 if distribution == 'tiny':
                     assert decision['reason'] == 'coalesce_tiny' and active == {'0'}
+                    assert all(o['source_complete'] for o in decision['observations'])
+                if distribution == 'hash-bucket-skew' and workers == 2:
+                    assert not any(o['source_complete'] for o in decision['observations'])
                 if distribution == 'hot-key':
-                    assert decision['reason'] == 'unsplittable_single_shard'
+                    assert decision['reason'] == 'insufficient_sample_coverage'
+                    assert decision['moved_shards'] == 0 and len(active) == workers
             for task in m['producers'].values():
                 assert task['routing_buffer_peak_rows'] <= task['routing_buffer_capacity_rows'] <= workers * 1024
                 assert (task['routing_buffer_capacity_rows'] > 0) == (policy != 'static')

@@ -1,32 +1,39 @@
 # Phase 8 implementation report — bounded runtime repartitioning v1
 
-Date: 2026-10-21. Baseline: `f66addb815deaa8accb2529124b713a8efd85c5e`.
-HEAD matched the supplied prompt baseline exactly. No baseline code changes were
-present. The supplied Phase 8 plan was untracked and is intentionally included;
-the unrelated untracked bootstrap prompt is excluded from this implementation.
+Date: 2026-10-21. Original baseline: `f66addb815deaa8accb2529124b713a8efd85c5e`.
+At the original implementation start, HEAD matched the supplied baseline and no
+baseline code changes were present. The Phase 8 plan was included in that
+implementation. This review remediation is a follow-up source revision; its
+identity and evidence are recorded separately below. The unrelated untracked
+bootstrap prompt remains outside the change.
 
 **Exit status: INCOMPLETE. Functional correctness passed; the primary 2-worker
 release performance exit failed. Do not begin Phase 9.**
-Final identity is the single implementation commit containing this report.
-Release evidence records its measured source commit and exact `HEAD:crates`
-runtime tree. Report-only amendments, if any, are distinguished below.
+The original release evidence records its measured source commit and exact
+`HEAD:crates` runtime tree. It must not be attributed to the review-remediation
+source revision.
 
 ## Implemented contract and reconciliation
 
-ADR-0015 records the qualified interpretation of PRD Phase 8: workers/stores are
-prepared, perform bounded real-source work, commit/ack one immutable layout and
-then overlap original producers and final consumers. This is meaningful runtime
-observation inside the running job, without producer-completion or full-shuffle
-planning barriers. It does **not** implement arbitrary mid-exchange epoch
-switching or the architecture's future post-production splitting example. Initial
-independent review accepts the narrow interpretation conditionally on evidence.
-Existing blocking local partial aggregation is unchanged.
+ADR-0015 records the bounded interpretation of the current candidate: workers
+and stores are prepared, bounded source-prefix probes run, then all workers
+commit/ack one immutable layout before original producers and final consumers
+start. The original partial aggregation has not begun when the layout is chosen.
+This adds no producer-completion or full-shuffle planning barrier, but it is
+pre-exchange runtime-informed planning, not a topology change observed during
+original production. It does **not** implement arbitrary mid-exchange epoch
+switching or the architecture's future post-production splitting example. Phase
+8 remains incomplete; no claim is made that this narrower behavior fulfills the
+broader PRD dynamic-transition outcome. Existing blocking local partial
+aggregation is unchanged.
 
 The pure planner uses hash v1, 48 virtual shards divisible by 2/3/4, deterministic
 load ordering/ties, a relative imbalance threshold of 1.5x mean, minimum sample
 work 256 and predicted maximum-load gain >=20%. Tiny distinct-contribution total
-<=64 coalesces to one final. A sample occupying only one shard remains
-unsplittable; no hot-key salting/duplicate final keys. `static` bypasses probes,
+<=64 coalesces to one final only when every assigned source row is observed; an
+incomplete tiny prefix retains static ownership. One occupied virtual shard can
+contain many distinct keys, and the fixed 48-shard planner cannot refine it. No
+hot-key salting or duplicate final keys are introduced. `static` bypasses probes,
 ACKs and shard routing. Static hash vectors are unchanged. Threshold and
 expected-cost retention policies remain independent.
 
@@ -63,8 +70,11 @@ new job. Coordinator RPCs share a stage deadline, worker probes carry explicit
 bounded deadlines. Duplicate probe/commit, early tasks/exchange, stale jobs,
 malformed ownership/version/digest and partial commitment fail closed.
 
-Control protocol is **ADETCP07**, replacing ADETCP06; exchange frame/header wire
-v2, hash v1 and result schema v1 remain. Topology diagnostics stay in the existing
+The measured candidate used control protocol **ADETCP07**, replacing ADETCP06;
+exchange frame/header wire v2, hash v1 and result schema v1 remained. Review
+remediation adds source-coverage evidence and advances the current control magic
+to **ADETCP08**; the earlier release evidence remains bound to ADETCP07 and does
+not measure this source revision. Topology diagnostics stay in the existing
 optional sidecar. `ade-worker --verify-topology` reconstructs the pure decision
 and digest for offline evidence validation, with the same 1 MiB input bound.
 Source/observation metadata remains O(files + 48*N + bounded sampled keys),
@@ -77,7 +87,7 @@ No per-segment coordinator history or global key registry was added.
 |---|---|---|---|---|
 | static | 2–4 | direct/buffered/spill/local/object/threshold | unchanged | existing one-final replay |
 | static | 2–4 | expected_cost_v1 | unchanged | existing restore/recompute |
-| sampled_v1 | 2–4 | direct/buffered/spill/local/object/threshold | split/coalesce/no-benefit | exact-layout one-active-final replay |
+| sampled_v1 | 2–4 | direct/buffered/spill/local/object/threshold | split/covered coalesce/no-benefit/coverage fallback | exact-layout one-active-final replay |
 | sampled_v1 | 2–4 | expected_cost_v1 | same topology options | exact-layout full-copy restore/recompute |
 
 Recovery requires all original producer terminals and replayable immutable source
@@ -338,6 +348,7 @@ usable for failed experiments:
 |phase8-initial-failed-bundle.tar.gz|f84f58bb443e23e593bad133d004feb0410fe7a633bbde3b7ca8ad032dd07e5e|
 |phase8-v2-failed-bundle.tar.gz|18a4471a79744ef614203ab3548e7440a58787eb7d39f709cee8c9a3ed640e20|
 |phase8-packed-failed-bundle.tar.gz|bb121a00c88f10cc473e0437d6e1a5a4dddbe90a258b2261b233d639c2b66f92|
+|phase8-review-ade08-failed-bundle.tar.gz|062334443fa45a0a810229393f91e1c38b4ffa8c9bb1db7a852c2c614cc47740|
 
 The unresolved exit is performance on the primary supported two-host workload,
 not routing or recovery correctness. Probe/control overhead, producer work,
@@ -345,7 +356,79 @@ packing/copying and final spill behavior need further evidence-led work within
 Phase 8. The baseline aggregate's finite spill-domain capacity remains a separate
 input limitation. No thresholds were weakened, no failed run replaced by a lucky
 iteration, no four-worker result substituted for the primary gate, and no Phase 9
-work was begun. This is a tested, committed Phase 8 implementation candidate with
-an explicitly **unmet empirical exit**, not a completed research milestone.
+work was begun. This is a tested Phase 8 candidate with an explicitly **unmet
+empirical exit**, not a completed research milestone.
+
+## Independent review remediation — 2026-10-21
+
+The review's one-key/empty coalesce bug and prefix-underestimation case are fixed
+by making exact assigned-source coverage a precondition for a one-final coalesce.
+The coverage fact is computed from all assigned files and Parquet row-group row
+counts, validated through the pure planner, and included in the observation
+diagnostics. The control protocol is now ADETCP08. Regressions cover complete
+single-key, all-empty and multi-key inputs; a two-row prefix followed by 1022
+distinct keys keeps both static finals active and verifies the full oracle result.
+
+The review's distinct-key/same-virtual-shard counterexample is retained as an
+explicit negative test for 2, 3 and 4 workers. The decision label is now
+`one_occupied_shard`, which does not imply a single key. The fixed 48-shard v1
+boundary is preserved by the active Phase 8 instructions; finer refinement is a
+future plan change, not silently introduced here.
+
+Focused distributed validation passes with 53 unit and 14 process tests. The
+same-shard process case verifies 1000 distinct keys, oracle equality, unchanged
+single-destination ownership and actual active/gather task counts for 2–4
+workers. The tiny-prefix test verifies its full 1024-key result while keeping
+both finals active. The complete-source cases verify one-key, empty and tiny
+multi-key coalescing with one gather transfer.
+
+The raw Phase 8 tarballs and checksums listed above exist in the local ignored
+`benchmarks/results/` directory. They are not published artifacts and are not
+part of this commit, consistent with the repository rule that raw benchmark
+results stay out of Git. The independent-auditability finding remains open until
+those bundles are made available through an immutable external artifact.
+
+No causal performance change is claimed from the old packed metrics: they do not
+contain separate routing/Arrow-take/encoding timings, so they cannot attribute
+the two-host latency regression. The numeric release gates are unchanged. The
+ADETCP08 release run below confirms that the final-work and uniform gates pass,
+but the primary end-to-end skew gate still fails.
+
+The available ADETCP07 sidecars do give a limited paired-run profile. The three
+sampled two-host skew runs had 3.16–3.47 ms probe time and 1.06–3.25 ms layout
+commit time (4.22–6.50 ms combined). Their producer aggregate-work sums were
+393.45–436.02 ms across the two concurrent producers, versus 391.53–400.51 ms
+for static. Both policies emitted 256408 rows; sampled packing emitted 252 frames
+versus 256 static frames, and both spilled 27868192 producer bytes. Sampled
+maximum final work ranged 32.56–91.93 ms, versus 47.45–49.05 ms static. These
+three-run ranges show that probe/commit alone does not account for the full
+24.565 ms median job-latency increase, but they do not establish the cause: the
+sidecars lack per-stage route selection, Arrow take, packer and encoding CPU
+timings, and final work varies substantially. No routing rewrite or performance
+claim is based on this incomplete profile.
+
+### Review-remediation source checks
+
+- `cargo fmt --all --check`: PASS.
+- `cargo check --workspace --all-targets --locked --offline`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings`: PASS.
+- `cargo test --workspace --all-features --locked --offline`: PASS, including 53 distributed unit tests and 14 distributed process tests.
+- `cargo build --release --workspace --locked --offline`: PASS.
+- `bash scripts/smoke.sh`: PASS with oracle validation; the result metadata notes the expected dirty source tree because this review remediation was not committed at smoke time.
+
+ADETCP08 clean-source release regressions all used source commit
+`73c40cd74e3dcf9f6c2c1d06f98156fa824d873f`, runtime tree
+`5dabbdeb0ae8bc1d322f0f01c87b758fdb0ba00b`. The only item excluded from the
+clean-status check was the unrelated pre-existing untracked bootstrap prompt;
+it was not edited or committed.
+
+- Phase 6 acceptance: **PASS**. Five static delivery modes, normal and recovered adaptive cases, 2/4-worker runs, and the unrecoverable missing-snapshot negative case validated against the oracle. Raw output: `benchmarks/results/phase8-review-ade08-phase6/`.
+- Phase 7 acceptance: **PASS**. Expected-cost total was 4976223355.916 nano-USD proxy, below always (6590782186.486), never (9399179712.8695) and threshold (9381977304.6025); all declared regimes passed. Raw output: `benchmarks/results/phase8-review-ade08-phase7/verification.json`.
+- Phase 8 ADETCP08 acceptance: **correctness PASS; empirical gates FAIL**. All 39 isolated children passed oracle, identity, layout, active-gather, transfer-conservation and replay/restore checks. The two-host skew median max-exclusive-work ratio was **0.7727966488** (22.72% better, passes >=20%); median total job latency was **1.1524198889x** static (15.24% slower, fails no-increase); uniform latency was **1.2172439569x** (passes <=1.30). The 4-host skew confirmation ratios were 0.0710745459 work and 0.5992444103 job latency, and do not replace the failed primary gate. Raw output is `benchmarks/results/phase8-review-ade08/verification.json`; checksummed bundle is `benchmarks/results/phase8-review-ade08-failed-bundle.tar.gz` with SHA-256 `062334443fa45a0a810229393f91e1c38b4ffa8c9bb1db7a852c2c614cc47740`.
+
+The release source commit above includes this report before the outcome amendment;
+the amendment changes documentation only, and `HEAD:crates` remains the measured
+runtime tree. None of these compatibility checks closes the Phase 8 primary
+performance gate or broadens the transition/recovery claims.
 
 Final default-feature library check also passed: `/tmp/phase8-packed-default-check.log`.

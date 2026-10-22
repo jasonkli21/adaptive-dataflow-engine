@@ -133,6 +133,9 @@ pub struct Observation {
     pub counts: Vec<u64>,
     pub rows: usize,
     pub files: usize,
+    /// True only when every assigned source row was included in the observation.
+    /// Tiny coalescing is unsafe when this is false because a prefix can hide a large suffix.
+    pub source_complete: bool,
     pub row_groups_selected: usize,
     /// Sum of sizes of opened files, NOT physical bytes fetched by Parquet.
     pub opened_file_bytes: u64,
@@ -200,11 +203,21 @@ pub fn decide(
     let peak = *static_load.iter().max().unwrap_or(&0);
     let mut owners = base.owners.clone();
     let mut reason = "no_benefit";
-    if counts.iter().filter(|c| **c > 0).count() <= 1 {
-        reason = "unsplittable_single_shard";
-    } else if total <= config.coalesce_max {
-        owners.fill(0);
-        reason = "coalesce_tiny";
+    let occupied_shards = counts.iter().filter(|c| **c > 0).count();
+    if total <= config.coalesce_max {
+        if observations
+            .iter()
+            .all(|observation| observation.source_complete)
+        {
+            owners.fill(0);
+            reason = "coalesce_tiny";
+        } else {
+            reason = "insufficient_sample_coverage";
+        }
+    } else if occupied_shards <= 1 {
+        // One occupied virtual shard can contain many distinct keys. This v1
+        // planner cannot refine a shard without changing its ownership model.
+        reason = "one_occupied_shard";
     } else if total >= config.split_min && peak * workers as u64 * 2 > total * 3 {
         let mut order: Vec<_> = (0..SHARDS).collect();
         order.sort_by_key(|s| (std::cmp::Reverse(counts[*s]), *s));
@@ -246,6 +259,7 @@ mod tests {
                 producer: p as u64,
                 files: usize::from(counts.iter().any(|c| *c > 0)),
                 rows: usize::try_from(counts.iter().sum::<u64>()).unwrap(),
+                source_complete: true,
                 counts: counts.to_vec(),
                 ..Default::default()
             })
@@ -303,11 +317,18 @@ mod tests {
                     .len(),
                 1
             );
+            let mut incomplete = observed(n, &small);
+            for observation in &mut incomplete {
+                observation.source_complete = false;
+            }
+            let decision = decide(&config, n, incomplete).unwrap();
+            assert_eq!(decision.reason, "insufficient_sample_coverage");
+            assert_eq!(decision.layout.active().len(), n);
             let mut single = vec![0; SHARDS];
             single[0] = 1000;
             assert_eq!(
                 decide(&config, n, observed(n, &single)).unwrap().reason,
-                "unsplittable_single_shard"
+                "one_occupied_shard"
             );
         }
         let mut invalid = observed(2, &[1; SHARDS]);
@@ -322,5 +343,30 @@ mod tests {
         invalid[0].rows = SHARDS;
         invalid[1].producer = 0;
         assert!(decide(&config, 2, invalid).is_err());
+    }
+
+    #[test]
+    fn distinct_keys_in_one_virtual_shard_are_reported_as_one_occupied_shard() {
+        // These distinct keys collide into shard zero. The fixed 48-shard v1
+        // ownership map cannot distribute them without a finer routing domain.
+        let keys = [38, 103, 160, 175, 209, 363, 481, 537, 575, 634, 656, 666];
+        assert!(keys.iter().all(|key| shard(*key) == 0));
+        for workers in 2..=4 {
+            let mut counts = vec![0; SHARDS];
+            counts[0] = keys.len() as u64 * 100;
+            let decision = decide(
+                &TopologyConfig::default(),
+                workers,
+                observed(workers, &counts),
+            )
+            .unwrap();
+            assert_eq!(decision.reason, "one_occupied_shard");
+            assert_eq!(
+                decision.layout.owners,
+                Layout::static_layout(workers).unwrap().owners
+            );
+            let owner = decision.layout.route(keys[0]);
+            assert!(keys.iter().all(|key| decision.layout.route(*key) == owner));
+        }
     }
 }

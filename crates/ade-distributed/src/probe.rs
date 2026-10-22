@@ -5,9 +5,131 @@ use crate::{
 };
 use arrow::array::{Array, UInt64Array};
 use parquet::arrow::{ProjectionMask, arrow_reader::ParquetRecordBatchReaderBuilder};
+use parquet::file::metadata::ParquetMetaData;
 use std::{collections::BTreeSet, fs::File, path::PathBuf, time::Instant};
 
 const MAX_KEY_CHUNK_DECODE_BYTES: i64 = 2 * 1024 * 1024;
+
+fn source_row_count(metadata: &ParquetMetaData) -> Result<u64> {
+    metadata.row_groups().iter().try_fold(0u64, |sum, group| {
+        let rows = u64::try_from(group.num_rows())
+            .map_err(|_| Error::Invalid("negative probe row group".into()))?;
+        sum.checked_add(rows)
+            .ok_or_else(|| Error::Invalid("probe source row count overflow".into()))
+    })
+}
+
+fn complete_source_coverage(
+    files: &[PathBuf],
+    max_files: usize,
+    processed_files: usize,
+    expected_rows: u64,
+    sampled_rows: usize,
+) -> bool {
+    files.len() <= max_files
+        && processed_files == files.len()
+        && expected_rows == sampled_rows as u64
+}
+
+struct FileProbe {
+    rows: usize,
+    row_groups: usize,
+    expected_rows: u64,
+    opened_file_bytes: u64,
+}
+
+struct ProbeContext<'a> {
+    config: &'a TopologyConfig,
+    token: &'a ade_exec::CancellationToken,
+    deadline: Instant,
+    bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    distinct: BTreeSet<u64>,
+    counts: Vec<u64>,
+}
+
+fn probe_file(
+    path: &std::path::Path,
+    row_limit: usize,
+    context: &mut ProbeContext<'_>,
+) -> Result<FileProbe> {
+    let file = File::open(path)?;
+    let opened_file_bytes = file.metadata()?.len();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(MeteredFile {
+        file,
+        bytes: context.bytes.clone(),
+        cap: context.config.sample_bytes as u64,
+        token: context.token.clone(),
+        deadline: context.deadline,
+    })
+    .map_err(|e| Error::Invalid(format!("probe parquet: {e}")))?;
+    let expected_rows = source_row_count(builder.metadata())?;
+    let key = builder.schema().index_of("key")?;
+    require(
+        builder.schema().field(key).data_type() == &arrow::datatypes::DataType::UInt64,
+        "probe requires primitive UInt64 key",
+    )?;
+    let leaf = builder
+        .parquet_schema()
+        .columns()
+        .iter()
+        .position(|c| c.path().parts() == ["key"])
+        .ok_or_else(|| Error::Invalid("probe key leaf missing".into()))?;
+    let mask = ProjectionMask::roots(builder.parquet_schema(), [key]);
+    let limit = context.config.rows_per_file.min(row_limit);
+    let mut remaining = limit as u64;
+    let mut groups = Vec::new();
+    for (index, group) in builder.metadata().row_groups().iter().enumerate() {
+        if remaining == 0 {
+            break;
+        }
+        let rows = u64::try_from(group.num_rows())
+            .map_err(|_| Error::Invalid("negative probe row group".into()))?;
+        if rows > 0 {
+            let size = group.column(leaf).uncompressed_size();
+            require(
+                (0..=MAX_KEY_CHUNK_DECODE_BYTES).contains(&size),
+                "probe key decode chunk exceeds cap",
+            )?;
+            groups.push(index);
+            remaining = remaining.saturating_sub(rows);
+        }
+    }
+    let row_groups = groups.len();
+    let reader = builder
+        .with_row_groups(groups)
+        .with_projection(mask)
+        .with_batch_size(256)
+        .with_limit(limit)
+        .build()
+        .map_err(|e| Error::Invalid(format!("probe parquet: {e}")))?;
+    let mut rows = 0usize;
+    for batch in reader {
+        context.token.check()?;
+        require(Instant::now() < context.deadline, "probe deadline exceeded")?;
+        let batch = batch?;
+        let keys = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| Error::Invalid("probe key type".into()))?;
+        require(
+            keys.null_count() == 0 && rows + keys.len() <= limit,
+            "probe key nulls/row limit",
+        )?;
+        rows += keys.len();
+        for key in keys.values() {
+            if context.distinct.insert(*key) {
+                context.counts[shard(*key)] += 1;
+            }
+        }
+    }
+    Ok(FileProbe {
+        rows,
+        row_groups,
+        expected_rows,
+        opened_file_bytes,
+    })
+}
 
 pub(crate) fn probe(
     files: &[PathBuf],
@@ -23,89 +145,44 @@ pub(crate) fn probe(
         counts: vec![0; SHARDS],
         ..Default::default()
     };
-    let bytes = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let mut distinct = BTreeSet::new(); // <= sample_rows keys across the entire probe
+    let mut context = ProbeContext {
+        config,
+        token,
+        deadline,
+        bytes: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        distinct: BTreeSet::new(), // <= sample_rows keys across the entire probe
+        counts: vec![0; SHARDS],
+    };
+    let mut expected_rows = 0u64;
+    let mut processed_files = 0usize;
     for path in files.iter().take(config.max_files) {
         token.check()?;
         require(Instant::now() < deadline, "probe deadline exceeded")?;
         if out.rows == config.sample_rows {
             break;
         }
-        let file = File::open(path)?;
+        let file_probe = probe_file(path, config.sample_rows - out.rows, &mut context)?;
         out.opened_file_bytes = out
             .opened_file_bytes
-            .checked_add(file.metadata()?.len())
+            .checked_add(file_probe.opened_file_bytes)
             .ok_or_else(|| Error::Invalid("probe source size overflow".into()))?;
+        expected_rows = expected_rows
+            .checked_add(file_probe.expected_rows)
+            .ok_or_else(|| Error::Invalid("probe source row count overflow".into()))?;
+        out.rows += file_probe.rows;
         out.files += 1;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(MeteredFile {
-            file,
-            bytes: bytes.clone(),
-            cap: config.sample_bytes as u64,
-            token: token.clone(),
-            deadline,
-        })
-        .map_err(|e| Error::Invalid(format!("probe parquet: {e}")))?;
-        let key = builder.schema().index_of("key")?;
-        require(
-            builder.schema().field(key).data_type() == &arrow::datatypes::DataType::UInt64,
-            "probe requires primitive UInt64 key",
-        )?;
-        let leaf = builder
-            .parquet_schema()
-            .columns()
-            .iter()
-            .position(|c| c.path().parts() == ["key"])
-            .ok_or_else(|| Error::Invalid("probe key leaf missing".into()))?;
-        let mask = ProjectionMask::roots(builder.parquet_schema(), [key]);
-        let limit = config.rows_per_file.min(config.sample_rows - out.rows);
-        let mut remaining = limit as u64;
-        let mut groups = Vec::new();
-        for (index, group) in builder.metadata().row_groups().iter().enumerate() {
-            if remaining == 0 {
-                break;
-            }
-            let rows = u64::try_from(group.num_rows())
-                .map_err(|_| Error::Invalid("negative probe row group".into()))?;
-            if rows > 0 {
-                let size = group.column(leaf).uncompressed_size();
-                require(
-                    (0..=MAX_KEY_CHUNK_DECODE_BYTES).contains(&size),
-                    "probe key decode chunk exceeds cap",
-                )?;
-                groups.push(index);
-                remaining = remaining.saturating_sub(rows);
-            }
-        }
-        out.row_groups_selected += groups.len();
-        let reader = builder
-            .with_row_groups(groups)
-            .with_projection(mask)
-            .with_batch_size(256)
-            .with_limit(limit)
-            .build()
-            .map_err(|e| Error::Invalid(format!("probe parquet: {e}")))?;
-        for batch in reader {
-            token.check()?;
-            require(Instant::now() < deadline, "probe deadline exceeded")?;
-            let batch = batch?;
-            let keys = batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| Error::Invalid("probe key type".into()))?;
-            require(
-                keys.null_count() == 0 && out.rows + keys.len() <= config.sample_rows,
-                "probe key nulls/row limit",
-            )?;
-            out.rows += keys.len();
-            for key in keys.values() {
-                if distinct.insert(*key) {
-                    out.counts[shard(*key)] += 1;
-                }
-            }
-        }
+        out.row_groups_selected += file_probe.row_groups;
+        processed_files += 1;
     }
-    out.read_bytes = bytes.load(std::sync::atomic::Ordering::Relaxed);
+    out.source_complete = complete_source_coverage(
+        files,
+        config.max_files,
+        processed_files,
+        expected_rows,
+        out.rows,
+    );
+    out.counts = context.counts;
+    out.read_bytes = context.bytes.load(std::sync::atomic::Ordering::Relaxed);
     out.elapsed_ns = crate::materialization::ns(started);
     Ok(out)
 }

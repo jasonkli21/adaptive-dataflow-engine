@@ -23,12 +23,17 @@ aggregate or emitting gather output. Gather commits exactly the active set.
 
 The bounded prefix probe reads at most four files, 4096 rows/file, 16384 rows per
 producer, counting distinct sampled keys per producer/shard. It is a biased
-post-partial-output proxy, not raw hot-key frequency or full cardinality. One
-frequent key stays indivisible. Sample quality affects speed only. Defaults are
-static; sampled_v1 is explicit. A deterministic descending-load greedy assignment
-splits a heavy original hash bucket only with >=20% predicted maximum-load gain
-and >=256 sampled distinct contributions. Tiny total contribution <=64 coalesces
-to one real final task; no-benefit/unsplittable cases are recorded separately.
+post-partial-output proxy, not raw hot-key frequency or full cardinality. A
+single occupied virtual shard may contain multiple distinct keys; v1 does not
+refine that fixed 48-shard ownership domain. Sample quality affects speed only.
+Defaults are static; sampled_v1 is explicit. A deterministic descending-load
+greedy assignment splits a heavy original hash bucket only with >=20% predicted
+maximum-load gain and >=256 sampled distinct contributions. Tiny total
+contribution <=64 coalesces to one real final task only when every assigned source
+row is observed; otherwise the planner retains static ownership and records
+`insufficient_sample_coverage`. A single occupied shard is reported separately
+from a tiny-key coalesce; this reason does not claim that the shard contains one
+distinct key.
 Sample limits and thresholds are typed and strictly validated. Metadata is
 O(48*N + capped sampled keys + files), never per segment.
 
@@ -52,9 +57,30 @@ all original terminals, full immutable source closures, exact fingerprint replay
 and attempt-safe gather. Inactive sink failure, producer loss, multiple loss,
 partial commit, drift, poisoned storage and episode failure cancel the job.
 All original retention and cost policies remain independently selectable.
-Control advances ADETCP06 -> ADETCP07; exchange wire v2/hash v1/result schema v1
-remain. Complete object namespace/receipt version remain unchanged with an added
-optional topology digest in the private control schema.
+The initial Phase 8 control schema advanced ADETCP06 -> ADETCP07; the review
+remediation adds source-coverage evidence and advances the current control magic
+to ADETCP08. Exchange wire v2/hash v1/result schema v1 remain. Complete object
+namespace/receipt version remain unchanged with an added optional topology digest
+in the private control schema.
+
+## Review remediation — source coverage and bounded shard semantics
+
+The observation now carries `source_complete`, set only when the probe has
+processed every assigned file and its row count matches all row groups in those
+files. The planner checks complete coverage before applying the tiny coalesce
+rule. This fixes the branch-order failure for one-key and empty inputs, while
+preventing a short prefix from funneling a large unseen suffix to one final.
+Incomplete tiny observations produce `insufficient_sample_coverage` and retain
+the static mapping.
+
+The fixed 48-shard Phase 8 boundary is retained. When sampled load occupies one
+shard, the decision reason is `one_occupied_shard`; it does not infer a single
+distinct key. The known keys 38, 103, 160, 175, 209, 363, 481, 537, 575, 634, 656,
+and 666 all occupy shard zero and remain together for 2–4 workers. This remains a
+documented supported-domain limitation pending a separately planned finer
+routing domain. The source-prefix probe is pre-exchange planning: original
+partial aggregation begins after layout commitment, and no mid-execution
+topology transition is claimed.
 
 ## Predeclared empirical exit
 

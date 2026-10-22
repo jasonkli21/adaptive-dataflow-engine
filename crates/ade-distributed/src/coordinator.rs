@@ -1,4 +1,4 @@
-//! Static stage barriers, gather completeness and owned localhost process lifecycle.
+//! Fixed worker stages, optional pre-exchange layout commitment, gather completeness and owned localhost process lifecycle.
 use crate::{
     Error, Result, TaskConfig, WorkerEndpoint,
     ids::{AttemptId, JobId, TaskId, WorkerId},
@@ -39,7 +39,7 @@ pub struct JobOutput {
     pub state: JobState,
 }
 /// # Errors
-/// Rejects worker counts, IDs, or endpoints that cannot form the static topology.
+/// Rejects worker counts, IDs, or endpoints that cannot form the fixed worker topology.
 pub fn validate_topology(workers: &[WorkerEndpoint]) -> Result<()> {
     require(
         (2..=4).contains(&workers.len()),
@@ -186,12 +186,12 @@ fn tasks(
         })
     })
 }
-/// Execute one complete static graph; errors never return partial output.
+/// Execute one complete fixed-host aggregate graph; errors never return partial output.
 /// # Errors
 /// Returns configuration, task, transport, deadline, or gather errors with no partial output.
 #[allow(
     clippy::too_many_lines,
-    reason = "Explicit static stage transitions and failure cleanup remain in one place."
+    reason = "Explicit producer/final stage transitions and failure cleanup remain in one place."
 )]
 pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     let started = Instant::now();

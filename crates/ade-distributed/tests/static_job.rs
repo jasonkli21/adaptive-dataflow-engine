@@ -674,6 +674,136 @@ fn runtime_split_and_real_coalesce_across_two_three_four_workers_and_retention()
         }
     }
 }
+
+#[test]
+fn complete_tiny_source_coalesces_single_key_empty_and_multi_key_inputs() {
+    use ade_distributed::topology::{PartitionPolicy, TopologyConfig};
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    for (id, keys) in [(40, vec![0]), (41, vec![]), (42, vec![0, 1, 2, 3])] {
+        let root = tempfile::tempdir().unwrap();
+        let files = topology_fixture(root.path(), &keys);
+        let output = coordinator::execute(&StaticAggregateJob {
+            id: JobId(id),
+            snapshot: None,
+            files,
+            workers: cluster.workers.clone(),
+            config: TaskConfig {
+                topology: TopologyConfig {
+                    policy: PartitionPolicy::SampledV1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            task_timeout: Duration::from_secs(20),
+        })
+        .unwrap();
+        assert_topology_output(&output, &keys, 2);
+        let decision = output.metrics.topology.as_ref().unwrap();
+        assert_eq!(decision.reason, "coalesce_tiny");
+        assert!(
+            decision
+                .observations
+                .iter()
+                .all(|observation| observation.source_complete)
+        );
+        assert_eq!(output.metrics.finals.len(), 1);
+        assert_eq!(output.metrics.inactive.len(), 1);
+        assert_eq!(output.metrics.gather.transfers, 1);
+    }
+}
+
+#[test]
+fn many_distinct_keys_in_one_virtual_shard_keep_v1_ownership_for_two_to_four_workers() {
+    use ade_distributed::topology::{Layout, PartitionPolicy, TopologyConfig, shard};
+    let keys: Vec<_> = (0..50_000)
+        .filter(|key| shard(*key) == 0)
+        .take(1000)
+        .collect();
+    assert_eq!(keys.len(), 1000);
+    for workers in 2..=4 {
+        let root = tempfile::tempdir().unwrap();
+        let files = topology_fixture(root.path(), &keys);
+        let cluster =
+            LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), workers).unwrap();
+        let output = coordinator::execute(&StaticAggregateJob {
+            id: JobId(44 + workers as u64),
+            snapshot: None,
+            files,
+            workers: cluster.workers.clone(),
+            config: TaskConfig {
+                topology: TopologyConfig {
+                    policy: PartitionPolicy::SampledV1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            task_timeout: Duration::from_secs(20),
+        })
+        .unwrap();
+        assert_topology_output(&output, &keys, workers);
+        let decision = output.metrics.topology.as_ref().unwrap();
+        assert_eq!(decision.reason, "one_occupied_shard");
+        assert_eq!(decision.layout, Layout::static_layout(workers).unwrap());
+        assert_eq!(output.metrics.finals.len(), workers);
+        assert_eq!(output.metrics.inactive.len(), 0);
+        assert_eq!(output.metrics.gather.transfers, workers as u64);
+        assert_eq!(
+            output
+                .metrics
+                .finals
+                .values()
+                .filter(|task| task.received.rows > 0)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn a_tiny_prefix_does_not_coalesce_a_large_unobserved_suffix() {
+    use ade_distributed::topology::{Layout, PartitionPolicy, TopologyConfig};
+    let root = tempfile::tempdir().unwrap();
+    let keys = [vec![0, 2], (3..=1024).collect()].concat();
+    let files = topology_fixture(root.path(), &keys);
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let output = coordinator::execute(&StaticAggregateJob {
+        id: JobId(43),
+        snapshot: None,
+        files,
+        workers: cluster.workers.clone(),
+        config: TaskConfig {
+            topology: TopologyConfig {
+                policy: PartitionPolicy::SampledV1,
+                sample_rows: 2,
+                rows_per_file: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        task_timeout: Duration::from_secs(20),
+    })
+    .unwrap();
+    assert_topology_output(&output, &keys, 2);
+    let decision = output.metrics.topology.as_ref().unwrap();
+    assert_eq!(decision.reason, "insufficient_sample_coverage");
+    assert!(
+        decision
+            .observations
+            .iter()
+            .all(|observation| !observation.source_complete)
+    );
+    assert_eq!(decision.layout, Layout::static_layout(2).unwrap());
+    assert_eq!(output.metrics.finals.len(), 2);
+    assert_eq!(output.metrics.gather.transfers, 2);
+    assert!(
+        output
+            .metrics
+            .finals
+            .values()
+            .all(|task| task.received.rows > 0)
+    );
+}
+
 #[cfg(feature = "research-hooks")]
 #[test]
 fn runtime_layout_survives_real_worker_loss_by_replay_or_complete_copy() {
@@ -898,7 +1028,7 @@ fn biased_probe_and_partial_layout_commit_preserve_correctness_and_cleanup() {
     assert_topology_output(&output, &keys, 2);
     assert_eq!(
         output.metrics.topology.as_ref().unwrap().reason,
-        "unsplittable_single_shard"
+        "insufficient_sample_coverage"
     );
     for endpoint in &cluster.workers {
         protocol::rpc(

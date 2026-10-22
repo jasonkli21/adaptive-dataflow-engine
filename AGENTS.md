@@ -25,6 +25,8 @@ PRD scope/outcomes
 
 An ADR can intentionally refine an architectural recommendation, but it must record the affected section/invariant and rationale. If code and docs differ accidentally, do not silently choose one: reconcile them and document the resolution.
 
+An accepted ADR does not silently widen the active phase plan. When a concrete decision changes a phase deliverable or boundary, reconcile the active plan explicitly while preserving the PRD outcome and architecture invariants.
+
 ## 2. Phase discipline
 
 The active phase is the hard scope boundary.

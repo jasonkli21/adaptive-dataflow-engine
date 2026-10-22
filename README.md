@@ -281,8 +281,9 @@ Cost options require expected-cost selection. Deadline penalties use the complet
 write-before-loss plus restore-after-loss path, and recovery closures share elapsed
 slack as they run. The explicit request-cost scope is the PUT/HEAD/GET transfer
 proxy; later cleanup LIST/DELETE charges are excluded. Staging overhead is real and
-separately measured. Control framing is `ADETCP07`; transfer wire v2/hash v1/result
-schema v1 remain.
+separately measured. Phase 7 used control framing `ADETCP07`; Phase 8 review
+remediation advances the current control protocol to `ADETCP08` for source-coverage
+evidence. Transfer wire v2, hash v1 and result schema v1 remain.
 
 See [ADR-0014](docs/adr/0014-expected-cost-materialization-v1.md) and the
 [Phase 7 report](docs/reports/phase-7-implementation-report.md). Release economic
@@ -301,10 +302,17 @@ metrics; benchmark result schema v1 is unchanged. Phase 7 acceptance uses it.
 `partition_policy=static` remains the default. Explicit `sampled_v1` probes real
 assigned source prefixes after worker preparation and commits one immutable map
 of 48 key shards before exchange. Oversized base hash buckets can distribute
-**distinct keys** across final tasks. Tiny sampled workloads coalesce to fewer
-actual final aggregations; idle destinations verify their empty terminals and
-produce no gather output. Physical processes remain 2–4. One raw hot key stays
-indivisible. A biased sample can hurt speed but cannot change results.
+**distinct keys** across final tasks. Tiny workloads coalesce only when the probe
+covers every assigned source row; a small prefix with an unseen suffix keeps the
+static final set. Idle destinations verify their empty terminals and produce no
+gather output. Physical processes remain 2–4. A single occupied virtual shard
+may contain several distinct keys, and v1 cannot refine that shard. A biased
+sample can hurt speed but cannot change results.
+
+The probe is pre-exchange planning: original partial aggregation and exchange
+production start only after every worker acknowledges the layout. No topology
+transition occurs after original producer work has started, so this candidate
+does not fulfill the broader PRD dynamic-transition outcome.
 
 ```bash
 cargo run -p ade-bench -- validate --engine ade-distributed \

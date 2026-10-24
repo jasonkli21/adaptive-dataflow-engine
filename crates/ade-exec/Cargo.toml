@@ -13,3 +13,6 @@ arrow = { workspace = true, features = ["ipc"] }
 parquet.workspace = true
 thiserror = "2"
 tempfile = "3"
+blake3 = "1"
+bytes = "1"
+serde = { version = "1", features = ["derive"] }

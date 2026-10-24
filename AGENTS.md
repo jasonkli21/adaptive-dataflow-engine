@@ -31,13 +31,15 @@ An accepted ADR does not silently widen the active phase plan. When a concrete d
 
 The active phase is the hard scope boundary.
 
-Phase 8 is the active boundary, defined by
-`docs/plans/phase-8-implementation-plan.md`, ADR-0015 and its implementation report.
-Phases 2–7 remain accepted. Explicit `sampled_v1` adds a bounded real-source probe,
-immutable 48-shard ownership and a real active-final subset on fixed 2–4 hosts.
-Static defaults and threshold/expected-cost retention remain independent.
-Check the Phase 8 report for empirical completion: implementation is not evidence
-of passing the predeclared skew and overhead gates. Do not begin Phase 9.
+Phase 8 bounded v1 is accepted at source ab7404b/runtime432cc7dd, with immutable
+public evidence in its implementation report. Historical failed experiments and
+fixed48-shard/aggregate-spill-domain limitations remain explicit. Source-bound
+B/C confirmations and all-nine pooled original gates pass; this is local evidence.
+The user has explicitly authorized Phase9 after this closure. Phase9 is now the
+active boundary, defined by docs/plans/phase-9-implementation-plan.md and its
+attached implementation prompt: bounded inner equijoin, observed broadcast vs
+repartition, real hash-to-grace fallback and adaptive producer partial aggregation.
+Preserve static defaults and all accepted Phase6–8 contracts. Do not begin Phase10.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
@@ -47,7 +49,7 @@ of passing the predeclared skew and overhead gates. Do not begin Phase 9.
   Preserve one episode, original logical IDs and attempt-safe gather commit.
 - Exchange buffers are separately bounded; producer/final task budgets may overlap.
   The local ledger is not a process RSS cap.
-- Preserve the pure policy/mechanism boundary and static defaults. No adaptive scheduling, joins, SQL frontend or streaming/state.
+- Preserve the pure policy/mechanism boundary and static defaults. No adaptive scheduling, SQL frontend or streaming/state. Joins are limited to the explicit Phase9 bounded inner-equijoin contract.
 - Run focused tests during development, one final workspace gate/smoke and focused
   five-mode static regression and focused adaptive 2-worker/limited 4-worker release
   acceptance evidence, plus Phase 6 normal/recovered/unrecoverable, Phase 7 empirical economic acceptance
@@ -130,7 +132,8 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. Phase 8 is recorded in:
+Each phase ends with an implementation report. The active Phase9 report is
+`docs/reports/phase-9-implementation-report.md`; Phase8 prerequisite closure remains recorded in:
 
 `docs/reports/phase-8-implementation-report.md`
 
@@ -139,4 +142,4 @@ file morsel truthfulness, lost ranges/closure, terminal fingerprint validation,
 attempt-safe gather, bounded metadata, cancellation/poisoning, protocol version,
 commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 9
 boundary. Preserve failed experiments. Preserve Phase 7 decision provenance, complete-copy identity, explicit cleanup and
-predeclared empirical criteria. Do not broaden recovery or begin Phase 9 as cleanup.
+predeclared empirical criteria. Do not broaden recovery or begin Phase10 as cleanup. Phase9 continuation is explicitly user-authorized after the recorded Phase8 closure.

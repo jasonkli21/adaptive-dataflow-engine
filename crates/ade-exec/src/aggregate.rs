@@ -78,6 +78,7 @@ impl Table {
     }
 }
 pub(crate) struct Aggregate {
+    pub built: bool,
     table: Option<Table>,
     paths: [Option<PathBuf>; PARTITIONS],
     partition: usize,
@@ -86,76 +87,107 @@ pub(crate) struct Aggregate {
     metadata: Option<Reservation>,
 }
 impl Aggregate {
-    pub fn build(
-        input: &mut Node,
-        key: usize,
-        value: usize,
-        count: Option<usize>,
-        id: OperatorId,
-        cx: &mut ExecContext,
-    ) -> Result<Self> {
+    pub(crate) fn new(id: OperatorId, cx: &ExecContext) -> Result<Self> {
         let mut metadata = cx.memory.reservation(id);
         metadata.grow(8192)?;
-        let mut state = Self {
+        Ok(Self {
+            built: false,
             table: Some(Table::new(id, cx)?),
             paths: std::array::from_fn(|_| None),
             partition: 0,
             cursor: 0,
             spilled: false,
             metadata: Some(metadata),
+        })
+    }
+    pub fn prime(
+        input: &mut Node,
+        columns: [usize; 2],
+        id: OperatorId,
+        cx: &mut ExecContext,
+    ) -> Result<Self> {
+        let mut state = Self::new(id, cx)?;
+        if let Some(batch) = input.next_batch(cx)? {
+            state.ingest(&batch, columns[0], columns[1], None, id, cx)?;
+        }
+        Ok(state)
+    }
+    pub(crate) fn ingest(
+        &mut self,
+        batch: &RecordBatch,
+        key: usize,
+        value: usize,
+        count: Option<usize>,
+        id: OperatorId,
+        cx: &mut ExecContext,
+    ) -> Result<()> {
+        cx.input(id, batch);
+        let start = Instant::now();
+        let keys = batch
+            .column(key)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| Error::Invalid("aggregate key type".into()))?;
+        let values = batch
+            .column(value)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .ok_or_else(|| Error::Invalid("aggregate value type".into()))?;
+        let counts = count
+            .map(|c| {
+                batch
+                    .column(c)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .ok_or_else(|| Error::Invalid("aggregate count type".into()))
+            })
+            .transpose()?;
+        if counts.is_some_and(|c| c.null_count() != 0) {
+            return Err(Error::Invalid(
+                "aggregate count nulls are unsupported".into(),
+            ));
+        }
+        if keys.null_count() != 0 || values.null_count() != 0 {
+            return Err(Error::Invalid("aggregate nulls are unsupported".into()));
+        }
+        for i in 0..batch.num_rows() {
+            if i % 1024 == 0 {
+                cx.cancellation.check()?;
+            }
+            let count = counts.map_or(1, |c| c.value(i));
+            if count == 0 {
+                return Err(Error::Invalid("partial count must be positive".into()));
+            }
+            let row = (keys.value(i), i128::from(values.value(i)), count);
+            if !self.table.as_mut().expect("table").add(row)? {
+                cx.memory.pressure();
+                if !cx.config.spill_enabled {
+                    return Err(Error::SpillDisabled);
+                }
+                self.flush(id, cx)?;
+                if !self.table.as_mut().expect("table").add(row)? {
+                    cx.memory.pressure();
+                    return Err(Error::SpillNoProgress("aggregate table too small"));
+                }
+            }
+        }
+        cx.work(id, start);
+        Ok(())
+    }
+    pub fn build(
+        input: &mut Node,
+        columns: [usize; 2],
+        count: Option<usize>,
+        id: OperatorId,
+        cx: &mut ExecContext,
+        initial: Option<Self>,
+    ) -> Result<Self> {
+        let mut state = match initial {
+            Some(state) => state,
+            None => Self::new(id, cx)?,
         };
         while let Some(batch) = input.next_batch(cx)? {
-            cx.input(id, &batch);
-            let start = Instant::now();
-            let keys = batch
-                .column(key)
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| Error::Invalid("aggregate key type".into()))?;
-            let values = batch
-                .column(value)
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| Error::Invalid("aggregate value type".into()))?;
-            let counts = count
-                .map(|c| {
-                    batch
-                        .column(c)
-                        .as_any()
-                        .downcast_ref::<UInt64Array>()
-                        .ok_or_else(|| Error::Invalid("aggregate count type".into()))
-                })
-                .transpose()?;
-            if counts.is_some_and(|c| c.null_count() != 0) {
-                return Err(Error::Invalid(
-                    "aggregate count nulls are unsupported".into(),
-                ));
-            }
-            if keys.null_count() != 0 || values.null_count() != 0 {
-                return Err(Error::Invalid("aggregate nulls are unsupported".into()));
-            }
-            for i in 0..batch.num_rows() {
-                if i % 1024 == 0 {
-                    cx.cancellation.check()?;
-                }
-                let count = counts.map_or(1, |c| c.value(i));
-                if count == 0 {
-                    return Err(Error::Invalid("partial count must be positive".into()));
-                }
-                let row = (keys.value(i), i128::from(values.value(i)), count);
-                if !state.table.as_mut().expect("table").add(row)? {
-                    cx.memory.pressure();
-                    if !cx.config.spill_enabled {
-                        return Err(Error::SpillDisabled);
-                    }
-                    state.flush(id, cx)?;
-                    if !state.table.as_mut().expect("table").add(row)? {
-                        cx.memory.pressure();
-                        return Err(Error::SpillNoProgress("aggregate table too small"));
-                    }
-                }
-            }
-            cx.work(id, start);
+            state.ingest(&batch, columns[0], columns[1], count, id, cx)?;
         }
         input.shutdown(cx)?;
         let start = Instant::now();
@@ -166,7 +198,25 @@ impl Aggregate {
             state.table.as_mut().expect("table").sort();
         }
         cx.work(id, start);
+        state.built = true;
         Ok(state)
+    }
+    pub(crate) fn observation(&self) -> (usize, bool) {
+        (
+            self.table.as_ref().map_or(0, |table| table.len),
+            self.spilled,
+        )
+    }
+    pub(crate) fn into_raw(self) -> RawPartials {
+        RawPartials {
+            state: self,
+            slot: 0,
+            partition: 0,
+            reader: None,
+            path: None,
+            remaining: 0,
+            pending: None,
+        }
     }
     fn flush(&mut self, id: OperatorId, cx: &mut ExecContext) -> Result<()> {
         let table = self.table.as_ref().expect("table");
@@ -321,6 +371,112 @@ impl Aggregate {
     }
 }
 
+/// Drains exact buffered contributions without reaggregating a spill partition.
+/// This supports pressure fallback even when a prefix exceeds a legacy spill bucket.
+pub(crate) struct RawPartials {
+    state: Aggregate,
+    slot: usize,
+    partition: usize,
+    reader: Option<BufReader<crate::spill::SpillReader>>,
+    path: Option<PathBuf>,
+    remaining: u64,
+    pending: Option<Partial>,
+}
+impl RawPartials {
+    fn partial(&mut self, cx: &mut ExecContext) -> Result<Option<Partial>> {
+        if let Some(table) = &self.state.table {
+            while self.slot < table.slots.len() {
+                let row = table.slots[self.slot];
+                self.slot += 1;
+                if row.is_some() {
+                    return Ok(row);
+                }
+            }
+            self.state.table.take();
+        }
+        loop {
+            cx.cancellation.check()?;
+            if self.remaining > 0 {
+                let mut row = [0; 32];
+                self.reader
+                    .as_mut()
+                    .ok_or(Error::CorruptSpill("partial reader"))?
+                    .read_exact(&mut row)?;
+                self.remaining -= 1;
+                return Ok(Some((
+                    u64::from_le_bytes(
+                        row[..8]
+                            .try_into()
+                            .map_err(|_| Error::CorruptSpill("partial key"))?,
+                    ),
+                    i128::from_le_bytes(
+                        row[8..24]
+                            .try_into()
+                            .map_err(|_| Error::CorruptSpill("partial sum"))?,
+                    ),
+                    u64::from_le_bytes(
+                        row[24..]
+                            .try_into()
+                            .map_err(|_| Error::CorruptSpill("partial count"))?,
+                    ),
+                )));
+            }
+            self.reader.take();
+            if let Some(path) = self.path.take() {
+                std::fs::remove_file(path)?;
+            }
+            if self.partition == PARTITIONS {
+                return Ok(None);
+            }
+            let path = self.state.paths[self.partition].take();
+            self.partition += 1;
+            if let Some(path) = path {
+                let mut reader = BufReader::with_capacity(4096, cx.spill.reading(&path)?);
+                let length = reader.get_ref().metadata()?.len();
+                if length < 8 || (length - 8) % 32 != 0 {
+                    return Err(Error::CorruptSpill("partial spill length"));
+                }
+                let mut magic = [0; 8];
+                reader.read_exact(&mut magic)?;
+                if &magic != MAGIC {
+                    return Err(Error::CorruptSpill("partial spill version"));
+                }
+                self.remaining = (length - 8) / 32;
+                self.reader = Some(reader);
+                self.path = Some(path);
+            }
+        }
+    }
+    pub(crate) fn next(&mut self, cx: &mut ExecContext) -> Result<Option<(u64, i64, u64)>> {
+        if self.pending.is_none() {
+            self.pending = self.partial(cx)?;
+        }
+        let Some((key, sum, count)) = self.pending else {
+            return Ok(None);
+        };
+        if count == 0
+            || sum < i128::from(i64::MIN) * i128::from(count)
+            || sum > i128::from(i64::MAX) * i128::from(count)
+        {
+            return Err(Error::CorruptSpill("partial sum/count range"));
+        }
+        if let Ok(value) = i64::try_from(sum) {
+            self.pending = None;
+            return Ok(Some((key, value, count)));
+        }
+        // Split a large exact prefix sum into representable contributions. Each
+        // emitted piece consumes one original count; the last piece keeps the rest.
+        let value = if sum < 0 { i64::MIN } else { i64::MAX };
+        self.pending = Some((
+            key,
+            sum.checked_sub(i128::from(value))
+                .ok_or(Error::Overflow("partial split"))?,
+            count - 1,
+        ));
+        Ok(Some((key, value, 1)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,6 +494,7 @@ mod tests {
             file.write_all(&bytes).unwrap();
             drop(file);
             let mut state = Aggregate {
+                built: true,
                 table: None,
                 paths: std::array::from_fn(|_| None),
                 partition: 0,
@@ -381,6 +538,7 @@ mod tests {
         file.write_all(&1_u64.to_le_bytes()).unwrap();
         drop(file);
         let mut state = Aggregate {
+            built: true,
             table: None,
             paths: std::array::from_fn(|_| None),
             partition: 0,

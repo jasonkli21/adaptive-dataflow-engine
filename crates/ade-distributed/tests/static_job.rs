@@ -311,7 +311,6 @@ fn adaptive_process_oracle_divergence_and_failure() {
     failure_cleanup(cluster, &mut job);
 }
 
-#[cfg(feature = "research-hooks")]
 fn source_snapshot(files: &[PathBuf]) -> ade_distributed::lineage::SourceSnapshot {
     use ade_distributed::{
         ids::MorselId,
@@ -741,6 +740,9 @@ fn many_distinct_keys_in_one_virtual_shard_keep_v1_ownership_for_two_to_four_wor
         })
         .unwrap();
         assert_topology_output(&output, &keys, workers);
+        assert!(output.metrics.producers.values().all(|p| p.prefix_rows > 0
+            && p.prefix_rows <= TaskConfig::default().batch_size
+            && p.preparation_ns > 0));
         let decision = output.metrics.topology.as_ref().unwrap();
         assert_eq!(decision.reason, "one_occupied_shard");
         assert_eq!(decision.layout, Layout::static_layout(workers).unwrap());
@@ -1189,4 +1191,157 @@ fn static_packed_is_an_explicit_static_diagnostic() {
                 && p.routing_buffer_capacity_rows == 2 * ade_distributed::exchange::MAX_BATCH_ROWS)
     );
     verify_output(output, ExchangeMode::LocalMaterialized);
+}
+
+fn assert_partial_result(output: &coordinator::JobOutput, keys: &[u64]) {
+    let mut actual = BTreeMap::new();
+    for b in &output.batches {
+        let k = b.column(0).as_any().downcast_ref::<UInt64Array>().unwrap();
+        let s = b.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+        let c = b.column(2).as_any().downcast_ref::<UInt64Array>().unwrap();
+        for row in 0..b.num_rows() {
+            assert!(
+                actual
+                    .insert(k.value(row), (s.value(row), c.value(row)))
+                    .is_none()
+            );
+        }
+    }
+    let expected: BTreeMap<_, _> = keys
+        .iter()
+        .map(|key| (*key, (6 - 4 * i64::try_from(key % 1000).unwrap(), 4)))
+        .collect();
+    assert_eq!(actual, expected);
+}
+#[test]
+fn partial_two_worker_modes_preserve_contributions_and_refuse_replay() {
+    use ade_distributed::topology::PartitionPolicy;
+    use ade_exec::partial::{Config, Mode};
+    let root = tempfile::tempdir().unwrap();
+    let keys: Vec<_> = (0..100_000)
+        .filter(|k| ade_distributed::partition::hash_v1(*k).is_multiple_of(4))
+        .take(3000)
+        .collect();
+    let files = topology_fixture(root.path(), &keys);
+    let cluster = LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), 2).unwrap();
+    let mut id = 100;
+    for policy in [Mode::AdaptiveV1, Mode::RawPartial] {
+        for mode in [
+            ExchangeMode::Direct,
+            ExchangeMode::Buffered,
+            ExchangeMode::Spill,
+            ExchangeMode::LocalMaterialized,
+            ExchangeMode::ObjectStoreMaterialized,
+            ExchangeMode::Adaptive,
+        ] {
+            id += 1;
+            let mut config = TaskConfig {
+                partial: Config {
+                    mode: policy,
+                    sample_rows: 65,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            config.exchange.mode = mode;
+            config.exchange.buffer_bytes = 1024 * 1024;
+            if mode == ExchangeMode::Spill || mode == ExchangeMode::ObjectStoreMaterialized {
+                config.topology.policy = PartitionPolicy::SampledV1;
+            }
+            let job = StaticAggregateJob {
+                id: JobId(id),
+                files: files.clone(),
+                workers: cluster.workers.clone(),
+                config,
+                task_timeout: Duration::from_secs(20),
+                snapshot: None,
+            };
+            let output = coordinator::execute(&job).unwrap();
+            assert_partial_result(&output, &keys);
+            for producer in output.metrics.producers.values() {
+                let p = producer.partial.as_ref().unwrap();
+                assert!(p.state_released_before_tail);
+                if policy == Mode::AdaptiveV1 {
+                    assert!(p.hash_to_raw);
+                    assert_eq!(p.flushed_count, 65);
+                    assert_eq!(p.raw_rows, 6000 - 65);
+                } else {
+                    assert!(!p.hash_to_raw);
+                    assert_eq!(p.raw_rows, 6000);
+                }
+                assert_eq!(producer.sent.rows, 6000);
+            }
+            if job.config.topology.policy == PartitionPolicy::SampledV1 {
+                assert_eq!(
+                    output.metrics.topology.as_ref().unwrap().reason,
+                    "split_oversized_bucket"
+                );
+            }
+        }
+    }
+    let job = StaticAggregateJob {
+        id: JobId(id + 1),
+        files: files.clone(),
+        workers: cluster.workers.clone(),
+        config: TaskConfig {
+            partial: Config {
+                mode: Mode::AdaptiveV1,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        task_timeout: Duration::from_secs(20),
+        snapshot: Some(source_snapshot(&files)),
+    };
+    assert!(
+        coordinator::execute(&job)
+            .err()
+            .expect("non-fixed replay must refuse")
+            .to_string()
+            .contains("not admitted")
+    );
+    #[cfg(feature = "research-hooks")]
+    {
+        let mut job = job;
+        job.snapshot = None;
+        job.config.research_exit_final_partition = Some(0);
+        assert!(coordinator::execute(&job).is_err());
+    }
+}
+#[test]
+fn partial_three_four_worker_pinned_layout_and_tiny_coalesce() {
+    use ade_distributed::topology::{PartitionPolicy, TopologyConfig};
+    use ade_exec::partial::{Config, Mode};
+    for workers in [3, 4] {
+        for policy in [Mode::AdaptiveV1, Mode::RawPartial] {
+            let root = tempfile::tempdir().unwrap();
+            let keys = vec![0, 1, 2, 3];
+            let files = topology_fixture(root.path(), &keys);
+            let cluster =
+                LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), workers).unwrap();
+            let job = StaticAggregateJob {
+                id: JobId(1),
+                files,
+                workers: cluster.workers.clone(),
+                config: TaskConfig {
+                    partial: Config {
+                        mode: policy,
+                        ..Default::default()
+                    },
+                    topology: TopologyConfig {
+                        policy: PartitionPolicy::SampledV1,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                task_timeout: Duration::from_secs(20),
+                snapshot: None,
+            };
+            let output = coordinator::execute(&job).unwrap();
+            assert_partial_result(&output, &keys);
+            assert_eq!(output.metrics.finals.len(), 1);
+            assert_eq!(output.metrics.inactive.len(), workers - 1);
+            assert_eq!(output.metrics.gather.transfers, 1);
+        }
+    }
 }

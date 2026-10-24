@@ -114,6 +114,7 @@ pub enum ResolvedEngine {
     DataFusion(DataFusionConfig),
     AdeLocal(crate::ade_local::AdeLocalConfig),
     AdeDistributed(crate::ade_distributed::AdeDistributedConfig),
+    AdeJoin(crate::ade_join::JoinConfig),
 }
 
 impl EngineRequest {
@@ -126,6 +127,9 @@ impl EngineRequest {
             "datafusion" => Ok(ResolvedEngine::DataFusion(DataFusionEngine::parse_config(
                 &self.options,
             )?)),
+            "ade-distributed-join" => Ok(ResolvedEngine::AdeJoin(
+                crate::ade_join::JoinEngine::parse_config(&self.options)?,
+            )),
             "ade-distributed" => Ok(ResolvedEngine::AdeDistributed(
                 crate::ade_distributed::AdeDistributedEngine::parse_config(&self.options)?,
             )),
@@ -145,6 +149,7 @@ impl ResolvedEngine {
             Self::DataFusion(config) => config.info(),
             Self::AdeLocal(config) => config.info(),
             Self::AdeDistributed(config) => config.info(),
+            Self::AdeJoin(config) => config.info(),
         }
     }
 }
@@ -221,6 +226,32 @@ impl BenchmarkEngine for DataFusionEngine {
             .with_batch_size(config.batch_size)
             .with_collect_statistics(config.collect_statistics);
         let ctx = SessionContext::new_with_config(cfg);
+        if let Query::InnerEquiJoin { max_output_rows } = case.query {
+            for (name, prefix) in [("ade_left", "left/"), ("ade_right", "right/")] {
+                let files = m
+                    .files
+                    .iter()
+                    .filter(|f| f.relative_path.starts_with(prefix))
+                    .map(|f| root.join(&f.relative_path).to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                require(!files.is_empty(), "missing join side")?;
+                let table = ctx
+                    .read_parquet(files, ParquetReadOptions::default())
+                    .await
+                    .map_err(Error::EngineSetup)?
+                    .into_view();
+                ctx.register_table(name, table)
+                    .map_err(Error::EngineSetup)?;
+            }
+            return Ok(Self {
+                ctx,
+                sql: format!(
+                    "SELECT l.key, l.value_i64 AS left_value, r.value_i64 AS right_value FROM ade_left l INNER JOIN ade_right r ON l.key=r.key LIMIT {}",
+                    max_output_rows + 1
+                ),
+                config: config.clone(),
+            });
+        }
         // Only manifest-listed files participate. Extra directory files cannot silently change input.
         let files = m
             .files
@@ -237,6 +268,7 @@ impl BenchmarkEngine for DataFusionEngine {
         ctx.register_table("input", table)
             .map_err(Error::EngineSetup)?;
         let sql = match case.query {
+            Query::InnerEquiJoin{..} => unreachable!("handled two-source registration above"),
             Query::Scan => "SELECT row_id, key, value_i64 FROM input".into(),
             Query::ScanFilterProject { threshold } => format!("SELECT key, value_i64 FROM input WHERE secondary < {threshold}"),
             Query::GroupBySum => "SELECT key, CAST(SUM(value_i64) AS BIGINT), COUNT(*) FROM input GROUP BY key".into(),
@@ -335,7 +367,27 @@ fn canonical(case: &BenchmarkCase, batches: &[RecordBatch]) -> Result<Canonical>
         3
     };
     let mut rows = Vec::new();
+    let cap = if let Query::InnerEquiJoin { max_output_rows } = case.query {
+        Some(max_output_rows)
+    } else {
+        None
+    };
+    let mut total = 0u64;
     for b in batches {
+        if let Some(cap) = cap {
+            total = total
+                .checked_add(b.num_rows() as u64)
+                .ok_or_else(|| Error::Validation("join output count overflow".into()))?;
+            require(total <= cap, "join output validation cap")?;
+            require(
+                b.schema().fields().iter().map(|f| f.data_type()).eq([
+                    &DataType::UInt64,
+                    &DataType::Int64,
+                    &DataType::Int64,
+                ]),
+                "join output types",
+            )?;
+        }
         require(b.num_columns() == width, "output width mismatch")?;
         for r in 0..b.num_rows() {
             rows.push(
@@ -377,7 +429,9 @@ fn expected_synthetic(case: &BenchmarkCase, c: &dataset::SyntheticConfig) -> Can
                 group.0 += i128::from(value);
                 group.1 += 1;
             }
-            Query::TpchQ1 => unreachable!("schema checked before oracle"),
+            Query::TpchQ1 | Query::InnerEquiJoin { .. } => {
+                unreachable!("schema checked before oracle")
+            }
         }
     }
     if case.query == Query::GroupBySum {
@@ -539,6 +593,9 @@ pub async fn execute_validated_request(
 ) -> Result<ExecutionOutcome> {
     let resolved = request.resolve()?;
     match resolved {
+        ResolvedEngine::AdeJoin(config) => {
+            execute_validated_with::<crate::ade_join::JoinEngine>(root, m, case, &config).await
+        }
         ResolvedEngine::AdeDistributed(config) => {
             execute_validated_with::<crate::ade_distributed::AdeDistributedEngine>(
                 root, m, case, &config,
@@ -577,7 +634,12 @@ pub async fn execute_validated_with<E: BenchmarkEngine>(
     let batches = engine.execute().await?;
     let query_time_ns = u64::try_from(query.elapsed().as_nanos()).unwrap_or(u64::MAX);
     let actual = canonical(case, &batches)?;
-    let expected = if let Some(c) = &m.synthetic {
+    let expected = if matches!(case.query, Query::InnerEquiJoin { .. }) {
+        // Independent SQL execution on separate tables, outside the measured query interval.
+        let reference =
+            DataFusionEngine::prepare(root, m, case, &DataFusionConfig::default()).await?;
+        canonical(case, &reference.execute().await?)?
+    } else if let Some(c) = &m.synthetic {
         expected_synthetic(case, c)
     } else {
         expected_q1(root, m)?
@@ -725,6 +787,56 @@ mod tests {
         );
         assert!(DataFusionConfig::from_options(&options).is_err());
         assert!(StubEngine::parse_config(&["target_partitions=4".into()]).is_err());
+    }
+
+    #[tokio::test]
+    async fn join_sql_oracle_preserves_duplicate_bags_and_output_cap() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("join");
+        let config = crate::join_dataset::Config {
+            left_rows: 6,
+            right_rows: 9,
+            left_key_domain: 1,
+            right_key_domain: 1,
+            files_per_side: 3,
+            row_group_rows: 2,
+            seed: 42,
+        };
+        let manifest = crate::join_dataset::generate(&data, "duplicates", &config).unwrap();
+        let mut case = BenchmarkCase::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmarks/specs/inner-equi-join.toml"),
+        )
+        .unwrap();
+        let outcome = execute_validated(&data, &manifest, &case, &DataFusionConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(outcome.rows_output, 54);
+        let engine =
+            DataFusionEngine::prepare(&data, &manifest, &case, &DataFusionConfig::default())
+                .await
+                .unwrap();
+        let batches = engine.execute().await.unwrap();
+        let reference = canonical(&case, &batches).unwrap();
+        let mut tampered = canonical(&case, &batches).unwrap();
+        if let Canonical::Integer(rows) = &mut tampered {
+            rows.pop();
+        }
+        assert!(validate_equal(&tampered, &reference).is_err());
+        let mut tampered = canonical(&case, &batches).unwrap();
+        if let Canonical::Integer(rows) = &mut tampered {
+            rows[0] = rows.last().unwrap().clone();
+            rows.sort();
+        }
+        assert!(validate_equal(&tampered, &reference).is_err());
+        case.query = Query::InnerEquiJoin {
+            max_output_rows: 53,
+        };
+        assert!(
+            execute_validated(&data, &manifest, &case, &DataFusionConfig::default())
+                .await
+                .is_err()
+        );
     }
 
     #[test]

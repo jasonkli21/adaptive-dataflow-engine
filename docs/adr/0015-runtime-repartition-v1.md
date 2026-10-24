@@ -1,6 +1,6 @@
 # ADR-0015: Bounded runtime key-shard repartitioning v1
 
-Status: Implemented candidate; Phase8 empirical exit FAILED on primary two-host gates. See report.
+Status: Accepted bounded v1; source-bound 2026-10-22 closure passes the unchanged gates. Earlier failed experiments remain failed; see report.
 Date: 2026-10-21. Baseline: f66addb815deaa8accb2529124b713a8efd85c5e.
 
 ## Scope and architecture reconciliation
@@ -193,3 +193,64 @@ passed all39 child correctness checks but FAILED primary gates: work ratio
 0.8362201473, job ratio1.0850558768; uniform1.0820259475 passed. Four-host ratios
 0.0704644508(work),0.7258686201(job) are limited confirmation only. Phase8 remains
 incomplete. The report preserves all three experiments and exact source identity.
+
+
+## 2026-10-22 remediation candidate (acceptance pending)
+
+User-authorized Phase 8 remediation preserves the supported-domain matrix and
+all original numeric gates. The first routing-only clean snapshot ed3720a passed
+all39 correctness checks and gates (skew work0.63585354, job0.99488737,
+uniform1.04154321); this small local job margin is not a robust speed claim.
+Its checksummed source/raw bundle is recorded in the report.
+
+The final candidate starts one actual original scan/project/hash-aggregate batch
+inside Probe, keeps that same reservation-backed state suspended across the
+all-worker layout ACK, then resumes the original source cursor without repeating
+the ingested rows. Key-only observation remains separately metered and bounded.
+No original exchange frame may escape before all ACKs. Full-file fingerprint
+validation remains before resume/emission; source immutability still applies.
+The original task's ledger/prefetch bounds apply to prefix work independently of
+the capped key probe. Cancel/drop releases both sources and any partial spill.
+Probe-stage wall includes prefix preparation, and original-prefix rows and wall
+are separately reported in observations and producer diagnostics. Empty files
+produce zero prefix rows. This replaces the earlier probe-only interpretation
+with a transition after real original partial-operator work; it remains one
+pre-exchange immutable epoch, with no mid-transfer rerouting or finer shards.
+Architecture §9.1 and Phase8 plan §§1,4.3 are reconciled accordingly.
+
+A single routing pass replaces per-destination select/take/copy for packed paths,
+retaining identical ordered1024-row frame streams and selective replay. Static
+batching is unchanged; static_packed remains the attribution control. Routing
+and send/encode wall counters are separate. All-worker layout ACKs run in
+parallel under the same deadline; partial success still cancels every survivor.
+Control ADETCP10 binds the added prefix diagnostics (ADETCP09 was the separate
+routing experiment); exchange wire2/hash1/result schema1 remain. No aggregate
+algorithm/capacity/spill-bit change is introduced; only incremental prefix
+ingestion is factored out of the existing build loop.
+
+The original-prefix snapshot2123887 passed correctness/work/uniform but failed
+skew job latency1.0137313513; it remains FAILED. The separately predeclared next
+candidate uses blocking listener accept with explicit shutdown wake connections,
+rechecking stop before handler creation and retaining the4/8 handler caps. This
+removes periodic idle dispatch sleeps without changing transport, budgets or
+policy. Idle/wildcard and saturated-slot cancellation tests cover shutdown.
+Source bundles now include exact Git objects as well as the source archive and
+raw checksums, so a reviewer can clone the literal measured clean commit.
+
+
+## Closure decision — 2026-10-22
+
+Accept bounded Phase8 v1 at source ab7404b/runtime432cc7dd, with fixed48 shards
+and one immutable pre-exchange layout after real original prefix aggregation.
+The original numeric gates pass in BOTH predeclared confirmation suites B/C and
+all-nine pooled primary samples including failed A. All117 children are correct;
+final workspace118 tests, smoke and Phase6/7 regressions pass. Substantial local
+variation limits attribution and production claims. The supplemental protocol
+was SHA256-pinned before B/C, separately from the frozen source, as explicitly
+recorded in the report. No failed experiment is relabelled or excluded.
+
+The immutable GitHub evidence release phase8-evidence-2026-10-22 includes exact
+source Git objects, all raw iterations and prior failures. Closure bundle SHA256
+53db547ab743666afb379f12fdbbd75b79e9c2ad0556f7747d86e7a5b7bb41d9.
+The report is the authoritative detailed completion/failure-envelope record.
+The user has authorized Phase9 after this closure; no Phase10 work is authorized.

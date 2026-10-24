@@ -578,6 +578,7 @@ async fn q1_cutoff_and_tolerance_reference() {
         row_count: 4,
         logical_fingerprint: dataset::hash_file(&file).unwrap(),
         synthetic: None,
+        join: None,
         scale_factor: Some(0.001),
         files: vec![dataset::FileManifest {
             relative_path: "lineitem.parquet".into(),

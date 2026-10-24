@@ -30,7 +30,8 @@ pub fn select(batch: &RecordBatch, partition: usize, partitions: usize) -> Resul
         destination(key, partitions)
     })
 }
-pub(crate) fn select_layout(
+#[cfg(test)]
+fn select_layout(
     batch: &RecordBatch,
     partition: usize,
     layout: &crate::topology::Layout,
@@ -160,7 +161,8 @@ impl FramePacker {
             rows: 0,
         }
     }
-    pub fn push(&mut self, destination: usize, batch: &RecordBatch) -> Result<Option<RecordBatch>> {
+    #[cfg(test)]
+    fn push(&mut self, destination: usize, batch: &RecordBatch) -> Result<Option<RecordBatch>> {
         require(
             batch.schema() == crate::exchange::schema()
                 && batch.num_rows() <= crate::exchange::MAX_BATCH_ROWS,
@@ -201,6 +203,58 @@ impl FramePacker {
         }
         Ok(full)
     }
+    /// Route once and emit at most one transient frame at a time. Each destination
+    /// sees exactly the same ordered rows and boundaries as select + push.
+    pub fn route(
+        &mut self,
+        batch: &RecordBatch,
+        layout: Option<&crate::topology::Layout>,
+        target: Option<usize>,
+        mut emit: impl FnMut(usize, RecordBatch) -> Result<()>,
+    ) -> Result<()> {
+        require(
+            batch.schema() == crate::exchange::schema()
+                && batch.num_rows() <= crate::exchange::MAX_BATCH_ROWS
+                && batch.columns().iter().all(|c| c.null_count() == 0),
+            "packer schema/row/null bound",
+        )?;
+        let keys = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer key".into()))?;
+        let sums = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer sum".into()))?;
+        let counts = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or_else(|| crate::Error::Invalid("packer count".into()))?;
+        for row in 0..batch.num_rows() {
+            let p = layout.map_or_else(
+                || destination(keys.value(row), self.pending.len()),
+                |l| Ok(l.route(keys.value(row))),
+            )?;
+            if target.is_some_and(|t| t != p) {
+                continue;
+            }
+            let pending = &mut self.pending[p];
+            pending.keys.push(keys.value(row));
+            pending.sums.push(sums.value(row));
+            pending.counts.push(counts.value(row));
+            self.rows += 1;
+            self.peak_rows = self.peak_rows.max(self.rows);
+            if pending.keys.len() == crate::exchange::MAX_BATCH_ROWS {
+                let frame = pending.take()?.expect("full frame");
+                self.rows -= crate::exchange::MAX_BATCH_ROWS;
+                emit(p, frame)?;
+            }
+        }
+        Ok(())
+    }
     pub fn finish(&mut self, destination: usize) -> Result<Option<RecordBatch>> {
         self.rows -= self.pending[destination].keys.len();
         self.pending[destination].take()
@@ -209,6 +263,102 @@ impl FramePacker {
 #[cfg(test)]
 mod packer_tests {
     use super::*;
+    #[test]
+    fn single_pass_matches_reference_frames_including_selective_replay_and_sink_failure() {
+        for workers in 2..=4 {
+            let config = crate::topology::TopologyConfig {
+                policy: crate::topology::PartitionPolicy::SampledV1,
+                ..Default::default()
+            };
+            let observations = (0..workers)
+                .map(|p| crate::topology::Observation {
+                    producer: p as u64,
+                    counts: (0..48)
+                        .map(|s| if s % workers == 0 { 100 } else { 0 })
+                        .collect(),
+                    rows: 4096,
+                    files: 1,
+                    ..Default::default()
+                })
+                .collect();
+            let sampled = crate::topology::decide(&config, workers, observations)
+                .unwrap()
+                .layout;
+            for layout in [None, Some(&sampled)] {
+                for target in [None, Some(0), Some(workers - 1)] {
+                    let mut reference = FramePacker::new(workers);
+                    let mut routed = FramePacker::new(workers);
+                    let mut expected = vec![Vec::new(); workers];
+                    let mut actual = expected.clone();
+                    for start in (0..8197u64).step_by(511) {
+                        let end = (start + 511).min(8197);
+                        let batch = RecordBatch::try_new(
+                            crate::exchange::schema(),
+                            vec![
+                                std::sync::Arc::new(UInt64Array::from_iter_values(
+                                    (start..end).map(|k| k % 271),
+                                )),
+                                std::sync::Arc::new(arrow::array::Int64Array::from_iter_values(
+                                    (start..end)
+                                        .map(|k| if k % 2 == 0 { i64::MIN } else { i64::MAX }),
+                                )),
+                                std::sync::Arc::new(UInt64Array::from_iter_values(
+                                    (start..end).map(|k| k + 1),
+                                )),
+                            ],
+                        )
+                        .unwrap();
+                        for (p, frames) in expected.iter_mut().enumerate() {
+                            if target.is_some_and(|t| t != p) {
+                                continue;
+                            }
+                            let selected = layout
+                                .map_or_else(
+                                    || select(&batch, p, workers),
+                                    |l| select_layout(&batch, p, l),
+                                )
+                                .unwrap();
+                            if let Some(frame) = reference.push(p, &selected).unwrap() {
+                                frames.push(frame);
+                            }
+                        }
+                        routed
+                            .route(&batch, layout, target, |p, frame| {
+                                actual[p].push(frame);
+                                Ok(())
+                            })
+                            .unwrap();
+                    }
+                    for p in 0..workers {
+                        if let Some(frame) = reference.finish(p).unwrap() {
+                            expected[p].push(frame);
+                        }
+                        if let Some(frame) = routed.finish(p).unwrap() {
+                            actual[p].push(frame);
+                        }
+                    }
+                    assert_eq!(actual, expected);
+                    assert!(routed.peak_rows <= workers * crate::exchange::MAX_BATCH_ROWS);
+                    let batch = RecordBatch::try_new(
+                        crate::exchange::schema(),
+                        vec![
+                            std::sync::Arc::new(UInt64Array::from(vec![0; 1024])),
+                            std::sync::Arc::new(arrow::array::Int64Array::from(vec![1; 1024])),
+                            std::sync::Arc::new(UInt64Array::from(vec![1; 1024])),
+                        ],
+                    )
+                    .unwrap();
+                    assert!(
+                        FramePacker::new(workers)
+                            .route(&batch, layout, None, |_, _| Err(crate::Error::Invalid(
+                                "sink failure".into()
+                            )))
+                            .is_err()
+                    );
+                }
+            }
+        }
+    }
     #[test]
     fn frame_boundaries_preserve_signed_rows_and_empty_destinations() {
         for rows in [0, 511, 512, 1023, 1024, 1025, 2049] {

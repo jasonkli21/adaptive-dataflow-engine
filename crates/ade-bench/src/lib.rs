@@ -1,11 +1,13 @@
 //! Reproducible benchmark infrastructure and adapters; execution lives in engine crates.
 pub mod ade_distributed;
+pub mod ade_join;
 pub mod ade_local;
 pub mod cli;
 pub mod compare;
 pub mod dataset;
 pub mod engine;
 pub mod environment;
+pub mod join_dataset;
 pub mod result;
 pub mod runner;
 pub mod spec;

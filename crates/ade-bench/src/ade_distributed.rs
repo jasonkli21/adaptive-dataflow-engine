@@ -30,6 +30,7 @@ impl AdeDistributedConfig {
             execution: self.task.execution(),
         };
         let mut info = local.info();
+        add_partial_info(&mut info, &self.task.partial);
         add_topology_info(&mut info, &self.task.topology);
         info.name = "ade-distributed".into();
         info.configuration
@@ -107,7 +108,7 @@ impl AdeDistributedConfig {
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration
-            .insert("control_protocol".into(), "ADETCP08".into());
+            .insert("control_protocol".into(), "ADETCP11".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
             ade_distributed::exchange::MAX_FRAME_BYTES.to_string(),
@@ -118,6 +119,25 @@ impl AdeDistributedConfig {
         );
         info
     }
+}
+fn add_partial_info(info: &mut EngineInfo, partial: &ade_exec::partial::Config) {
+    info.configuration.insert(
+        "aggregate_policy".into(),
+        match partial.mode {
+            ade_exec::partial::Mode::FixedHash => "fixed_hash",
+            ade_exec::partial::Mode::AdaptiveV1 => "adaptive_v1",
+            ade_exec::partial::Mode::RawPartial => "raw_partial",
+        }
+        .into(),
+    );
+    info.configuration.insert(
+        "aggregate_sample_rows".into(),
+        partial.sample_rows.to_string(),
+    );
+    info.configuration.insert(
+        "aggregate_min_reduction_percent".into(),
+        partial.min_reduction_percent.to_string(),
+    );
 }
 fn add_topology_info(info: &mut EngineInfo, topology: &ade_distributed::topology::TopologyConfig) {
     if let Ok(serde_json::Value::Object(values)) = serde_json::to_value(topology) {
@@ -190,6 +210,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
     )]
     fn parse_config(options: &[String]) -> Result<Self::Config> {
         let mut topology_values = serde_json::Map::new();
+        let mut partial_values = serde_json::Map::new();
         let mut workers = None;
         let mut exchange_mode = None;
         let mut exchange_buffer = None;
@@ -198,6 +219,32 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut exit_final = None;
         let mut recovery_enabled = true;
         for option in options {
+            if option.starts_with("aggregate_") {
+                let (key, value) = option
+                    .split_once('=')
+                    .ok_or_else(|| Error::Invalid("aggregate option requires value".into()))?;
+                let field = match key {
+                    "aggregate_policy" => "mode",
+                    "aggregate_sample_rows" => "sample_rows",
+                    "aggregate_min_reduction_percent" => "min_reduction_percent",
+                    _ => return Err(Error::Invalid("unsupported aggregate option".into())),
+                };
+                let value = if field == "mode" {
+                    serde_json::Value::String(value.into())
+                } else {
+                    serde_json::Value::from(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| Error::Invalid("invalid aggregate number".into()))?,
+                    )
+                };
+                require(
+                    partial_values.insert(field.into(), value).is_none(),
+                    "duplicate aggregate option",
+                )?;
+                continue;
+            }
+
             if option.starts_with("partition_") {
                 let (key, value) = option
                     .split_once('=')
@@ -373,11 +420,24 @@ impl BenchmarkEngine for AdeDistributedEngine {
             };
             require(recovery_enabled, "expected cost requires recovery_enabled")?;
         }
+        let partial_tuned = partial_values.keys().any(|k| k != "mode");
+        let partial: ade_exec::partial::Config =
+            serde_json::from_value(serde_json::Value::Object(partial_values))?;
+        partial.validate()?;
+        require(
+            !partial_tuned || partial.mode != ade_exec::partial::Mode::FixedHash,
+            "aggregate tuning requires non-fixed policy",
+        )?;
+        require(
+            partial.mode == ade_exec::partial::Mode::FixedHash || !recovery_enabled,
+            "non-fixed partial recovery is not admitted; set recovery_enabled=false",
+        )?;
         exchange.validate()?;
         Ok(AdeDistributedConfig {
             workers,
             recovery_enabled,
             task: TaskConfig {
+                partial,
                 topology,
                 exchange,
                 batch_size: local.batch_size,

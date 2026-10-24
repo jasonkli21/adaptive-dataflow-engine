@@ -169,6 +169,8 @@ pub struct DatasetManifest {
     pub row_count: u64,
     pub logical_fingerprint: String,
     pub synthetic: Option<SyntheticConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join: Option<crate::join_dataset::Config>,
     pub scale_factor: Option<f64>,
     pub files: Vec<FileManifest>,
 }
@@ -208,6 +210,10 @@ impl DatasetManifest {
                 == Some(self.row_count),
             "manifest row count mismatch",
         )?;
+        require(
+            self.required_schema == "synthetic-join-v1" || self.join.is_none(),
+            "join parameters on nonjoin dataset",
+        )?;
         match self.required_schema.as_str() {
             "synthetic-events-v1" => {
                 let c = self
@@ -226,6 +232,33 @@ impl DatasetManifest {
                             },
                     "generator manifest mismatch",
                 )?;
+            }
+            "synthetic-join-v1" => {
+                let c = self
+                    .join
+                    .as_ref()
+                    .ok_or_else(|| crate::Error::Invalid("missing join parameters".into()))?;
+                c.validate()?;
+                require(
+                    self.synthetic.is_none()
+                        && self.scale_factor.is_none()
+                        && self.generator == "synthetic-join"
+                        && self.generator_version == "1"
+                        && self.files.len() == c.files_per_side * 2,
+                    "join manifest generator",
+                )?;
+                for (side, rows) in [("left", c.left_rows), ("right", c.right_rows)] {
+                    let selected: Vec<_> = self
+                        .files
+                        .iter()
+                        .filter(|f| f.relative_path.starts_with(&format!("{side}/")))
+                        .collect();
+                    require(
+                        selected.len() == c.files_per_side
+                            && selected.iter().map(|f| f.rows).sum::<u64>() == rows,
+                        "join side manifest",
+                    )?;
+                }
             }
             "tpch-v1" => {
                 require(
@@ -388,7 +421,7 @@ pub fn hash_file(path: &Path) -> Result<String> {
     }
     Ok(hash.finalize().to_hex().to_string())
 }
-fn describe(root: &Path, relative_path: String) -> Result<FileManifest> {
+pub(crate) fn describe(root: &Path, relative_path: String) -> Result<FileManifest> {
     let path = root.join(&relative_path);
     let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path)?)?;
     Ok(FileManifest {
@@ -449,6 +482,7 @@ pub fn generate(output: &Path, dataset_id: &str, c: &SyntheticConfig) -> Result<
             row_count: c.rows,
             logical_fingerprint: hash.finalize().to_hex().to_string(),
             synthetic: Some(c.clone()),
+            join: None,
             scale_factor: None,
             files,
         };
@@ -495,6 +529,12 @@ pub fn inspect(root: &Path, full: bool) -> Result<DatasetManifest> {
             require(
                 b.schema().as_ref() == schema().as_ref(),
                 "synthetic schema mismatch",
+            )?;
+        }
+        if m.join.is_some() {
+            require(
+                b.schema() == &ade_exec::join::input_schema(),
+                "join file schema mismatch",
             )?;
         }
         if full {
@@ -611,6 +651,7 @@ pub fn register_tpch(root: &Path, scale: f64, version: String) -> Result<Dataset
         row_count: files.iter().map(|f| f.rows).sum(),
         logical_fingerprint: logical,
         synthetic: None,
+        join: None,
         scale_factor: Some(scale),
         files,
     };

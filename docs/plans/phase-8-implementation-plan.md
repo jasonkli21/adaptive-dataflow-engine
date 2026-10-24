@@ -4,7 +4,7 @@
 **Prepared:** 2026-10-21  
 **Repository:** https://github.com/jasonkli21/adaptive-dataflow-engine  
 **Inspected baseline:** `main` at [`f66addb815deaa8accb2529124b713a8efd85c5e`](https://github.com/jasonkli21/adaptive-dataflow-engine/commit/f66addb815deaa8accb2529124b713a8efd85c5e) (one remediation commit after the original Phase 7 implementation `dc1796e`).  
-**Status:** bounded implementation candidate exists with reconciliations in ADR-0015. Phase 8 remains **incomplete** because primary empirical gates failed; see the implementation report.
+**Status:** bounded v1 COMPLETE after the 2026-10-22 source-bound closure in ADR-0015/report. Earlier candidate failures are preserved. Fixed48-shard and supported-input limits remain.
 
 ## 1. Objective, interpretation, and hard boundary
 
@@ -14,7 +14,7 @@ Implement a **small, honest first topology epoch** for the currently supported d
 
 **A necessary scope qualification:** the v1 routing transition commits **before the first affected exchange data segment is emitted**. A short, bounded sampling/commit rendezvous is allowed; a *whole producer completion, whole shuffle, or full-materialization barrier* is not. This avoids double-counting keys across routing epochs and retains the existing final aggregation and recovery mechanisms. Because this is a conservative interpretation of “while execution proceeds,” the independent reviewer must explicitly decide whether it satisfies the PRD's Phase 8 ambition. If the implementation only picks a layout before any meaningful runtime work, or requires whole-producer completion to do so, **do not mark the roadmap exit met**; either implement a safe later routing-epoch switch with keyed reconciliation or record Phase 8 as incomplete. Do not paper over that gap with nomenclature.
 
-The current candidate's bounded work before commitment is the source-prefix probe only; it does not run the original partial aggregate before the layout ACKs. Treat this as pre-exchange runtime-informed planning, not an observed transition during original production. Phase 8 remains incomplete until the product interpretation and empirical gates are satisfied.
+The original ADETCP08 candidate performed only a separate source-prefix probe before commitment. The 2026-10-22 remediation (ADR-0015) instead ingests one actual original scan/project/hash-aggregate batch, suspends that exact state through the all-worker layout ACK and resumes its cursor once. This makes original partial-operator work precede the immutable routing commitment without a full producer barrier. No exchange epoch switching is claimed. The final source-bound acceptance and immutable public evidence are recorded in the 2026-10-22 closure section of the implementation report.
 
 ### Explicit non-goals
 
@@ -87,6 +87,7 @@ Recommended bounded state machine (mechanism may differ if invariants are met):
 ```
 prepare all N workers + stores
   -> start real, bounded probe on pinned source snapshot (N producer assignments)
+  -> ingest one original partial-aggregate batch per nonempty assignment; suspend its exact state
   -> collect all N compact observations under a whole-probe deadline
   -> pure planner chooses layout, digest, actual active final set
   -> distribute/ack immutable layout to every worker
@@ -187,3 +188,21 @@ The report must state: source/head SHA; touched modules/ADR; initial and final s
 Treat WP1 as a pure core, WP2 as the protocol transition, WP3 as the key integration seam, WP4 as the difficult recovery/cost integration, and WP5 as the proof. The first high-risk decision is whether a cheap bounded *input* sample predicts **post-aggregate output** well enough; if not, improve observation provenance or mark empirical exit inconclusive rather than manufacturing a winning dataset. The second is separating a variable active-task set from immutable N×N transfer sessions and static worker hosts: define expected transfer and gather cardinality **before** editing concurrency code. The third is preserving Phase 7 receipt identity across a new layout: digest checks must not displace existing fingerprint, UUID or ACK safety.
 
 If a different design meets the PRD/invariants with **less** code and fewer barriers, choose it, record the deviation in ADR/report, and make the independent reviewer challenge both designs. This plan is guidance, not a license to sacrifice correctness in order to check its boxes.
+
+
+## 2026-10-22 closure reconciliation
+
+The final listener source ab7404b and original-prefix continuation satisfy the
+bounded pre-exchange interpretation in §1 with real original aggregate work.
+The original three numeric gates were unchanged. The initial listener suite A
+failed and stays failed; both predeclared B/C confirmations and pooled ALL9
+primary samples pass. The supplemental stability protocol was SHA256-pinned
+before B/C separately from the frozen runtime commit; this deviation and all
+failed readiness/timing evidence are explicit in the report. All117 children,
+final118-test workspace gate, smoke and Phase6/7 regressions pass. Exact source
+Git objects/raw results and all historical failures are immutable release assets.
+This closes bounded v1 and its external-auditability item; no mid-exchange epoch
+change, finer shards, broader recovery or original262144-key spill-domain claim
+is added. The user's subsequent explicit request authorizes Phase9 as a separate
+phase after this closure, superseding this plan's historical stop-after-Phase8
+handoff instruction only for that authorized continuation.

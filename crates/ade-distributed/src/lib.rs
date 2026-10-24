@@ -15,6 +15,8 @@ pub mod coordinator;
 pub mod exchange;
 mod gather;
 pub mod ids;
+pub mod join;
+pub mod join_policy;
 pub mod lineage;
 pub mod metrics;
 pub mod partition;
@@ -75,6 +77,8 @@ pub struct WorkerEndpoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskConfig {
+    #[serde(default)]
+    pub partial: ade_exec::partial::Config,
     pub topology: topology::TopologyConfig,
     pub batch_size: usize,
     pub memory_limit_bytes: usize,
@@ -87,6 +91,7 @@ pub struct TaskConfig {
 impl Default for TaskConfig {
     fn default() -> Self {
         Self {
+            partial: ade_exec::partial::Config::default(),
             topology: topology::TopologyConfig::default(),
             batch_size: 8192,
             memory_limit_bytes: 256 * 1024 * 1024,
@@ -115,6 +120,18 @@ impl TaskConfig {
         self.execution().validate()?;
         self.exchange.validate()?;
         self.topology.validate()?;
+        self.partial.validate()?;
+        if self.partial.mode != ade_exec::partial::Mode::FixedHash {
+            require(
+                self.exchange.cost.is_none(),
+                "non-fixed partial complete-copy recovery is not admitted",
+            )?;
+            #[cfg(feature = "research-hooks")]
+            require(
+                self.research_exit_final_partition.is_none(),
+                "non-fixed partial worker-loss recovery is not admitted",
+            )?;
+        }
         Ok(())
     }
 }

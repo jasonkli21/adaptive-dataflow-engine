@@ -18,9 +18,9 @@ benchmark substrate
 
 ## Current status
 
-**Phase 8 implementation candidate: correctness passes; primary performance gates failed, so Phase 8 remains incomplete.** `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
+**Phase 9 bounded v1 is complete: observed broadcast/repartition joins, real hash-to-grace conversion and opt-in adaptive partial aggregation pass source-bound correctness and release acceptance.** Phase8 is closed with immutable public evidence. `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
 
-Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. Distributed execution currently supports only synthetic GroupBySum.
+Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. The aggregate adapter preserves synthetic GroupBySum. The separate `ade-distributed-join` adapter adds bounded two-source inner equijoin with an independent DataFusion SQL bag oracle; all predeclared Phase9 guards and Phase6–8 regressions pass. See the [Phase9 report](docs/reports/phase-9-implementation-report.md) for all measured tradeoffs and immutable evidence.
 
 The completed Phase 0 architecture/benchmark lab in `crates/ade-bench` provides deterministic datasets, engine-independent workload definitions, a DataFusion baseline, process-isolated macrobenchmarks, versioned result artifacts, correctness validation, comparison tooling, and microbenchmark infrastructure.
 
@@ -31,7 +31,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-8-implementation-plan.md`](docs/plans/phase-8-implementation-plan.md) — active Phase 8 contract; see its implementation report for acceptance status.
+4. [`docs/plans/phase-9-implementation-plan.md`](docs/plans/phase-9-implementation-plan.md) — active Phase9 contract; Phase8 closure is preserved in its implementation report.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -129,7 +129,7 @@ Prefetch preserves pull backpressure and joins its producer on teardown.
 
 The physical plan is provisional. Sort supports non-null UInt64 key/row_id and
 Int64 value, ascending key then row_id. TPC-H Q1 is supported only by DataFusion.
-The local plan has no joins or SQL frontend. Static distribution is provided by the separate distributed crate below.
+The local tree has no SQL frontend. A separate typed two-source helper in `ade_exec::join` implements bounded bag equijoin, including actual hash-to-grace conversion; it is not a general optimizer or stable physical IR. Distribution is owned by the separate distributed crate below.
 See [ADR-0006](docs/adr/0006-managed-local-memory-and-spill.md) and the
 [Phase 2 report](docs/reports/phase-2-implementation-report.md) for contracts,
 validation and comparison evidence.
@@ -281,9 +281,8 @@ Cost options require expected-cost selection. Deadline penalties use the complet
 write-before-loss plus restore-after-loss path, and recovery closures share elapsed
 slack as they run. The explicit request-cost scope is the PUT/HEAD/GET transfer
 proxy; later cleanup LIST/DELETE charges are excluded. Staging overhead is real and
-separately measured. Phase 7 used control framing `ADETCP07`; Phase 8 review
-remediation advances the current control protocol to `ADETCP08` for source-coverage
-evidence. Transfer wire v2, hash v1 and result schema v1 remain.
+separately measured. Phase 7 used control framing `ADETCP06`; the current Phase 8 remediation
+used `ADETCP10` at its frozen closure source for source-coverage, original-prefix and routing evidence. Current Phase9 control uses `ADETCP11`; aggregate schema1 wire bytes, wire v2, hash v1 and result schema v1 remain.
 
 See [ADR-0014](docs/adr/0014-expected-cost-materialization-v1.md) and the
 [Phase 7 report](docs/reports/phase-7-implementation-report.md). Release economic
@@ -299,6 +298,11 @@ metrics; benchmark result schema v1 is unchanged. Phase 7 acceptance uses it.
 
 ### Bounded runtime repartitioning (Phase 8)
 
+The [Phase 8 closure report](docs/reports/phase-8-implementation-report.md) records
+both passing confirmations, all pooled measurements and prior failures. Raw/source
+evidence is available in the [immutable release](https://github.com/jasonkli21/adaptive-dataflow-engine/releases/tag/phase8-evidence-2026-10-22).
+Local timing variation limits causal and production claims.
+
 `partition_policy=static` remains the default. Explicit `sampled_v1` probes real
 assigned source prefixes after worker preparation and commits one immutable map
 of 48 key shards before exchange. Oversized base hash buckets can distribute
@@ -309,10 +313,11 @@ gather output. Physical processes remain 2–4. A single occupied virtual shard
 may contain several distinct keys, and v1 cannot refine that shard. A biased
 sample can hurt speed but cannot change results.
 
-The probe is pre-exchange planning: original partial aggregation and exchange
-production start only after every worker acknowledges the layout. No topology
-transition occurs after original producer work has started, so this candidate
-does not fulfill the broader PRD dynamic-transition outcome.
+The job ingests one original scan/project/hash-aggregate batch before layout
+commitment, retains its exact state and source cursor, then resumes after every
+worker acknowledges the layout. No exchange data is emitted before those ACKs.
+The transition follows original partial-operator work without waiting for
+producer completion; routing still has one immutable pre-exchange epoch.
 
 ```bash
 cargo run -p ade-bench -- validate --engine ade-distributed \
@@ -352,3 +357,54 @@ its pending buffers cap at N*1024 contributions (<=96 KiB), with separately
 reported capacity/peak rows and additional bounded Arrow/encoding transients.
 The release suite retains the original static comparator and a static_packed
 control so batching effects are visible.
+
+
+## Phase9 bounded adaptive operators
+
+```bash
+cargo build --workspace --locked
+# New directory, two separately identified relations, both with non-null key/value_i64.
+target/debug/ade-bench data generate join --dataset-id tiny-join-v1 \
+  --left-rows 65536 --right-rows 128 --output /tmp/ade-join-data
+target/debug/ade-bench validate --engine ade-distributed-join \
+  --spec benchmarks/specs/inner-equi-join.toml --dataset /tmp/ade-join-data
+# Diagnostic strategy controls:
+# --engine-option join_policy=forced_repartition|forced_broadcast|observed_v1
+# --engine-option build_side=left|right|auto
+# --engine-option join_algorithm=hash_only|grace|auto
+```
+
+Observed policy broadcasts only a completely observed build side that fits the
+row/state/fanout bounds; an incomplete prefix selects repartition or refuses.
+Every worker ACKs one source/execution/strategy digest before exchange. Both
+relations preserve duplicate multiplicity and left/right output orientation.
+The local operator transitions before output when its reserved hash-row capacity
+is exhausted; 32 deeper-hash spill partitions are processed one at a time.
+An oversized/hot partition, output/spill cap, schema/null mismatch or deadline
+returns an error. Sort-merge, general skew recovery and arbitrary joins are deferred.
+
+Join v1 supports 2–4 fixed localhost worker processes with spill exchange only.
+Each side has independent stage identities and exact terminal closure; gather
+commits only full success. All join worker losses cancel both sides and discard
+partial output. The aggregate-only final-loss recovery is retained for its default
+fixed-hash graph. Do not infer independent-host durability from these processes.
+
+For existing GroupBySum, `aggregate_policy=fixed_hash` remains the default.
+Opt-in `aggregate_policy=adaptive_v1` ingests an original bounded prefix, keeps
+reducing hash state or drains its exact contributions once and releases it before
+streaming the raw tail. `raw_partial` is the forced diagnostic control. Use
+`recovery_enabled=false` for either non-fixed mode; snapshots/replay, complete
+copies and failure hooks are explicitly refused. All five static exchange modes,
+threshold retention and normal sampled48-shard routing are supported. Sampling
+bias can make a poor policy choice; exactness does not imply a performance win.
+
+Runtime join input/output batches cap at1024 rows/64KiB, each source side at1m
+rows/64MiB physical bytes/64files, projected metadata and rowgroup decode at1MiB.
+Default join hash capacity is65536 rows, local ledger32MiB, spill64MiB, output1m
+rows (the query sets the global cap). Two side queues each cap at4MiB separately
+from the ledger; ingress also caps cumulative encoded bytes and frames. Source,
+codec, queue and harness output allocations are separately bounded; this is not
+an RSS guarantee. See [ADR-0016](docs/adr/0016-adaptive-operators-v1.md) for the
+supported domain and [release experiment v1](docs/research/phase-9-experiment.md)
+for all forced comparisons. `scripts/phase9-acceptance.sh` requires a clean release
+checkout; `phase9-verify.py` and `phase9-bundle.py` retain source-bound raw evidence.

@@ -129,6 +129,9 @@ pub fn shard(key: u64) -> usize {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Observation {
+    /// Original partial-aggregate input already ingested, independently of key sampling.
+    pub original_prefix_rows: usize,
+    pub preparation_ns: u64,
     pub producer: u64,
     pub counts: Vec<u64>,
     pub rows: usize,

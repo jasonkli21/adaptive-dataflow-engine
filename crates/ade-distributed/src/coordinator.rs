@@ -198,6 +198,10 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     validate_topology(&job.workers)?;
     job.config.validate()?;
     require(
+        job.config.partial.mode == ade_exec::partial::Mode::FixedHash || job.snapshot.is_none(),
+        "non-fixed partial source/replay graph is not admitted; disable recovery",
+    )?;
+    require(
         !job.task_timeout.is_zero(),
         "positive task timeout required",
     )?;
@@ -287,22 +291,37 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 crate::topology::decide(&job.config.topology, job.workers.len(), observations)?;
             topology_probe_ns = crate::materialization::ns(probe_started);
             let commit_started = Instant::now();
-            for worker in &job.workers {
-                require(
-                    matches!(
-                        protocol::rpc_until(
-                            worker,
-                            Request::CommitLayout {
-                                job: job.id,
-                                layout: decision.layout.clone(),
-                            },
-                            deadline
-                        )?,
-                        Reply::Ready
-                    ),
-                    "layout ACK missing",
-                )?;
-            }
+            thread::scope(|scope| {
+                let handles: Vec<_> = job
+                    .workers
+                    .iter()
+                    .map(|worker| {
+                        let layout = decision.layout.clone();
+                        scope.spawn(move || {
+                            require(
+                                matches!(
+                                    protocol::rpc_until(
+                                        worker,
+                                        Request::CommitLayout {
+                                            job: job.id,
+                                            layout
+                                        },
+                                        deadline
+                                    )?,
+                                    Reply::Ready
+                                ),
+                                "layout ACK missing",
+                            )
+                        })
+                    })
+                    .collect();
+                for handle in handles {
+                    handle
+                        .join()
+                        .map_err(|_| Error::Invalid("commit thread panic".into()))??;
+                }
+                Ok::<_, Error>(())
+            })?;
             topology_commit_ns = crate::materialization::ns(commit_started);
             topology = Some(decision);
         }

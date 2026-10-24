@@ -51,7 +51,10 @@ name = "ade-exec"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "blake3",
+ "bytes",
  "parquet",
+ "serde",
  "tempfile",
  "thiserror",
 ]

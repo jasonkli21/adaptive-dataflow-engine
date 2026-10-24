@@ -7,8 +7,11 @@ implementation. This review remediation is a follow-up source revision; its
 identity and evidence are recorded separately below. The unrelated untracked
 bootstrap prompt remains outside the change.
 
-**Exit status: INCOMPLETE. Functional correctness passed; the primary 2-worker
-release performance exit failed. Do not begin Phase 9.**
+**Current exit status: COMPLETE for bounded Phase 8 v1 (2026-10-22).**
+The final source-bound closure below passes the original numeric gates in both
+predeclared confirmation suites and across all nine pooled primary samples,
+with immutable public raw/source evidence. The ADETCP08 and subsequent failed
+experiments below remain failed historical outcomes; none was relabelled.
 The original release evidence records its measured source commit and exact
 `HEAD:crates` runtime tree. It must not be attributed to the review-remediation
 source revision.
@@ -432,3 +435,164 @@ runtime tree. None of these compatibility checks closes the Phase 8 primary
 performance gate or broadens the transition/recovery claims.
 
 Final default-feature library check also passed: `/tmp/phase8-packed-default-check.log`.
+
+
+## User-authorized closure remediation — 2026-10-22 (final evidence pending)
+
+Baseline HEAD c87d2baa5a2489994ddaa32103d03bbf7c696ede. The pre-existing untracked
+Phase9 plan and bootstrap prompt are preserved. The user explicitly authorized
+fixing Phase8 before continuing Phase9, without subagents. All failed experiments
+and thresholds above remain unchanged. This amendment does not relabel them.
+
+Routing-only snapshot ed3720a7fe159ded28fa261034b3de5c104ef993, clean optimized
+build, retained identical supported-domain inputs, all39 process-isolated children
+and independent oracles. All gates passed: primary skew exclusive-work ratio
+0.6358535417 (36.41% improvement), skew job0.9948873723 (0.51% improvement),
+uniform job1.0415432114. Four-host work0.0693004892, job0.6928247024 are limited
+confirmation. The small job margin and local variation do not establish a robust
+production speedup or prove the cause of the earlier regression.
+
+Raw/source archive: phase8-route-2026-10-22-bundle.tar.gz, SHA256
+65c2377a4ccb7bc52d431937f172afede33c3b74cea22eba87a6d8fe33d3905c, currently
+under /tmp/ade-phase8-remediation/benchmarks/results. The final evidence release
+will also preserve this candidate and the prior failed source-bound bundles.
+
+The subsequent original-prefix candidate is specified before timing in
+docs/research/phase-8-remediation-2026-10-22.md and ADR-0015. It retains the
+original algorithm and32,768-key table/16 low-hash-bit spill-domain limitation;
+extracting incremental ingestion does not extend that domain. A local prepared
+task holds one original input batch already aggregated, its exact source cursor,
+reservation ledger and bounded prefetch until the all-worker ACK. Resume uses
+that same state; replay starts fresh with identical row-order/batching. Full
+source fingerprints are still verified before any exchange production. The
+independent key-only probe keeps its own read/decode limits; original prefix
+preparation has the original task's scan/memory bounds and a separate time/row
+observation. Probe-stage wall includes both. The final source must independently
+pass the same release matrix before closure can be recorded.
+
+Focused checks: exact packed-frame equivalence across2/3/4 workers including
+selective replay/signed limits/sink failure passed. Prefix resume output/spill
+identity, exactly-once ingestion, cancellation/sink error/drop reservation
+release passed for prefetch0/1. All20 local unit tests passed. Distributed tests
+passed54 unit and14 process cases. Initial sandbox tests failed18 socket-binding
+cases with Operation not permitted; rerunning with authorized localhost access
+passed. A pre-existing default-feature test-helper cfg error was also corrected.
+Intermediate clippy diagnostics were fixed; final command results follow below.
+
+Original-prefix snapshot **2123887ad20816a381d296876ca07785a15d0197**, runtime
+**e831adcb3f672dd4e3a055801a4c0b92427cb2bc**, passed all39 correctness children.
+It FAILED the unchanged primary skew job gate: ratio1.0137313513 (1.37% slower).
+Skew work0.6411084192 and uniform1.0578900517 passed; four-host work0.0527355890,
+job0.7150198688 do not substitute. Preserve the source/raw failed bundle
+phase8-prefix-2026-10-22-failed-bundle.tar.gz, SHA256
+fe0a1dd39b6623e6c4d64bb80f43fba292751a983acadca01050f5d5a0871ae8.
+Its Phase6 release regression passed all declared static/normal/recovered and
+unrecoverable cases, but does not close this candidate's failed timing exit.
+
+The next listener-dispatch candidate is predeclared separately in the research
+record before timing: blocking accept with bounded handler slots and explicit
+shutdown wakeup replaces periodic idle sleeps. No threshold, input, memory,
+protocol or comparator changes. Focused tests cover idle wildcard-bound accept,
+saturated4-slot cancellation, delayed/stalled I/O and existing process recovery.
+Final acceptance remains pending below; no Phase9 source change has been made.
+
+
+## Formal bounded-v1 closure — 2026-10-22, before Phase 9 source work
+
+**COMPLETE within ADR-0015's fixed48-shard/2–4-process boundary.** The user
+explicitly authorized remediation before continuing Phase9. Main remains at
+baseline c87d2baa5a2489994ddaa32103d03bbf7c696ede until the requested single final
+commit; all code/evidence snapshots were committed separately in temporary
+clean repositories, never presented as commits on the user's branch. The closing
+runtime source is **ab7404b1c7095ce3e8b60d79f944a78cd9787c34**, crates tree
+**432cc7dd212ec41ad6fdec93bc97f957df5a514d**. Documentation/evidence-packaging
+amendments after this measurement do not change that runtime identity.
+
+The first listener suite A passed all39 correctness checks but FAILED timing:
+work1.3799937472, job1.0982230575. Producer work rose to0.79–2.65seconds versus
+prior0.17–0.19seconds, then returned near normal. Post-run host load was
+18.32/51.02/39.29 with substantial compressed memory. This does not prove the
+cause or excuse A. A's failed bundle is preserved with SHA256
+bb802b4b88048c92f43a081c596c830eb81e74ea0090fd8418e98d7d5f1ab581.
+
+Before any further samples, the supplemental stability confirmation was saved
+and SHA256-pinned as **19caad75efcdfb4264ca95e017e8d193c416f1648ae4f515f0db9eff08b64269**.
+It declared exactly two additional full unchanged39-child suites B/C, readiness
+criteria before each, independent passes in BOTH B and C, and all-nine pooled
+primary medians INCLUDING A. There was no selection of favorable iterations.
+The original matrix/configs/controls/numeric gates were already committed in
+ab7404b. **Deviation:** the supplemental declaration was saved in this session
+before B/C, separately from the frozen runtime commit, rather than claiming a
+new commit identity for an already-built binary. Its literal text, helper,
+telemetry, failed readiness attempt and all raw outcomes are in the bundle.
+
+| Suite | 2-host skew max-work ratio | 2-host skew whole-job ratio | Uniform job ratio | Outcome |
+|---|---:|---:|---:|---|
+| A |1.379994|1.098223|1.005904|FAIL, preserved|
+| B |0.661829|0.955266|1.023503|PASS|
+| C |0.224558|0.723303|1.031348|PASS|
+| All9 measured samples per primary arm |0.228727|0.741231|1.026599|PASS|
+
+All117 A/B/C child processes passed the independent oracle, exact source/build/
+dataset/config identity, decision/digest reconstruction, actual active/gather
+counts, row/byte/terminal conservation, prefix-state observations and genuine
+pinned replay/restore checks. Every warmup/measurement remains. The combined
+verifier reruns each suite verifier, checks matching cross-suite identities and
+117 distinct child PIDs, requires nine primary measurements, BOTH B/C passes
+and the original three pooled numeric gates. Source/count drift cannot pass.
+
+Variation remains substantial: pooled ratios must not be attributed entirely to
+listener dispatch, routing or skew adaptation. B's smaller measured job gain
+(4.47%) is also retained. These are local supported-workload acceptance results,
+not a statistically significant or production speed claim. Four-worker pooled
+work0.070215/job0.689292 is confirmation only; raw-hot-key pooled job1.081184
+exposes overhead and is not evidence of legally splitting one key.
+
+### Final validation and artifact access
+
+| Command/evidence on the closing code | Result |
+|---|---|
+| cargo fmt --all --check | PASS, clean ab7404b checkout |
+| cargo check --workspace --all-targets --locked --offline | PASS; ade-p8-ab7404-check.log |
+| cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings | PASS; ade-p8-ab7404-clippy.log |
+| cargo test --workspace --all-features --locked --offline | PASS,118 tests plus doc tests:55 distributed unit,14 process,20 local and29 benchmark/integration |
+| no-default-feature distributed library check | PASS on identical closing code |
+| cargo build --release --workspace --locked --offline | PASS;4m57s final rebuild |
+| bash scripts/smoke.sh (closing release binaries) | PASS, independent oracles; not timing evidence |
+| Phase6 acceptance | PASS, five static modes, normal/recovered2/4-worker cases and explicit missing-snapshot negative |
+| Phase7 empirical economic acceptance | PASS; expected4971026589.579 vs always6692075354.036, never9388127475.849499 and threshold9379011544.653 nano-USD proxy |
+| Phase8 original matrix A/B/C plus combined verifier | all117 correct; A failed, B/C and all9 pooled criteria PASS |
+| Copied-artifact forged original-prefix count and layout digest | both rejected with correctness_passed=false |
+| Source bundle/inventory audit | every SHA256 matched; Git clone reproduced exact clean source SHA/crates tree |
+
+[Immutable public evidence release](https://github.com/jasonkli21/adaptive-dataflow-engine/releases/tag/phase8-evidence-2026-10-22).
+[Closure bundle](https://github.com/jasonkli21/adaptive-dataflow-engine/releases/download/phase8-evidence-2026-10-22/phase8-closure-2026-10-22-bundle.tar.gz)
+SHA256 **53db547ab743666afb379f12fdbbd75b79e9c2ad0556f7747d86e7a5b7bb41d9**.
+GitHub reports draft=false, immutable=true and the matching server-side digest.
+The release tag points to planning baseline c87d2ba, deliberately NOT the measured
+source. The bundle contains exact Git objects/source for ab7404b, all raw A/B/C
+results, commands, host/readiness telemetry, oracles, negative evidence, Phase6/7
+regressions and quality/smoke logs. Clone source.bundle and follow REPRODUCE.md.
+The original four failed bundles, the routing-only experiment, prefix failure
+and listener-A failure are separately published with their original checksums.
+This closes the previously open external-auditability finding.
+
+### Transition and boundary reconciliation
+
+Original partial aggregation now really ingests one batch before the layout
+commitment, retains its exact state/cursor and resumes after the all-worker ACK.
+The independent bounded key probe remains separately metered. This is an
+observed transition after original operator work, not a full-stage planning
+barrier or a mid-exchange epoch switch. Tests prove identical resumed frames,
+spill bytes and counts, source/fingerprint checks before exchange, selective
+replay equality, sink/cancellation/drop cleanup and idle/saturated listener
+shutdown. The table capacity,16 low-bit aggregate spill buckets,48 ownership
+shards, hash1, wire2, result1, snapshot identity, failure window and one-episode
+attempt-safe gather are unchanged. Current private control framing is ADETCP10.
+
+Many distinct keys in a single virtual shard remain unsplittable in v1. The
+262144-key engineered fixture remains outside the original aggregate spill
+capacity; no broader key domain, hot-key salting, process RSS cap, independent
+network-host durability, scheduler, SQL or streaming claim is made. Phase9 is
+now authorized as the next separate capability boundary by the user's request;
+Phase8 fixes above are not counted as Phase9 implementation.

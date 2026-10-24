@@ -23,6 +23,15 @@ impl NetworkMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
+    pub partial: Option<ade_exec::partial::Metrics>,
+    /// Original partial-input rows ingested before layout commitment.
+    pub prefix_rows: usize,
+    /// Original prefix preparation wall time (separate from the key probe).
+    pub preparation_ns: u64,
+    /// Routing/packing wall time, excluding synchronous sender calls.
+    pub routing_ns: u64,
+    /// Sender open/encode/write wall time during batch delivery (not terminal ACKs).
+    pub sending_ns: u64,
     pub routing_buffer_peak_rows: usize,
     pub routing_buffer_capacity_rows: usize,
     pub layout_digest: Option<String>,

@@ -13,7 +13,18 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP08";
+const MAGIC: &[u8; 8] = b"ADETCP11";
+/// Wake a blocking accept during shutdown, including wildcard-bound listeners.
+pub(crate) fn wake_listener(mut address: SocketAddr) {
+    if address.ip().is_unspecified() {
+        address.set_ip(if address.is_ipv4() {
+            std::net::Ipv4Addr::LOCALHOST.into()
+        } else {
+            std::net::Ipv6Addr::LOCALHOST.into()
+        });
+    }
+    let _ = TcpStream::connect_timeout(&address, Duration::from_millis(100));
+}
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
@@ -38,6 +49,21 @@ pub struct JobSpec {
 )]
 pub enum Request {
     Ping,
+    PrepareJoin(crate::join::Spec),
+    ProbeJoin {
+        job: JobId,
+    },
+    CommitJoin {
+        job: JobId,
+        decision: crate::join_policy::Decision,
+    },
+    RunJoinProducer {
+        job: JobId,
+    },
+    RunJoinFinal {
+        job: JobId,
+        gather: SocketAddr,
+    },
     PrepareJob(JobSpec),
     Probe {
         timeout_ms: u64,
@@ -88,6 +114,8 @@ pub enum Request {
 )]
 pub enum Reply {
     Pong(WorkerEndpoint),
+    JoinProbe(Vec<crate::join_policy::Observation>),
+    JoinTask(crate::join::TaskMetrics),
     Ready,
     Probe(crate::topology::Observation),
     Task(TaskMetrics),

@@ -725,9 +725,25 @@ The physical graph fixes the distribution semantics. Runtime policy may adapt
 retention. ADR-0015 refines hash distribution for Phase 8: bounded source
 observations choose one immutable key-shard ownership map and active final set
 inside a prepared running job, before the first exchange data. The observations
-come from bounded source-prefix probes; original partial aggregation has not
-started when the layout is committed. No in-flight transition or mid-exchange
-routing-epoch switch is supported; hash v1 and fixed worker processes remain.
+come from bounded source-prefix probes. The Phase8 remediation also ingests one
+original partial-aggregate input batch and retains its exact state/cursor before
+commitment; it resumes after every worker ACK without repeating that prefix.
+No mid-exchange routing-epoch switch is supported; hash v1 and fixed worker processes remain.
+
+ADR-0016 adds a separate bounded two-source join graph in Phase9. Pure observed
+policy chooses broadcast-build versus two-sided hash1%N repartition and a build
+side, after bounded real-source probes and before all-worker strategy ACK. The
+digest binds both source snapshots, execution, strategy, stages and hash version.
+An incomplete prefix cannot authorize broadcast. The owned local join genuinely
+converts reserved hash state to grace spill on capacity pressure before output;
+it does not change distribution after commitment. Both sides reuse the existing
+bounded exchange; spill retention accepts an unconsumed side without a bilateral
+bounded-channel cycle. Join failures always cancel, while the accepted default
+aggregate-only recovery envelope is preserved. Opt-in non-fixed partial
+aggregation keeps the original partial codec but refuses replay/copy combinations
+until byte-identical adaptive replay is established. This refines physical
+operator choices, not the Phase10 scheduler or Phase11 general frontend/IR.
+
 
 ---
 

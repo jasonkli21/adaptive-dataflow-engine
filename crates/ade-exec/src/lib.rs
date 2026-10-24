@@ -1,7 +1,10 @@
 //! Provisional single-node pull execution with managed memory and local spill.
 mod aggregate;
 mod ipc_scan;
+pub mod join;
 pub mod memory;
+pub mod partial;
+pub mod row_source;
 mod scan;
 mod sort;
 mod spill;
@@ -54,6 +57,18 @@ pub enum Error {
     SpillNoProgress(&'static str),
     #[error("corrupt internal spill: {0}")]
     CorruptSpill(&'static str),
+    #[error("join output bound exceeded: {limit}")]
+    JoinOutputLimit { limit: u64 },
+    #[error("join spill byte bound exceeded: {limit}")]
+    JoinSpillLimit { limit: u64 },
+    #[error("join partition {partition} has {build_rows} build rows, capacity {capacity_rows}")]
+    JoinSkew {
+        partition: usize,
+        build_rows: u64,
+        capacity_rows: usize,
+    },
+    #[error("execution deadline: {0}")]
+    Deadline(&'static str),
     #[error("execution cancelled")]
     Cancelled,
 }
@@ -133,6 +148,7 @@ pub struct OperatorMetrics {
 /// Collected output remains tracked when execution returns.
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionMetrics {
+    pub partial: Option<partial::Metrics>,
     pub operators: BTreeMap<OperatorId, OperatorMetrics>,
     pub output_rows: usize,
     pub output_batches: usize,
@@ -257,6 +273,12 @@ pub enum LocalPlan {
         input: Box<Self>,
         columns: Vec<String>,
     },
+    PartialAggregate {
+        input: Box<Self>,
+        key: String,
+        value: String,
+        config: partial::Config,
+    },
     HashAggregate {
         input: Box<Self>,
         key: String,
@@ -293,6 +315,12 @@ enum Kind {
     Project {
         input: Box<Node>,
         columns: Vec<usize>,
+    },
+    Partial {
+        input: Box<Node>,
+        columns: [usize; 2],
+        config: partial::Config,
+        state: Option<Box<partial::Partial>>,
     },
     Aggregate {
         input: Box<Node>,
@@ -421,6 +449,32 @@ impl Node {
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 let schema = Arc::new(input.schema.project(&columns)?);
                 (schema, Kind::Project { input, columns }, "project")
+            }
+            LocalPlan::PartialAggregate {
+                input,
+                key,
+                value,
+                config,
+            } => {
+                config.validate()?;
+                if config.mode == partial::Mode::FixedHash {
+                    return Self::build(LocalPlan::HashAggregate { input, key, value }, cx);
+                }
+                let input = Box::new(Self::build(*input, cx)?);
+                let columns = [
+                    column(&input.schema, &key, &DataType::UInt64)?,
+                    column(&input.schema, &value, &DataType::Int64)?,
+                ];
+                (
+                    aggregate_schema(),
+                    Kind::Partial {
+                        input,
+                        columns,
+                        config,
+                        state: None,
+                    },
+                    "producer-partial",
+                )
             }
             LocalPlan::HashAggregate { input, key, value } => {
                 let input = Box::new(Self::build(*input, cx)?);
@@ -577,6 +631,22 @@ impl Node {
                 }
                 Some(result)
             }
+            Kind::Partial {
+                input,
+                columns,
+                config,
+                state,
+            } => {
+                if state.is_none() {
+                    *state = Some(Box::new(partial::Partial::prime(
+                        input, *columns, config, self.id, cx,
+                    )?));
+                }
+                state
+                    .as_mut()
+                    .ok_or_else(|| Error::Invalid("missing partial operator".into()))?
+                    .next(input, *columns, &self.schema, self.id, cx)?
+            }
             Kind::Aggregate {
                 input,
                 key,
@@ -584,9 +654,14 @@ impl Node {
                 count,
                 state,
             } => {
-                if state.is_none() {
+                if state.as_ref().is_none_or(|state| !state.built) {
                     *state = Some(aggregate::Aggregate::build(
-                        input, *key, *value, *count, self.id, cx,
+                        input,
+                        [*key, *value],
+                        *count,
+                        self.id,
+                        cx,
+                        state.take(),
                     )?);
                 }
                 let start = Instant::now();
@@ -647,6 +722,10 @@ impl Node {
             Kind::Filter { input, .. }
             | Kind::Project { input, .. }
             | Kind::Limit { input, .. } => input.shutdown(cx)?,
+            Kind::Partial { input, state, .. } => {
+                state.take();
+                input.shutdown(cx)?;
+            }
             Kind::Aggregate { input, state, .. } => {
                 state.take();
                 input.shutdown(cx)?;
@@ -714,6 +793,107 @@ fn execute_in(
         metrics: cx.metrics,
         _retained: retained,
     })
+}
+
+/// A suspended original aggregate task with one input batch already ingested.
+/// It owns the same ledger, scan, prefetch and spill until resumed or dropped.
+pub struct PreparedAggregate {
+    task: Option<(Node, ExecContext)>,
+}
+impl PreparedAggregate {
+    /// Start an original hash aggregate without producing any output.
+    /// # Errors
+    /// Rejects other root operators and returns input, reservation or cancellation errors.
+    pub fn new(
+        plan: LocalPlan,
+        config: ExecutionConfig,
+        cancellation: CancellationToken,
+    ) -> Result<Self> {
+        let mut cx = ExecContext::new(config, cancellation, None)?;
+        let root = Node::build(plan, &mut cx)?;
+        let mut prepared = Self {
+            task: Some((root, cx)),
+        };
+        let (root, cx) = prepared
+            .task
+            .as_mut()
+            .ok_or_else(|| Error::Invalid("missing prepared task".into()))?;
+        match &mut root.kind {
+            Kind::Aggregate {
+                input,
+                key,
+                value,
+                count: None,
+                state,
+                ..
+            } => {
+                *state = Some(aggregate::Aggregate::prime(
+                    input,
+                    [*key, *value],
+                    root.id,
+                    cx,
+                )?);
+            }
+            Kind::Partial {
+                input,
+                columns,
+                config,
+                state,
+            } => {
+                *state = Some(Box::new(partial::Partial::prime(
+                    input, *columns, config, root.id, cx,
+                )?));
+            }
+            _ => {
+                return Err(Error::Invalid(
+                    "prepared task requires producer aggregate root".into(),
+                ));
+            }
+        }
+        Ok(prepared)
+    }
+    #[must_use]
+    pub fn prefix_rows(&self) -> usize {
+        self.task
+            .as_ref()
+            .and_then(|(root, cx)| cx.metrics.operators.get(&root.id))
+            .map_or(0, |m| m.input_rows)
+    }
+    /// Resume precisely after the ingested prefix, with normal streaming sink ownership.
+    /// # Errors
+    /// Execution, cancellation and sink errors release the entire prepared task.
+    pub fn execute(
+        mut self,
+        mut sink: impl FnMut(RecordBatch) -> Result<()>,
+    ) -> Result<ExecutionMetrics> {
+        let (mut root, mut cx) = self
+            .task
+            .take()
+            .ok_or_else(|| Error::Invalid("missing prepared task".into()))?;
+        let result = (|| {
+            while let Some(batch) = root.next_batch(&mut cx)? {
+                cx.metrics.output_rows += batch.num_rows();
+                cx.metrics.output_batches += 1;
+                sink(batch)?;
+            }
+            cx.cancellation.check()
+        })();
+        let shutdown = root.shutdown(&mut cx);
+        drop(root);
+        result?;
+        shutdown?;
+        cx.metrics.managed = cx.memory.snapshot();
+        cx.metrics.spill = cx.spill.snapshot();
+        cx.spill.close()?;
+        Ok(cx.metrics)
+    }
+}
+impl Drop for PreparedAggregate {
+    fn drop(&mut self) {
+        if let Some((mut root, mut cx)) = self.task.take() {
+            let _ = root.shutdown(&mut cx);
+        }
+    }
 }
 
 /// Execute without collecting output. The synchronous sink owns one bounded output batch

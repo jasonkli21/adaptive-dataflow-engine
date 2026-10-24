@@ -9,6 +9,7 @@ pub enum Query {
     Scan,
     ScanFilterProject { threshold: u64 },
     GroupBySum,
+    InnerEquiJoin { max_output_rows: u64 },
     SortKeyRowid,
     TpchQ1,
 }
@@ -70,10 +71,19 @@ impl BenchmarkCase {
             "unsupported workload schema/semantic version",
         )?;
         require(!self.id.is_empty(), "workload id cannot be empty")?;
+        if let Query::InnerEquiJoin { max_output_rows } = self.query {
+            require(
+                (1..=1_000_000).contains(&max_output_rows),
+                "join output validation cap",
+            )?;
+        }
+        let join = matches!(self.query, Query::InnerEquiJoin { .. });
         let tpch = self.query == Query::TpchQ1;
         require(
             self.dataset.required_schema
-                == if tpch {
+                == if join {
+                    "synthetic-join-v1"
+                } else if tpch {
                     "tpch-v1"
                 } else {
                     "synthetic-events-v1"

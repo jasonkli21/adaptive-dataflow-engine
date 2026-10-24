@@ -1,0 +1,11 @@
+schema_version = 1
+id = "inner-equi-join"
+version = 1
+description = "Bounded non-null two-relation integer equijoin with bag semantics"
+[dataset]
+required_schema = "synthetic-join-v1"
+[query]
+kind = "inner_equi_join"
+max_output_rows = 1000000
+[validation]
+kind = "canonical_integer_rows_v1"

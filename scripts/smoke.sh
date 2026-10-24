@@ -48,3 +48,16 @@ for worker in ("0", "1"):
     assert metrics["producers"][worker]["sent"]["payload_bytes"] > 0
     assert metrics["received"][worker]["transfers"] == 2
 PYTHON
+
+# Phase9: separate two-source bag oracle, real distributed join and opt-in partial path.
+"$bin" data generate join --dataset-id ci-join-v1 --left-rows 1000 --right-rows 32 --left-key-domain 128 --right-key-domain 128 --output "$work/join" > "$work/join-manifest.json"
+"$bin" validate --engine datafusion --spec benchmarks/specs/inner-equi-join.toml --dataset "$work/join" > "$work/join-oracle.json"
+ADE_DISTRIBUTED_METRICS_FILE="$work/join-metrics.jsonl" "$bin" validate --engine ade-distributed-join --spec benchmarks/specs/inner-equi-join.toml --dataset "$work/join" > "$work/join-ade.json"
+"$bin" __check-join-metrics "$work/join-metrics.jsonl"
+"$bin" validate --engine ade-distributed --engine-option recovery_enabled=false --engine-option aggregate_policy=adaptive_v1 --spec benchmarks/specs/aggregate-skew.toml --dataset "$work/data" > "$work/partial.json"
+python3 - "$work" <<'PYTHON'
+import json,pathlib,sys
+r=pathlib.Path(sys.argv[1]);load=lambda name:json.loads((r/name).read_text())
+assert load('join-oracle.json')['result_fingerprint']==load('join-ade.json')['result_fingerprint']
+assert load('partial.json')['result_fingerprint']==load('aggregate-skew-validation.json')['result_fingerprint']
+PYTHON

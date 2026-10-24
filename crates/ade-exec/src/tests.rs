@@ -773,3 +773,247 @@ fn live_source_reuses_merge_and_shuts_down_on_error_and_cancel() {
         }
     }
 }
+
+#[test]
+fn prepared_prefix_resumes_once_with_identical_spill_frames_and_releases_on_failure() {
+    let (_data, scan) = phase2_fixture(10000, 2048);
+    let plan = aggregate_plan(scan);
+    for prefetch in [0, 1] {
+        let config = ExecutionConfig {
+            prefetch_batches: prefetch,
+            ..constrained()
+        };
+        let mut expected = Vec::new();
+        let baseline = execute_to_sink(
+            plan.clone(),
+            config.clone(),
+            CancellationToken::default(),
+            |batch| {
+                expected.push(batch);
+                Ok(())
+            },
+        )
+        .unwrap();
+        let prepared =
+            PreparedAggregate::new(plan.clone(), config.clone(), CancellationToken::default())
+                .unwrap();
+        assert!(prepared.prefix_rows() > 0 && prepared.prefix_rows() < 10000);
+        let mut actual = Vec::new();
+        let metrics = prepared
+            .execute(|batch| {
+                actual.push(batch);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(metrics.output_rows, baseline.output_rows);
+        assert_eq!(metrics.spill.write_bytes, baseline.spill.write_bytes);
+        assert_eq!(metrics.managed.current, 0);
+        assert_eq!(metrics.operators.values().last().unwrap().input_rows, 10000);
+        for cancel in [false, true] {
+            let token = CancellationToken::default();
+            let prepared =
+                PreparedAggregate::new(plan.clone(), config.clone(), token.clone()).unwrap();
+            let memory = prepared.task.as_ref().unwrap().1.memory.clone();
+            assert!(memory.snapshot().current > 0);
+            if cancel {
+                token.cancel();
+            }
+            assert!(
+                prepared
+                    .execute(|_| Err(Error::Invalid("sink failure".into())))
+                    .is_err()
+            );
+            assert_eq!(memory.snapshot().current, 0);
+            let prepared =
+                PreparedAggregate::new(plan.clone(), config.clone(), CancellationToken::default())
+                    .unwrap();
+            let memory = prepared.task.as_ref().unwrap().1.memory.clone();
+            drop(prepared);
+            assert_eq!(memory.snapshot().current, 0);
+        }
+    }
+}
+
+fn contribution_map(batches: &[RecordBatch]) -> BTreeMap<u64, (i128, u64)> {
+    let mut result = BTreeMap::new();
+    for batch in batches {
+        let keys = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        let sums = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let counts = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        for row in 0..batch.num_rows() {
+            let entry = result.entry(keys.value(row)).or_insert((0i128, 0u64));
+            entry.0 = entry.0.checked_add(i128::from(sums.value(row))).unwrap();
+            entry.1 = entry.1.checked_add(counts.value(row)).unwrap();
+        }
+    }
+    result
+}
+#[test]
+fn adaptive_partial_sample_once_mid_batch_pressure_and_raw_conservation() {
+    for cardinality in [4, 5000] {
+        let (_data, scan) = phase2_fixture(5000, cardinality);
+        let mut expected = BTreeMap::new();
+        for i in 0..5000u64 {
+            let e = expected
+                .entry((i * 37) % cardinality)
+                .or_insert((0i128, 0u64));
+            e.0 += i128::from(i % 97) - 48;
+            e.1 += 1;
+        }
+        for mode in [partial::Mode::AdaptiveV1, partial::Mode::RawPartial] {
+            for sample_rows in [1, 63, 64, 65, 1024, 4096] {
+                let plan = LocalPlan::PartialAggregate {
+                    input: Box::new(scan.clone()),
+                    key: "key".into(),
+                    value: "value".into(),
+                    config: partial::Config {
+                        mode,
+                        sample_rows,
+                        ..Default::default()
+                    },
+                };
+                let mut batches = Vec::new();
+                let metrics =
+                    execute_to_sink(plan, constrained(), CancellationToken::default(), |batch| {
+                        batches.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(contribution_map(&batches), expected);
+                let p = metrics.partial.unwrap();
+                if mode == partial::Mode::RawPartial {
+                    assert!(!p.hash_to_raw);
+                    assert_eq!(p.raw_rows, 5000);
+                } else if cardinality == 5000 {
+                    assert!(p.hash_to_raw && p.state_released_before_tail);
+                    assert_eq!(p.flushed_count, sample_rows as u64);
+                    assert_eq!(p.raw_rows, 5000 - sample_rows as u64);
+                } else if sample_rows >= 64 {
+                    assert!(!p.hash_to_raw);
+                    assert_eq!(p.raw_rows, 0);
+                }
+                assert_eq!(metrics.managed.current, 0);
+                assert!(metrics.managed.peak <= constrained().memory_limit_bytes);
+            }
+        }
+    }
+}
+#[test]
+fn adaptive_partial_extreme_prefix_sum_is_split_without_losing_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("extreme.parquet");
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("key", DataType::UInt64, false),
+        Field::new("value", DataType::Int64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(UInt64Array::from(vec![0; 4])),
+            Arc::new(Int64Array::from(vec![
+                i64::MIN,
+                i64::MIN,
+                i64::MAX,
+                i64::MAX,
+            ])),
+        ],
+    )
+    .unwrap();
+    let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    for mode in [
+        partial::Mode::AdaptiveV1,
+        partial::Mode::RawPartial,
+        partial::Mode::FixedHash,
+    ] {
+        let plan = LocalPlan::PartialAggregate {
+            input: Box::new(LocalPlan::ParquetScan {
+                files: vec![path.clone()],
+                batch_size: 3,
+            }),
+            key: "key".into(),
+            value: "value".into(),
+            config: partial::Config {
+                mode,
+                sample_rows: 2,
+                min_reduction_percent: 80,
+            },
+        };
+        let mut batches = Vec::new();
+        let metrics = execute_to_sink(
+            plan,
+            ExecutionConfig {
+                output_batch_rows: 1,
+                ..Default::default()
+            },
+            CancellationToken::default(),
+            |batch| {
+                batches.push(batch);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(contribution_map(&batches), BTreeMap::from([(0, (-2, 4))]));
+        if mode == partial::Mode::AdaptiveV1 {
+            let p = metrics.partial.unwrap();
+            assert!(p.hash_to_raw);
+            assert_eq!(p.flushed_count, 2);
+            assert_eq!(p.raw_rows, 2);
+        }
+    }
+}
+#[test]
+fn adaptive_partial_releases_hash_before_tail_and_cleans_on_cancel() {
+    let (_data, scan) = phase2_fixture(5000, 5000);
+    let parent = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let mut cx = ExecContext::new(
+        ExecutionConfig::default(),
+        token.clone(),
+        Some(parent.path()),
+    )
+    .unwrap();
+    let memory = cx.memory.clone();
+    let plan = LocalPlan::PartialAggregate {
+        input: Box::new(scan),
+        key: "key".into(),
+        value: "value".into(),
+        config: partial::Config {
+            mode: partial::Mode::AdaptiveV1,
+            sample_rows: 65,
+            ..Default::default()
+        },
+    };
+    let mut node = Node::build(plan, &mut cx).unwrap();
+    while !cx
+        .metrics
+        .partial
+        .as_ref()
+        .is_some_and(|p| p.state_released_before_tail && p.raw_rows > 0)
+    {
+        assert!(node.next_batch(&mut cx).unwrap().is_some());
+    }
+    assert!(memory.snapshot().peak > 1_000_000);
+    assert!(memory.snapshot().current < 65536);
+    token.cancel();
+    assert!(matches!(node.next_batch(&mut cx), Err(Error::Cancelled)));
+    node.shutdown(&mut cx).unwrap();
+    drop(node);
+    drop(cx);
+    assert_eq!(memory.snapshot().current, 0);
+    assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+}

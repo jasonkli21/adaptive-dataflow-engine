@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 struct Job {
+    prepared: Mutex<Option<(ade_exec::PreparedAggregate, u64)>>,
     layout: Mutex<Option<crate::topology::Layout>>,
     probe_started: AtomicBool,
     probe_files: Mutex<Option<Vec<PathBuf>>>,
@@ -71,6 +72,7 @@ impl ade_exec::BatchSource for TimedSource {
 struct State {
     endpoint: WorkerEndpoint,
     job: Mutex<Option<Arc<Job>>>,
+    join: Mutex<Option<Arc<crate::join::Session>>>,
     // Retained after cancellation so delayed traffic can never target a reused ID.
     last_job_id: Mutex<Option<JobId>>,
     last_execution_namespace: Mutex<Option<String>>,
@@ -86,6 +88,50 @@ impl Drop for TaskGuard<'_> {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
+}
+fn join_session(state: &State, id: JobId) -> Result<Arc<crate::join::Session>> {
+    let current = state.join.lock().expect("join lock");
+    let session = current
+        .as_ref()
+        .ok_or_else(|| Error::Invalid("no join job".into()))?;
+    require(session.id() == id, "join identity mismatch")?;
+    session.token.check()?;
+    Ok(session.clone())
+}
+fn cancel_join(state: &State, id: Option<JobId>) {
+    let mut current = state.join.lock().expect("join lock");
+    if current
+        .as_ref()
+        .is_some_and(|s| id.is_none_or(|id| id == s.id()))
+    {
+        let old = current.take().expect("join job");
+        if old.poisoned() {
+            state.poisoned.store(true, Ordering::Release);
+        }
+        old.token.cancel();
+    }
+}
+fn run_join(state: &State, id: JobId, gather: Option<SocketAddr>) -> Result<Reply> {
+    let busy = if gather.is_some() {
+        &state.final_busy
+    } else {
+        &state.producer_busy
+    };
+    require(!busy.swap(true, Ordering::AcqRel), "join task role busy")?;
+    let _guard = TaskGuard(busy);
+    let session = join_session(state, id)?;
+    let result = if let Some(gather) = gather {
+        session.finish(gather)
+    } else {
+        session.produce()
+    };
+    if result.is_err() {
+        session.token.cancel();
+    }
+    if session.poisoned() {
+        state.poisoned.store(true, Ordering::Release);
+    }
+    result.map(Reply::JoinTask)
 }
 fn job(state: &State, id: JobId) -> Result<Arc<Job>> {
     let current = state.job.lock().expect("job lock");
@@ -109,6 +155,7 @@ fn task_metrics(
     source_files: usize,
 ) -> TaskMetrics {
     TaskMetrics {
+        partial: output.partial.clone(),
         source_files,
         operator_work_ns: output
             .operators
@@ -125,6 +172,29 @@ fn task_metrics(
         managed_peak: output.managed.peak,
         spill_bytes: output.spill.write_bytes,
         ..Default::default()
+    }
+}
+fn producer_plan(job: &Job, files: &[PathBuf]) -> LocalPlan {
+    let input = Box::new(LocalPlan::Project {
+        input: Box::new(LocalPlan::ParquetScan {
+            files: files.to_vec(),
+            batch_size: job.spec.config.batch_size,
+        }),
+        columns: vec!["key".into(), "value_i64".into()],
+    });
+    if job.spec.config.partial.mode == ade_exec::partial::Mode::FixedHash {
+        LocalPlan::HashAggregate {
+            input,
+            key: "key".into(),
+            value: "value_i64".into(),
+        }
+    } else {
+        LocalPlan::PartialAggregate {
+            input,
+            key: "key".into(),
+            value: "value_i64".into(),
+            config: job.spec.config.partial.clone(),
+        }
     }
 }
 #[allow(
@@ -157,50 +227,58 @@ fn producer(
     let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
     let mut packer = (job.spec.config.topology.policy != crate::topology::PartitionPolicy::Static)
         .then(|| partition::FramePacker::new(job.spec.workers.len()));
+    let mut routing_ns = 0u64;
+    let mut sending_ns = 0u64;
+    let prepared = if attempt == AttemptId(0) {
+        job.prepared.lock().expect("prepared task").take()
+    } else {
+        None
+    };
+    let prefix_rows = prepared.as_ref().map_or(0, |(p, _)| p.prefix_rows());
+    let preparation_ns = prepared.as_ref().map_or(0, |(_, ns)| *ns);
     let mut metrics = if files.is_empty() {
         TaskMetrics::default()
     } else {
-        let plan = LocalPlan::HashAggregate {
-            input: Box::new(LocalPlan::Project {
-                input: Box::new(LocalPlan::ParquetScan {
-                    files: files.to_vec(),
-                    batch_size: job.spec.config.batch_size,
-                }),
-                columns: vec!["key".into(), "value_i64".into()],
-            }),
-            key: "key".into(),
-            value: "value_i64".into(),
-        };
+        let plan = producer_plan(job, files);
         let count = senders.len();
-        let output =
-            ade_exec::execute_to_sink(plan, job.spec.config.execution(), token.clone(), |batch| {
-                for (p, sender) in senders.iter_mut().enumerate() {
+        let sink = |batch| {
+            let route_start = Instant::now();
+            let sent_before = sending_ns;
+            let mut emit = |p: usize, selected: arrow::record_batch::RecordBatch| {
+                let send_start = Instant::now();
+                let sender = &mut senders[p];
+                if sender.is_none() {
+                    *sender = Some(open(p)?);
+                }
+                sender.as_mut().expect("opened").batch(&selected)?;
+                sending_ns += crate::materialization::ns(send_start);
+                Ok(())
+            };
+            if let Some(packer) = &mut packer {
+                packer
+                    .route(&batch, layout.as_ref(), target.map(|(p, _)| p), &mut emit)
+                    .map_err(local_sink_error)?;
+            } else {
+                for p in 0..count {
                     if target.is_some_and(|(partition, _)| partition != p) {
                         continue;
                     }
-                    let selected = match &layout {
-                        Some(layout) => partition::select_layout(&batch, p, layout),
-                        None => partition::select(&batch, p, count),
-                    }
-                    .map_err(local_sink_error)?;
-                    let selected = if let Some(packer) = &mut packer {
-                        packer.push(p, &selected).map_err(local_sink_error)?
-                    } else {
-                        Some(selected)
-                    };
-                    if let Some(selected) = selected.filter(|b| b.num_rows() > 0) {
-                        if sender.is_none() {
-                            *sender = Some(open(p).map_err(local_sink_error)?);
-                        }
-                        sender
-                            .as_mut()
-                            .expect("opened")
-                            .batch(&selected)
-                            .map_err(local_sink_error)?;
+                    let selected = partition::select(&batch, p, count).map_err(local_sink_error)?;
+                    if selected.num_rows() > 0 {
+                        emit(p, selected).map_err(local_sink_error)?;
                     }
                 }
-                Ok(())
-            })?;
+            }
+            routing_ns +=
+                crate::materialization::ns(route_start).saturating_sub(sending_ns - sent_before);
+            Ok(())
+        };
+        let output = match prepared {
+            Some((prepared, _)) => prepared.execute(sink)?,
+            None => {
+                ade_exec::execute_to_sink(plan, job.spec.config.execution(), token.clone(), sink)?
+            }
+        };
         let mut metrics = task_metrics(start, &output, files.len());
         metrics.production.operator_work_ns =
             output.operators.values().try_fold(0u64, |sum, m| {
@@ -224,6 +302,10 @@ fn producer(
         metrics.routing_buffer_capacity_rows =
             job.spec.workers.len() * crate::exchange::MAX_BATCH_ROWS;
     }
+    metrics.prefix_rows = prefix_rows;
+    metrics.preparation_ns = preparation_ns;
+    metrics.routing_ns = routing_ns;
+    metrics.sending_ns = sending_ns;
     metrics.production.wall_elapsed_ns = crate::materialization::ns(start);
     metrics.production.source_requests = files.len() as u64;
     metrics.production.source_bytes = files.iter().try_fold(0u64, |sum, path| {
@@ -448,6 +530,7 @@ fn recover_inner(
         store.install_layout(layout.clone())?;
     }
     let replay = Job {
+        prepared: Mutex::new(None),
         layout: Mutex::new(layout),
         probe_started: AtomicBool::new(true),
         probe_files: Mutex::new(None),
@@ -558,12 +641,64 @@ fn finish_empty_replay(
 fn handle(state: &State, request: Request) -> Result<Reply> {
     match request {
         Request::Ping => Ok(Reply::Pong(state.endpoint.clone())),
+        Request::PrepareJoin(spec) => {
+            let aggregate = state.job.lock().expect("job lock");
+            let mut current = state.join.lock().expect("join lock");
+            require(
+                aggregate.is_none()
+                    && current.is_none()
+                    && !state.poisoned.load(Ordering::Acquire)
+                    && !state.producer_busy.load(Ordering::Acquire)
+                    && !state.final_busy.load(Ordering::Acquire),
+                "worker has active/poisoned job",
+            )?;
+            let own = spec
+                .workers
+                .get(
+                    usize::try_from(state.endpoint.id.0)
+                        .map_err(|_| Error::Invalid("worker ID overflow".into()))?,
+                )
+                .ok_or_else(|| Error::Invalid("join endpoint absent".into()))?;
+            require(
+                own.id == state.endpoint.id
+                    && own.control == state.endpoint.control
+                    && own.exchange == state.endpoint.exchange,
+                "join endpoint mismatch",
+            )?;
+            let mut last = state.last_job_id.lock().expect("job watermark");
+            require(last.is_none_or(|id| spec.job > id), "join stale job")?;
+            let session = crate::join::Session::new(
+                spec.clone(),
+                usize::try_from(state.endpoint.id.0)
+                    .map_err(|_| Error::Invalid("worker ID overflow".into()))?,
+                &state.parent,
+            )?;
+            *last = Some(spec.job);
+            *state
+                .last_execution_namespace
+                .lock()
+                .expect("execution namespace") = Some(spec.execution);
+            *current = Some(Arc::new(session));
+            Ok(Reply::Ready)
+        }
+        Request::ProbeJoin { job: id } => join_session(state, id)?.probe().map(Reply::JoinProbe),
+        Request::CommitJoin { job: id, decision } => {
+            join_session(state, id)?.commit(decision)?;
+            Ok(Reply::Ready)
+        }
+        Request::RunJoinProducer { job: id } => run_join(state, id, None),
+        Request::RunJoinFinal { job: id, gather } => run_join(state, id, Some(gather)),
         Request::PrepareJob(spec) => {
             require(
                 uuid::Uuid::parse_str(&spec.execution_namespace).is_ok(),
                 "invalid execution namespace",
             )?;
             spec.config.validate()?;
+            require(
+                spec.config.partial.mode == ade_exec::partial::Mode::FixedHash
+                    || spec.snapshot.is_none(),
+                "non-fixed partial source/replay graph is not admitted; disable recovery",
+            )?;
             crate::coordinator::validate_topology(&spec.workers)?;
             #[cfg(feature = "research-hooks")]
             require(
@@ -606,6 +741,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             )?;
             require(
                 current.is_none()
+                    && state.join.lock().expect("join lock").is_none()
                     && !state.producer_busy.load(Ordering::Acquire)
                     && !state.final_busy.load(Ordering::Acquire),
                 "worker already has active job",
@@ -651,6 +787,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 None
             };
             *current = Some(Arc::new(Job {
+                prepared: Mutex::new(None),
                 layout: Mutex::new(None),
                 probe_started: AtomicBool::new(false),
                 probe_files: Mutex::new(None),
@@ -723,7 +860,21 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 Instant::now() + Duration::from_millis(timeout_ms),
             );
             match result {
-                Ok(observation) => {
+                Ok(mut observation) => {
+                    let preparation_started = Instant::now();
+                    if !files.is_empty() {
+                        let prepared = ade_exec::PreparedAggregate::new(
+                            producer_plan(&job, &files),
+                            job.spec.config.execution(),
+                            job.store.cancellation.clone(),
+                        )
+                        .inspect_err(|_| job.store.cancellation.cancel())?;
+                        observation.original_prefix_rows = prepared.prefix_rows();
+                        observation.preparation_ns =
+                            crate::materialization::ns(preparation_started);
+                        *job.prepared.lock().expect("prepared task") =
+                            Some((prepared, observation.preparation_ns));
+                    }
                     *job.probe_files.lock().expect("probe files") = Some(files);
                     Ok(Reply::Probe(observation))
                 }
@@ -821,6 +972,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             Ok(Reply::Ready)
         }
         Request::CancelJob { job: id } => {
+            cancel_join(state, Some(id));
             let mut current = state.job.lock().expect("job lock");
             if current.as_ref().is_some_and(|j| j.spec.job == id) {
                 let old = current.take().expect("job");
@@ -832,7 +984,10 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             Ok(Reply::Ready)
         }
         Request::Shutdown => {
+            cancel_join(state, None);
             state.stop.store(true, Ordering::Release);
+            // Wake a blocking accept; the listener checks stop before spawning a handler.
+            protocol::wake_listener(state.endpoint.control);
             if let Some(job) = state.job.lock().expect("job lock").take() {
                 job.store.cancellation.cancel();
             }
@@ -1000,7 +1155,7 @@ fn serve_inner(
     mut ready: impl Write,
 ) -> Result<()> {
     let listener = TcpListener::bind(control)?;
-    listener.set_nonblocking(true)?;
+    listener.set_nonblocking(false)?;
     let exchange_listener = TcpListener::bind(exchange)?;
     let endpoint = WorkerEndpoint {
         id,
@@ -1010,6 +1165,7 @@ fn serve_inner(
     let state = Arc::new(State {
         endpoint: endpoint.clone(),
         job: Mutex::new(None),
+        join: Mutex::new(None),
         last_job_id: Mutex::new(None),
         last_execution_namespace: Mutex::new(None),
         producer_busy: AtomicBool::new(false),
@@ -1021,6 +1177,9 @@ fn serve_inner(
     });
     let receiving = state.clone();
     let receiver = Receiver::start(exchange_listener, move |header| {
+        if let Some(join) = receiving.join.lock().expect("join lock").as_ref() {
+            return join.store(header);
+        }
         let job = job(&receiving, header.id.job)?;
         committed_layout(&job)?;
         Ok(job.store.clone())
@@ -1042,6 +1201,9 @@ fn serve_inner(
         if handlers.len() < 8 {
             match listener.accept() {
                 Ok((mut socket, _)) => {
+                    if state.stop.load(Ordering::Acquire) {
+                        break;
+                    }
                     // macOS inherits O_NONBLOCK from the accepting listener.
                     if socket.set_nonblocking(false).is_err() {
                         continue;
@@ -1055,8 +1217,9 @@ fn serve_inner(
                     break;
                 }
             }
+        } else {
+            thread::sleep(Duration::from_millis(2));
         }
-        thread::sleep(Duration::from_millis(2));
     }
     if let Some(job) = state
         .job
@@ -1066,6 +1229,7 @@ fn serve_inner(
     {
         job.store.cancellation.cancel();
     }
+    cancel_join(&state, None);
     for handler in handlers {
         let _ = handler.join();
     }
@@ -1100,6 +1264,7 @@ mod tests {
         let state = Arc::new(State {
             endpoint: endpoint.clone(),
             job: Mutex::new(None),
+            join: Mutex::new(None),
             last_job_id: Mutex::new(None),
             last_execution_namespace: Mutex::new(None),
             producer_busy: AtomicBool::new(false),

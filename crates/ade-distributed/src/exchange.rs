@@ -39,9 +39,45 @@ pub fn schema() -> SchemaRef {
         Field::new("count", DataType::UInt64, false),
     ]))
 }
+/// Distinct primitive payload contracts over the existing bounded wire-v2 frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Payload {
+    Aggregate,
+    JoinRows,
+    JoinPairs,
+}
+impl Payload {
+    fn version(self) -> u32 {
+        match self {
+            Self::Aggregate => 1,
+            Self::JoinRows => 2,
+            Self::JoinPairs => 3,
+        }
+    }
+    fn schema(self) -> SchemaRef {
+        match self {
+            Self::Aggregate => schema(),
+            Self::JoinRows => ade_exec::join::input_schema(),
+            Self::JoinPairs => ade_exec::join::output_schema(),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IngressLimits {
+    pub rows: u64,
+    pub bytes: u64,
+    pub batches: u64,
+}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HashOwner {
+    pub workers: usize,
+    pub destination: usize,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Header {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
     pub id: TransferId,
     pub hash_version: u32,
     pub schema_version: u32,
@@ -52,6 +88,7 @@ impl Header {
     #[must_use]
     pub fn new(id: TransferId) -> Self {
         Self {
+            context: None,
             id,
             hash_version: HASH_VERSION,
             schema_version: 1,
@@ -60,7 +97,16 @@ impl Header {
     }
     fn validate(&self) -> Result<()> {
         require(
-            self.hash_version == HASH_VERSION && self.schema_version == 1 && self.wire_version == 2,
+            self.hash_version == HASH_VERSION
+                && self.wire_version == 2
+                && match self.schema_version {
+                    1 => self.context.is_none(),
+                    2 | 3 => self
+                        .context
+                        .as_ref()
+                        .is_some_and(|c| c.len() == 64 && c.bytes().all(|b| b.is_ascii_hexdigit())),
+                    _ => false,
+                },
             "exchange hash/schema version mismatch",
         )
     }
@@ -140,8 +186,11 @@ fn validate_ipc_envelope(encoded: &[u8]) -> Result<()> {
         messages += 1;
     }
 }
-fn validate_batch(batch: &RecordBatch) -> Result<()> {
-    require(batch.schema() == schema(), "exchange schema mismatch")?;
+fn validate_payload(batch: &RecordBatch, payload: Payload) -> Result<()> {
+    require(
+        batch.schema() == payload.schema(),
+        "exchange schema mismatch",
+    )?;
     require(
         batch.num_rows() <= MAX_BATCH_ROWS,
         "exchange row cap exceeded",
@@ -152,6 +201,7 @@ fn validate_batch(batch: &RecordBatch) -> Result<()> {
     )
 }
 pub struct Sender {
+    payload: Payload,
     fingerprint: blake3::Hasher,
     staging: Option<crate::materialization::Staging>,
     id: TransferId,
@@ -167,16 +217,34 @@ impl Sender {
         id: TransferId,
         cancellation: CancellationToken,
     ) -> Result<Self> {
+        Self::typed(address, id, cancellation, Payload::Aggregate, None)
+    }
+    pub(crate) fn typed(
+        address: SocketAddr,
+        id: TransferId,
+        cancellation: CancellationToken,
+        payload: Payload,
+        context: Option<String>,
+    ) -> Result<Self> {
+        let mut header = Header::new(id);
+        header.schema_version = payload.version();
+        header.context = context;
+        header.validate()?;
         cancellation.check()?;
         let mut socket = protocol::connect(address, crate::IO_TIMEOUT)?;
         protocol::write_message(
             &mut protocol::DeadlineStream::new(&mut socket, crate::IO_TIMEOUT),
-            &Header::new(id),
+            &header,
         )?;
         let mut fingerprint = blake3::Hasher::new();
         fingerprint.update(b"ade-transfer-v1");
         fingerprint.update(&serde_json::to_vec(&id.logical())?);
+        if let Some(context) = &header.context {
+            fingerprint.update(b"ade-join-context-v1");
+            fingerprint.update(context.as_bytes());
+        }
         Ok(Self {
+            payload,
             fingerprint,
             staging: None,
             id,
@@ -189,13 +257,13 @@ impl Sender {
     /// Rejects incompatible or oversized batches, cancellation, encoding and socket failures.
     pub fn batch(&mut self, batch: &RecordBatch) -> Result<()> {
         self.cancellation.check()?;
-        validate_batch(batch)?;
+        validate_payload(batch, self.payload)?;
         if batch.num_rows() == 0 {
             return Ok(());
         }
         let mut encoded = BoundedBuffer::new(MAX_FRAME_BYTES);
         {
-            let mut writer = StreamWriter::try_new(&mut encoded, &schema())?;
+            let mut writer = StreamWriter::try_new(&mut encoded, &self.payload.schema())?;
             writer.write(batch)?;
             writer.finish()?;
         }
@@ -208,7 +276,7 @@ impl Sender {
     pub(crate) fn encoded(&mut self, bytes: &[u8]) -> Result<()> {
         self.cancellation.check()?;
         require(bytes.len() <= MAX_FRAME_BYTES, "restore frame exceeds cap")?;
-        let rows = decode(bytes)?.num_rows() as u64;
+        let rows = decode_payload(bytes, self.payload)?.num_rows() as u64;
         require(rows > 0, "empty restored frame")?;
         self.send_encoded(bytes, rows)
     }
@@ -255,6 +323,12 @@ impl Sender {
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
         socket.write_all(&0u32.to_le_bytes())?;
         socket.write_all(&self.metrics.batches.to_le_bytes())?;
+        if self.payload != Payload::Aggregate {
+            let mut terminal = self.fingerprint.clone();
+            terminal.update(b"terminal-v1");
+            terminal.update(&self.metrics.batches.to_le_bytes());
+            socket.write_all(terminal.finalize().as_bytes())?;
+        }
         let ack: std::result::Result<TransferId, String> = protocol::read_message(&mut socket)?;
         let id = ack.map_err(|message| Error::Remote {
             code: "exchange".into(),
@@ -294,6 +368,11 @@ struct Registry {
 }
 /// One fixed expected transfer set and a unique execution-local root.
 pub struct Store {
+    payload: Payload,
+    context: Option<String>,
+    limits: Option<IngressLimits>,
+    ingress: Mutex<NetworkMetrics>,
+    hash_owner: Option<HashOwner>,
     layout: Mutex<Option<crate::topology::Layout>>,
     root: tempfile::TempDir,
     expected: BTreeSet<TransferId>,
@@ -307,6 +386,48 @@ pub struct Store {
     pub cancellation: CancellationToken,
 }
 impl Store {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "One typed retention boundary binds codec, limits and ownership together."
+    )]
+    pub(crate) fn typed(
+        parent: &Path,
+        expected: BTreeSet<TransferId>,
+        token: CancellationToken,
+        config: ExchangeConfig,
+        payload: Payload,
+        context: String,
+        limits: IngressLimits,
+        hash_owner: Option<HashOwner>,
+    ) -> Result<Self> {
+        require(
+            payload != Payload::Aggregate
+                && limits.rows > 0
+                && limits.bytes > 0
+                && limits.batches > 0,
+            "typed exchange bounds",
+        )?;
+        require(
+            matches!(
+                config.mode,
+                ExchangeMode::Spill | ExchangeMode::LocalMaterialized
+            ) && config.cost.is_none(),
+            "join exchange requires bounded spill/local gather",
+        )?;
+        if let Some(owner) = hash_owner {
+            require(
+                (2..=4).contains(&owner.workers) && owner.destination < owner.workers,
+                "join hash ownership",
+            )?;
+        }
+        let mut store = Self::configured(parent, expected, token, config)?;
+        store.payload = payload;
+        store.context = Some(context);
+        store.limits = Some(limits);
+        store.hash_owner = hash_owner;
+        Ok(store)
+    }
+
     /// # Errors
     /// Returns invalid expected transfers or I/O errors creating the store/connection.
     pub fn new(
@@ -372,6 +493,11 @@ impl Store {
             None
         };
         Ok(Self {
+            payload: Payload::Aggregate,
+            context: None,
+            limits: None,
+            ingress: Mutex::default(),
+            hash_owner: None,
             layout: Mutex::new(None),
             root,
             config,
@@ -611,10 +737,32 @@ impl Store {
                 "batch violates committed key ownership",
             )?;
         }
+        if let Some(owner) = self.hash_owner {
+            let keys = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow::array::UInt64Array>()
+                .ok_or_else(|| Error::Invalid("join routing key type".into()))?;
+            require(
+                keys.values().iter().all(|key| {
+                    crate::partition::destination(*key, owner.workers)
+                        .is_ok_and(|p| p == owner.destination)
+                }),
+                "batch violates join key ownership",
+            )?;
+        }
         Ok(())
     }
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Validation and atomic terminal publication share one receive ownership scope."
+    )]
     fn receive_inner(&self, header: &Header, socket: &mut TcpStream) -> Result<()> {
         header.validate()?;
+        require(
+            header.schema_version == self.payload.version() && header.context == self.context,
+            "exchange schema/strategy context mismatch",
+        )?;
         self.cancellation.check()?;
         require(
             self.expected.contains(&header.id),
@@ -635,9 +783,20 @@ impl Store {
         };
         let mut writer = temporary
             .as_mut()
-            .map(|f| StreamWriter::try_new(f.as_file_mut(), &schema()))
+            .map(|f| StreamWriter::try_new(f.as_file_mut(), &self.payload.schema()))
             .transpose()?;
         let mut metrics = NetworkMetrics::default();
+        // Aggregate schema1 keeps its accepted receive path; terminal hashing
+        // belongs only to the new context-bound join schemas.
+        let mut fingerprint = header.context.as_ref().map(|context| {
+            let mut digest = blake3::Hasher::new();
+            digest.update(b"ade-transfer-v1");
+            digest
+                .update(&serde_json::to_vec(&header.id.logical()).expect("primitive transfer ID"));
+            digest.update(b"ade-join-context-v1");
+            digest.update(context.as_bytes());
+            digest
+        });
         loop {
             self.cancellation.check()?;
             let mut frame = protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT);
@@ -652,14 +811,55 @@ impl Store {
                 "segment sequence/completion count mismatch",
             )?;
             if length == 0 {
+                if self.payload != Payload::Aggregate {
+                    let fingerprint = fingerprint.as_mut().expect("typed context validated");
+                    fingerprint.update(b"terminal-v1");
+                    fingerprint.update(&metrics.batches.to_le_bytes());
+                    let mut terminal = [0; 32];
+                    frame.read_exact(&mut terminal)?;
+                    require(
+                        terminal == *fingerprint.finalize().as_bytes(),
+                        "join terminal fingerprint mismatch",
+                    )?;
+                }
                 break;
             }
             let mut encoded = vec![0; length];
             frame.read_exact(&mut encoded)?;
-            let batch = decode(&encoded)?;
+            if let Some(fingerprint) = &mut fingerprint {
+                fingerprint.update(&metrics.batches.to_le_bytes());
+                fingerprint.update(&(length as u64).to_le_bytes());
+                fingerprint.update(&encoded);
+            }
+            let batch = decode_payload(&encoded, self.payload)?;
             require(batch.num_rows() > 0, "empty data segment")?;
             self.validate_ownership(&batch, header)?;
             let rows = batch.num_rows() as u64;
+            if let Some(limits) = self.limits {
+                let mut ingress = self.ingress.lock().expect("ingress budget");
+                let next_rows = ingress
+                    .rows
+                    .checked_add(rows)
+                    .ok_or_else(|| Error::Invalid("join ingress rows overflow".into()))?;
+                let next_bytes = ingress
+                    .payload_bytes
+                    .checked_add(length as u64)
+                    .ok_or_else(|| Error::Invalid("join ingress bytes overflow".into()))?;
+                let next_batches = ingress
+                    .batches
+                    .checked_add(1)
+                    .ok_or_else(|| Error::Invalid("join ingress frames overflow".into()))?;
+                require(
+                    next_rows <= limits.rows
+                        && next_bytes <= limits.bytes
+                        && next_batches <= limits.batches,
+                    "join ingress bound exceeded",
+                )?;
+                ingress.rows = next_rows;
+                ingress.payload_bytes = next_bytes;
+                ingress.batches = next_batches;
+            }
+
             if let Some(writer) = &mut writer {
                 writer.write(&batch)?;
             } else if self.config.mode == ExchangeMode::Adaptive {
@@ -709,16 +909,19 @@ impl Store {
     }
 }
 pub(crate) fn decode(encoded: &[u8]) -> Result<RecordBatch> {
+    decode_payload(encoded, Payload::Aggregate)
+}
+fn decode_payload(encoded: &[u8], payload: Payload) -> Result<RecordBatch> {
     validate_ipc_envelope(encoded)?;
     let mut reader = StreamReader::try_new(Cursor::new(encoded), None)?;
     require(
-        reader.schema() == schema(),
+        reader.schema() == payload.schema(),
         "exchange stream schema mismatch",
     )?;
     let batch = reader
         .next()
         .ok_or_else(|| Error::Invalid("frame lacks record batch".into()))??;
-    validate_batch(&batch)?;
+    validate_payload(&batch, payload)?;
     require(
         reader.next().is_none()
             && reader.is_finished()
@@ -744,7 +947,7 @@ impl std::fmt::Debug for Source {
 }
 impl ade_exec::BatchSource for Source {
     fn schema(&self) -> SchemaRef {
-        schema()
+        self.store.payload.schema()
     }
     fn next_batch(&mut self, token: &CancellationToken) -> ade_exec::Result<Option<RecordBatch>> {
         #[cfg(feature = "research-hooks")]
@@ -788,13 +991,13 @@ impl Source {
             self.store.cancellation.check()?;
             if self.store.config.mode.live() || self.store.config.mode == ExchangeMode::Adaptive {
                 if let Some(encoded) = self.store.buffer.take(&self.store.cancellation)? {
-                    return Ok(Some(decode(&encoded)?));
+                    return Ok(Some(decode_payload(&encoded, self.store.payload)?));
                 }
                 // Recheck after completion: the last segment may have arrived between checks.
                 if self.store.complete() {
                     if self.store.config.mode == ExchangeMode::Adaptive {
                         if let Some(encoded) = self.store.buffer.take(&self.store.cancellation)? {
-                            return Ok(Some(decode(&encoded)?));
+                            return Ok(Some(decode_payload(&encoded, self.store.payload)?));
                         }
                         break;
                     }
@@ -802,7 +1005,7 @@ impl Source {
                         .store
                         .buffer
                         .take(&self.store.cancellation)?
-                        .map(|e| decode(&e))
+                        .map(|e| decode_payload(&e, self.store.payload))
                         .transpose();
                 }
             } else if self.store.complete() {
@@ -848,7 +1051,7 @@ impl Source {
                 {
                     let bytes = objects.get(*id, *sequence, &self.store.cancellation)?;
                     *sequence += 1;
-                    return Ok(Some(decode(&bytes)?));
+                    return Ok(Some(decode_payload(&bytes, self.store.payload)?));
                 }
                 let Some((id, first, count)) = self.objects.next() else {
                     return Ok(None);
@@ -860,7 +1063,9 @@ impl Source {
             if let Some(reader) = &mut self.ipc
                 && let Some(batch) = reader.next()
             {
-                return Ok(Some(batch?));
+                let batch = batch?;
+                validate_payload(&batch, self.store.payload)?;
+                return Ok(Some(batch));
             }
             let Some(path) = self.files.as_mut().expect("initialized").next() else {
                 return Ok(None);
@@ -890,7 +1095,7 @@ impl Receiver {
         resolve: impl Fn(&Header) -> Result<Arc<Store>> + Send + Sync + 'static,
     ) -> Result<Self> {
         let address = listener.local_addr()?;
-        listener.set_nonblocking(true)?;
+        listener.set_nonblocking(false)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
         let resolve = Arc::new(resolve);
@@ -909,6 +1114,9 @@ impl Receiver {
                 if handlers.len() < MAX_CONNECTIONS {
                     match listener.accept() {
                         Ok((mut socket, _)) => {
+                            if stopping.load(Ordering::Acquire) {
+                                break;
+                            }
                             // macOS inherits O_NONBLOCK from the accepting listener.
                             if socket.set_nonblocking(false).is_err() {
                                 continue;
@@ -963,8 +1171,9 @@ impl Receiver {
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(_) => break,
                     }
+                } else {
+                    thread::sleep(Duration::from_millis(2));
                 }
-                thread::sleep(Duration::from_millis(2));
             }
             for token in active
                 .lock()
@@ -986,7 +1195,9 @@ impl Receiver {
 }
 impl Drop for Receiver {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
+        // Shutdown must wake an idle accept, without creating a new protocol reader.
+        protocol::wake_listener(self.address);
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -1008,6 +1219,73 @@ pub fn collect(store: &Store) -> Result<Vec<RecordBatch>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn blocking_accept_shutdown_wakes_idle_and_all_busy_slots() {
+        let parent = tempfile::tempdir().unwrap();
+        let token = CancellationToken::default();
+        let store = Arc::new(
+            Store::configured(
+                parent.path(),
+                (0..4)
+                    .map(|p| crate::ids::transfer(crate::ids::JobId(1), 0, 0, p))
+                    .collect(),
+                token.clone(),
+                ExchangeConfig {
+                    mode: ExchangeMode::Direct,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        for busy in [false, true] {
+            let receiving = store.clone();
+            let receiver = Receiver::start(
+                TcpListener::bind(if busy { "127.0.0.1:0" } else { "0.0.0.0:0" }).unwrap(),
+                move |_| Ok(receiving.clone()),
+            )
+            .unwrap();
+            let mut producers = Vec::new();
+            if busy {
+                for p in 0..4 {
+                    let address = receiver.address;
+                    producers.push(thread::spawn(move || {
+                        let mut sender = Sender::new(
+                            address,
+                            crate::ids::transfer(crate::ids::JobId(1), 0, 0, p),
+                            CancellationToken::default(),
+                        )
+                        .unwrap();
+                        sender
+                            .batch(
+                                &RecordBatch::try_new(
+                                    schema(),
+                                    vec![
+                                        Arc::new(arrow::array::UInt64Array::from(vec![p])),
+                                        Arc::new(arrow::array::Int64Array::from(vec![1])),
+                                        Arc::new(arrow::array::UInt64Array::from(vec![1])),
+                                    ],
+                                )
+                                .unwrap(),
+                            )
+                            .unwrap();
+                        sender.finish()
+                    }));
+                }
+                let deadline = std::time::Instant::now() + crate::IO_TIMEOUT;
+                while store.registry.lock().unwrap().started.len() < MAX_CONNECTIONS {
+                    assert!(std::time::Instant::now() < deadline);
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+            let start = std::time::Instant::now();
+            drop(receiver);
+            assert!(start.elapsed() < crate::IO_TIMEOUT);
+            for producer in producers {
+                assert!(producer.join().unwrap().is_err());
+            }
+        }
+        assert!(token.check().is_err());
+    }
     use crate::ids::{JobId, transfer};
     use arrow::array::{Int64Array, UInt64Array};
     use std::sync::mpsc;
@@ -1737,5 +2015,103 @@ mod topology_tests {
         sender.batch(&batch).unwrap();
         assert!(sender.finish().is_err());
         assert!(store.cancellation.check().is_err());
+    }
+}
+
+#[cfg(test)]
+mod join_tests {
+    use super::*;
+    use crate::ids::{JobId, transfer};
+    fn batch() -> RecordBatch {
+        RecordBatch::try_new(
+            ade_exec::join::input_schema(),
+            vec![
+                Arc::new(arrow::array::UInt64Array::from(vec![0, 0])),
+                Arc::new(arrow::array::Int64Array::from(vec![1, 1])),
+            ],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn typed_codec_context_route_ingress_terminal_and_stage_are_fenced() {
+        let root = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(7), 2, 0, 0);
+        let context = "a".repeat(64);
+        for case in 0..7 {
+            let owner = crate::partition::destination(0, 2).unwrap();
+            let store = Arc::new(
+                Store::typed(
+                    root.path(),
+                    [id].into(),
+                    CancellationToken::default(),
+                    crate::ExchangeConfig {
+                        mode: crate::ExchangeMode::Spill,
+                        ..Default::default()
+                    },
+                    Payload::JoinRows,
+                    context.clone(),
+                    IngressLimits {
+                        rows: if case == 3 { 1 } else { 2 },
+                        bytes: if case == 4 { 1 } else { 1024 * 1024 },
+                        batches: 2,
+                    },
+                    Some(HashOwner {
+                        workers: 2,
+                        destination: if case == 2 { 1 - owner } else { owner },
+                    }),
+                )
+                .unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut sender = Sender::typed(
+                receiver.address,
+                if case == 5 {
+                    transfer(JobId(7), 3, 0, 0)
+                } else {
+                    id
+                },
+                CancellationToken::default(),
+                if case == 1 {
+                    Payload::JoinPairs
+                } else {
+                    Payload::JoinRows
+                },
+                Some(if case == 0 {
+                    "b".repeat(64)
+                } else {
+                    context.clone()
+                }),
+            )
+            .unwrap();
+            if case == 6 {
+                let batch = batch();
+                sender.batch(&batch).unwrap();
+                sender.fingerprint = blake3::Hasher::new();
+                assert!(sender.finish().is_err());
+            } else {
+                let data = if case == 1 {
+                    RecordBatch::try_new(
+                        ade_exec::join::output_schema(),
+                        vec![
+                            Arc::new(arrow::array::UInt64Array::from(vec![0])),
+                            Arc::new(arrow::array::Int64Array::from(vec![1])),
+                            Arc::new(arrow::array::Int64Array::from(vec![1])),
+                        ],
+                    )
+                    .unwrap()
+                } else {
+                    batch()
+                };
+                let written = sender.batch(&data);
+                assert!(written.is_err() || sender.finish().is_err());
+            }
+            assert_eq!(store.metrics().unwrap().transfers, 0);
+            assert!(store.cancellation.check().is_err());
+            drop(receiver);
+        }
     }
 }

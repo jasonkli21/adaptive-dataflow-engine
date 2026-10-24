@@ -158,6 +158,7 @@ impl BenchmarkEngine for AdeLocalEngine {
                 row_id: "row_id".into(),
                 value: "value_i64".into(),
             },
+            Query::InnerEquiJoin{..} => return Err(Error::Invalid("ade-local join adapter not admitted; use ade-distributed-join or the typed local helper".into())),
             Query::TpchQ1 => unreachable!("rejected above"),
         };
         Ok(Self {

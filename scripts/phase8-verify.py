@@ -8,7 +8,7 @@ import os
 import sys
 
 
-def verify(root):
+def verify(root, control_protocol="ADETCP11"):
     def load(name):
         return json.loads((root / name).read_text())
     commit = (root / 'source-commit.txt').read_text().strip()
@@ -36,7 +36,7 @@ def verify(root):
         assert manifest['synthetic']['key_cardinality'] == (4 if distribution == 'tiny' else 131072)
         config = run['engine']['configuration']
         assert config['partition_policy'] == policy and config['workers'] == str(workers)
-        assert config['control_protocol'] == 'ADETCP08' and config['exchange_wire_version'] == '2' and config['hash_version'] == '1'
+        assert config['control_protocol'] == control_protocol and config['exchange_wire_version'] == '2' and config['hash_version'] == '1'
         assert config['memory_limit_bytes'] == '33554432' and config['exchange_buffer_bytes'] == '1048576'
         assert config['prefetch_batches'] == '1' and config['research_slow_partition'] == 'off'
         assert config['exchange_mode'] == ('adaptive' if profile == 'restore' else 'spill')
@@ -46,7 +46,7 @@ def verify(root):
         assert len(records) == len(all_iterations) == iterations + warmups
         assert len({r['process_id'] for r in records}) == len(records)
         oracle = load(distribution + '-oracle.json')['result_fingerprint']
-        walls, work, wait, completion, per_final, probes, commits = [], [], [], [], [], [], []
+        walls, work, wait, completion, per_final, probes, commits, producers = [], [], [], [], [], [], [], []
         for index, (it, record) in enumerate(zip(all_iterations, records)):
             assert it['exit_code'] == 0 and not it['error'] and it['outcome']['validated'], stem
             assert it['outcome']['result_fingerprint'] == oracle and it['outcome']['engine'] == run['engine'], stem
@@ -92,7 +92,14 @@ def verify(root):
                 if distribution == 'hot-key':
                     assert decision['reason'] == 'insufficient_sample_coverage'
                     assert decision['moved_shards'] == 0 and len(active) == workers
-            for task in m['producers'].values():
+            for producer_id, task in m['producers'].items():
+                if policy == 'sampled_v1':
+                    observation = decision['observations'][int(producer_id)]
+                    assert task['prefix_rows'] == observation['original_prefix_rows']
+                    assert 0 < task['prefix_rows'] <= int(config['batch_size'])
+                    assert task['preparation_ns'] == observation['preparation_ns'] > 0
+                else:
+                    assert task['prefix_rows'] == task['preparation_ns'] == 0
                 assert task['routing_buffer_peak_rows'] <= task['routing_buffer_capacity_rows'] <= workers * 1024
                 assert (task['routing_buffer_capacity_rows'] > 0) == (policy != 'static')
                 assert task['layout_digest'] == digest and len(task['manifests']) == workers
@@ -135,9 +142,10 @@ def verify(root):
             completion.append(max(f['coordinator_finished_ns'] for f in m['finals'].values()))
             per_final.append({p: {k: f[k] for k in ('received','output_rows','operator_work_ns','source_pull_ns','elapsed_ms','coordinator_finished_ns','managed_peak','spill_bytes')} for p,f in m['finals'].items()})
             probes.append(m['topology_probe_ns']); commits.append(m['topology_commit_ns'])
+            producers.append({p: {k: task[k] for k in ('operator_work_ns','routing_ns','sending_ns','preparation_ns','prefix_rows','managed_peak','spill_bytes','sent')} for p, task in m['producers'].items()})
         summaries[stem] = dict(wall_ns=walls, max_final_work_ns=work, max_source_pull_ns=wait,
                                last_final_completion_ns=completion, per_final=per_final,
-                               probe_ns=probes, commit_ns=commits,
+                               probe_ns=probes, commit_ns=commits, producers=producers,
                                median_wall_ns=statistics.median(walls), median_max_final_work_ns=statistics.median(work))
     def ratio(distribution, metric, workers=2):
         return summaries[f'{distribution}-{workers}-sampled_v1-normal'][metric] / summaries[f'{distribution}-{workers}-static-normal'][metric]
@@ -156,7 +164,7 @@ def verify(root):
 if __name__ == '__main__':
     root = pathlib.Path(sys.argv[1])
     try:
-        verification = verify(root)
+        verification = verify(root, sys.argv[2] if len(sys.argv) == 3 else "ADETCP11")
     except (AssertionError, KeyError, ValueError, OSError, subprocess.CalledProcessError) as error:
         verification = dict(passed=False, correctness_passed=False, error=repr(error))
     (root/'verification.json').write_text(json.dumps(verification,indent=2)+'\n')

@@ -57,6 +57,10 @@ pub enum Commands {
     CheckResult {
         path: PathBuf,
     },
+    #[command(name = "__check-join-metrics", hide = true)]
+    CheckJoinMetrics {
+        path: PathBuf,
+    },
     #[command(name = "__child-run", hide = true)]
     ChildRun(ChildRunArgs),
 }
@@ -107,6 +111,14 @@ pub enum DataCommand {
 }
 #[derive(Debug, Subcommand)]
 pub enum GenerateCommand {
+    Join {
+        #[arg(long)]
+        dataset_id: String,
+        #[arg(long)]
+        output: PathBuf,
+        #[command(flatten)]
+        config: crate::join_dataset::Config,
+    },
     Synthetic {
         #[arg(long)]
         dataset_id: String,
@@ -164,6 +176,15 @@ pub async fn execute(cli: Cli) -> Result<()> {
         }
         Commands::Data { command } => match command {
             DataCommand::Generate { kind } => match kind {
+                GenerateCommand::Join {
+                    dataset_id,
+                    output,
+                    config,
+                } => json(&crate::join_dataset::generate(
+                    &output,
+                    &dataset_id,
+                    &config,
+                )?)?,
                 GenerateCommand::Synthetic {
                     dataset_id,
                     output,
@@ -266,6 +287,24 @@ pub async fn execute(cli: Cli) -> Result<()> {
                     }
                 }
             }
+        }
+        Commands::CheckJoinMetrics { path } => {
+            use std::io::BufRead;
+            let file = std::io::BufReader::new(std::fs::File::open(path)?);
+            let mut count = 0;
+            for line in file.lines() {
+                let value: serde_json::Value = serde_json::from_str(&line?)?;
+                let metrics: ade_distributed::join::Metrics = serde_json::from_value(
+                    value
+                        .get("metrics")
+                        .cloned()
+                        .ok_or_else(|| crate::Error::Invalid("missing metrics".into()))?,
+                )?;
+                ade_distributed::join::validate_metrics(&metrics)?;
+                count += 1;
+            }
+            crate::require(count > 0, "empty metrics")?;
+            json(&serde_json::json!({"validated":true,"children":count}))?;
         }
         Commands::CheckResult { path } => {
             BenchmarkResultV1::load(&path)?;

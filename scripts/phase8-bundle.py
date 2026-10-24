@@ -17,6 +17,9 @@ with tempfile.TemporaryDirectory(prefix='ade-phase8-bundle-') as temporary:
     shutil.copytree(results,stage)
     with (stage/'source.tar').open('wb') as stream:
         subprocess.run(['git','archive','--format=tar',commit],stdout=stream,check=True)
+    # Preserve the exact snapshot commit as Git objects, so reviewers can rebuild
+    # with the original clean repository identity rather than inventing a new SHA.
+    subprocess.run(['git','bundle','create',str(stage/'source.bundle'),'--all',commit],check=True)
     inventory = {str(p.relative_to(stage)): hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in sorted(stage.rglob('*')) if p.is_file()}
     (stage/'inventory.json').write_text(json.dumps(dict(source_commit=commit,

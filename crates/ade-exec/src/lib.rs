@@ -51,6 +51,8 @@ pub enum Error {
     },
     #[error("managed state target reached with spill disabled")]
     SpillDisabled,
+    #[error("join hash capacity exceeded in hash-only mode: {capacity_rows} rows")]
+    JoinHashCapacityExceeded { capacity_rows: usize },
     #[error("prefetch producer failed")]
     PrefetchFailed,
     #[error("spill cannot make progress: {0}")]

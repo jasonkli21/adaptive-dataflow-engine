@@ -16,5 +16,7 @@ listed below.
 - [Phase 5](phase-5-implementation-report.md)
 - [Phase 6](phase-6-implementation-report.md)
 - [Phase 7](phase-7-implementation-report.md)
+- [Phase 8](phase-8-implementation-report.md)
+- [Phase 9](phase-9-implementation-report.md)
 
 Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke results, limitations, deferred work, and next-phase considerations.

@@ -1,13 +1,145 @@
 #!/usr/bin/env python3
-"""V1 exact inventory, oracle, source/strategy/traffic and all-sample timing checks."""
-import json,pathlib,statistics,subprocess,os,sys
+"""Verifier v2 binds exact arm/source identity, mechanisms and all timing samples."""
+import hashlib
+import json
+import os
+import pathlib
+import statistics
+import subprocess
+import sys
+import tempfile
+import uuid
+
+
+def check_source_identity(root, commit, runtime):
+    identity = json.loads((root / 'source-identity.json').read_text())
+    assert identity['schema_version'] == 1
+    assert identity['source_commit'] == commit
+    assert identity['runtime_tree'] == runtime
+    digest = identity['source_archive_sha256']
+    assert len(digest) == 64
+    archived_source = root / 'source.tar'
+    source_bundle = root / 'source.bundle'
+    if source_bundle.is_file():
+        with tempfile.TemporaryDirectory(prefix='ade-phase9-source-check-') as directory:
+            repository = pathlib.Path(directory) / 'source.git'
+            subprocess.run(
+                ['git', 'clone', '--bare', str(source_bundle), str(repository)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            resolved = subprocess.check_output(
+                ['git', '-C', str(repository), 'rev-parse', commit], text=True
+            ).strip()
+            tree = subprocess.check_output(
+                ['git', '-C', str(repository), 'rev-parse', f'{commit}:crates'], text=True
+            ).strip()
+            assert resolved == commit and tree == runtime
+            source = subprocess.check_output(
+                ['git', '-C', str(repository), 'archive', '--format=tar', commit]
+            )
+    elif archived_source.is_file():
+        source = archived_source.read_bytes()
+    else:
+        resolved = subprocess.check_output(
+            ['git', 'rev-parse', commit], text=True
+        ).strip()
+        tree = subprocess.check_output(
+            ['git', 'rev-parse', f'{commit}:crates'], text=True
+        ).strip()
+        assert resolved == commit and tree == runtime
+        source = subprocess.check_output(
+            ['git', 'archive', '--format=tar', commit]
+        )
+    assert hashlib.sha256(source).hexdigest() == digest
+    if archived_source.is_file():
+        assert hashlib.sha256(archived_source.read_bytes()).hexdigest() == digest
+    bundled_identity = root / 'implementation-identity.json'
+    if bundled_identity.is_file():
+        assert json.loads(bundled_identity.read_text()) == identity
+
+
+def expected_join_config(run):
+    c = run['engine']['configuration']
+    local = json.loads(c['local'])
+    local['max_output_rows'] = run['workload']['query']['max_output_rows']
+    expected = {
+        'policy': c['policy'],
+        'build': None if c['build'] == 'null' else c['build'],
+        'local': local,
+        'probe_rows': int(c['probe_rows']),
+        'probe_files': int(c['probe_files']),
+        'probe_read_bytes': int(c['probe_read_bytes']),
+        'broadcast_rows': int(c['broadcast_rows']),
+        'broadcast_bytes': int(c['broadcast_bytes']),
+        'broadcast_amplification_bytes': int(c['broadcast_amplification_bytes']),
+    }
+    if 'research_exit_final' in c:
+        expected['research_exit_final'] = (
+            None if c['research_exit_final'] == 'null' else int(c['research_exit_final'])
+        )
+    return expected
+
+
+def expected_join_sources(run, dataset_root):
+    sources = []
+    manifest_files = run['dataset']['files']
+    for side in ('left', 'right'):
+        files = []
+        for entry in manifest_files:
+            relative = entry['relative_path']
+            if relative.startswith(side + '/'):
+                files.append({
+                    'path': str((dataset_root / relative).resolve()),
+                    'rows': entry['rows'],
+                    'bytes': entry['bytes'],
+                    'blake3': entry['fingerprint'],
+                })
+        assert files, f'missing {side} source files'
+        sources.append({'side': side, 'files': files})
+    return sources
+
+
+def check_record_slot(record, run, expected_iteration_index, expected_warmup, pids):
+    assert record['sidecar_version'] == 2, 'unsupported metrics sidecar version'
+    assert record['run_id'] == run['run_id'], 'sidecar run ID mismatch'
+    assert record['iteration_index'] == expected_iteration_index, 'sidecar iteration mismatch'
+    assert record['warmup'] == expected_warmup, 'sidecar warmup mismatch'
+    pid = record['process_id']
+    assert isinstance(pid, int) and pid > 0 and pid not in pids, 'duplicate/invalid child PID'
+    pids.add(pid)
+
+
+def check_join_record(record, run, expected_config, expected_sources,
+                      expected_iteration_index, expected_warmup, pids, executions,
+                      source_identities):
+    check_record_slot(record, run, expected_iteration_index, expected_warmup, pids)
+    metrics = record['metrics']
+    spec = metrics['spec']
+    assert spec['config'] == expected_config, 'sidecar config differs from benchmark arm'
+    execution = str(uuid.UUID(spec['execution']))
+    assert execution not in executions, 'duplicate join execution identity'
+    executions.add(execution)
+    actual_sources = []
+    for source in spec['sources']:
+        assert len(source['identity']) == 64, 'invalid source identity'
+        identity_key = (run['run_id'], source['side'])
+        previous = source_identities.setdefault(identity_key, source['identity'])
+        assert previous == source['identity'], 'source identity changed within benchmark arm'
+        actual_sources.append({
+            'side': source['side'],
+            'files': source['files'],
+        })
+    assert actual_sources == expected_sources, 'sidecar source inventory differs from benchmark arm'
 
 def verify(root):
     load=lambda name:json.loads((root/name).read_text())
     commit=(root/'source-commit.txt').read_text().strip()
     runtime=(root/'runtime-tree.txt').read_text().strip()
+    check_source_identity(root, commit, runtime)
     arms={2:[('tiny',s) for s in ['forced_repartition','forced_broadcast','observed_v1']]+[('balanced',s) for s in ['forced_repartition','observed_v1']]+[('pressure',s) for s in ['auto','grace']]+[(r,s) for r in ['low','high'] for s in ['fixed_hash','raw_partial','adaptive_v1']],4:[('tiny',s) for s in ['forced_repartition','forced_broadcast','observed_v1']]+[('balanced',s) for s in ['forced_repartition','observed_v1']]+[('pressure','auto')]+[(r,s) for r in ['low','high'] for s in ['fixed_hash','adaptive_v1']]}
-    statuses=load('statuses.json');summaries={};pids=set();identity=None;datasets={};children=0;measured=0
+    statuses=load('statuses.json');summaries={};pids=set();executions=set();source_identities={};identity=None;datasets={};children=0;measured=0
     expected={f'{r}-{n}-{m}' for n,cases in arms.items() for r,m in cases}|{'negative-balanced-forced_broadcast','negative-pressure-hash_only','negative-hot-auto'}
     assert set(statuses)==expected,'exact arm inventory'
     for n,cases in arms.items():
@@ -38,6 +170,10 @@ def verify(root):
                 local=json.loads(c['local']);assert local['memory_limit_bytes']==(262144 if regime=='pressure' else 33554432) and local['hash_rows']==(512 if regime=='pressure' else 65536)
                 assert local['algorithm']==(mode if regime=='pressure' else 'auto')
                 subprocess.run([os.environ.get('ADE_BENCH_BIN','target/release/ade-bench'),'__check-join-metrics',str(root/(stem+'-metrics.jsonl'))],check=True,stdout=subprocess.DEVNULL)
+                args=load(stem+'-command.json')
+                dataset_root=pathlib.Path(args[args.index('--dataset')+1]).resolve()
+                sidecar_config=expected_join_config(run)
+                sidecar_sources=expected_join_sources(run,dataset_root)
             k=5 if n==2 else 3
             assert run['run_config']['warmups']==1 and run['run_config']['iterations']==k and run['run_config']['dataset_verification']=='full'
             assert len(run['warmups'])==1 and len(run['iterations'])==k and run['summary']['count']==k
@@ -45,12 +181,12 @@ def verify(root):
             iters=run['warmups']+run['iterations'];assert len(records)==len(iters)==k+1
             samples=[]
             for i,(it,record) in enumerate(zip(iters,records)):
-                pid=record['process_id'];assert pid not in pids;pids.add(pid)
                 assert it['warmup']==(i==0) and it['exit_code']==0 and not it['error'] and it['outcome']['validated']
                 out=it['outcome'];assert out['engine']==run['engine'] and out['result_fingerprint']==oracle['result_fingerprint'] and out['rows_output']==oracle['rows_output']
                 m=record['metrics'];assert m['gather']['rows']==out['rows_output'] and m['gather']['transfers']==n
                 assert set(m['producers'])==set(m['finals'])=={str(p) for p in range(n)}
                 if agg:
+                    check_record_slot(record,run,it['index'],i==0,pids)
                     assert not m['topology'] and not m['inactive'] and m['recovery']['recovery_attempts']==0
                     sent=sum(p['sent']['rows'] for p in m['producers'].values());received=sum(f['received']['rows'] for f in m['finals'].values());assert sent==received
                     assert sum(p['input_rows'] for p in m['producers'].values())==100000
@@ -65,6 +201,10 @@ def verify(root):
                     for f in m['finals'].values():assert f['managed_peak']<=33554432 and f['received']['transfers']==n and f['retention']['current_spill_backlog_bytes']==0
                     sample=dict(query_ns=out['query_time_ns'],coordinator_ns=m['elapsed_ms']*1000000,operator_work_ns=sum(t['operator_work_ns'] for role in ['producers','finals'] for t in m[role].values()),max_final_work_ns=max(t['operator_work_ns'] for t in m['finals'].values()),sent_rows=sent,sent_bytes=sum(p['sent']['payload_bytes'] for p in m['producers'].values()),spill_bytes=sum(t['spill_bytes'] for role in ['producers','finals'] for t in m[role].values()),rss_bytes=it['peak_rss_bytes'])
                 else:
+                    check_join_record(
+                        record, run, sidecar_config, sidecar_sources,
+                        it['index'], i == 0, pids, executions, source_identities,
+                    )
                     d=m['decision'];assert len(d['observations'])==n*2 and len(d['digest'])==64
                     assert m['spec']['config']['local']==local
                     assert d['distribution']==('broadcast_build' if regime=='tiny' and mode!='forced_repartition' else 'hash_repartition')
@@ -79,7 +219,7 @@ def verify(root):
             assert run['summary']['median']==median and run['summary']['min']==min(walls) and run['summary']['max']==max(walls),'all measured samples must enter summary'
             summaries[stem]=dict(median_query_ns=median,min_query_ns=min(walls),max_query_ns=max(walls),samples=samples)
             children+=k+1;measured+=k
-    for stem,fragment in [('negative-balanced-forced_broadcast','lacks complete bounded build proof'),('negative-pressure-hash_only','spill disabled'),('negative-hot-auto','capacity 32')]:
+    for stem,fragment in [('negative-balanced-forced_broadcast','lacks complete bounded build proof'),('negative-pressure-hash_only','join hash capacity exceeded in hash-only mode'),('negative-hot-auto','capacity 32')]:
         assert statuses[stem]!=0 and fragment in (root/(stem+'-stderr.log')).read_text(),stem
     gates={};ratios={}
     get=lambda r,n,m:summaries[f'{r}-{n}-{m}']['median_query_ns']
@@ -91,7 +231,7 @@ def verify(root):
         ratios[str(n)]=dict(tiny=tiny,balanced=balanced,low=low,high=high)
         for name,value,guard in [('tiny',tiny,1.15),('balanced',balanced,1.20),('low',low,1.15),('high',high,1.15)]:gates[f'{name}-{n}']=value<=guard
     assert children==118 and measured==95
-    return dict(passed=all(gates.values()),correctness_passed=True,source_commit=commit,runtime_tree=runtime,children=children,measured=measured,gates=gates,ratios=ratios,summaries=summaries)
+    return dict(verification_version=2,passed=all(gates.values()),correctness_passed=True,source_commit=commit,runtime_tree=runtime,children=children,measured=measured,gates=gates,ratios=ratios,summaries=summaries)
 if __name__=='__main__':
     root=pathlib.Path(sys.argv[1]).resolve()
     try:result=verify(root)

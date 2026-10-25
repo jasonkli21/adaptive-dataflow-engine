@@ -8,6 +8,15 @@ if subprocess.check_output(['git','status','--porcelain','--untracked-files=all'
 root.mkdir(parents=True,exist_ok=False);data.mkdir(parents=True,exist_ok=False)
 (root/'source-commit.txt').write_bytes(subprocess.check_output(['git','rev-parse','HEAD']))
 (root/'runtime-tree.txt').write_bytes(subprocess.check_output(['git','rev-parse','HEAD:crates']))
+source_commit=(root/'source-commit.txt').read_text().strip()
+runtime_tree=(root/'runtime-tree.txt').read_text().strip()
+source_archive=subprocess.check_output(['git','archive','--format=tar',source_commit])
+(root/'source-identity.json').write_text(json.dumps(dict(
+    schema_version=1,
+    source_commit=source_commit,
+    runtime_tree=runtime_tree,
+    source_archive_sha256=hashlib.sha256(source_archive).hexdigest(),
+),indent=2)+'\n')
 (root/'binary-sha256.json').write_text(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in [bin,bin.with_name('ade-worker')]},indent=2)+'\n')
 def command(args,stem,env=None):
     (root/f'{stem}-command.json').write_text(json.dumps([str(bin),*map(str,args)],indent=2)+'\n')

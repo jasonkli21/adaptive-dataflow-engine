@@ -217,14 +217,39 @@ impl BenchmarkEngine for JoinEngine {
         )?;
         if let Some(path) = std::env::var_os("ADE_DISTRIBUTED_METRICS_FILE") {
             use std::io::Write;
+            let record = match std::env::var("ADE_BENCH_RUN_ID") {
+                Ok(run_id) => {
+                    let iteration_index = std::env::var("ADE_BENCH_ITERATION_INDEX")
+                        .map_err(|_| Error::Invalid("metrics iteration identity missing".into()))?
+                        .parse::<u32>()
+                        .map_err(|_| Error::Invalid("metrics iteration identity invalid".into()))?;
+                    let warmup = std::env::var("ADE_BENCH_WARMUP")
+                        .map_err(|_| Error::Invalid("metrics warmup identity missing".into()))?
+                        .parse::<bool>()
+                        .map_err(|_| Error::Invalid("metrics warmup identity invalid".into()))?;
+                    serde_json::json!({
+                        "sidecar_version": 2,
+                        "run_id": run_id,
+                        "iteration_index": iteration_index,
+                        "warmup": warmup,
+                        "process_id": std::process::id(),
+                        "metrics": output.metrics,
+                    })
+                }
+                Err(std::env::VarError::NotPresent) => serde_json::json!({
+                    "sidecar_version": 1,
+                    "process_id": std::process::id(),
+                    "metrics": output.metrics,
+                }),
+                Err(std::env::VarError::NotUnicode(_)) => {
+                    return Err(Error::Invalid("metrics run identity is not UTF-8".into()));
+                }
+            };
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(path)?;
-            serde_json::to_writer(
-                &mut file,
-                &serde_json::json!({"process_id":std::process::id(),"metrics":output.metrics}),
-            )?;
+            serde_json::to_writer(&mut file, &record)?;
             file.write_all(b"\n")?;
         }
         Ok(output.batches)

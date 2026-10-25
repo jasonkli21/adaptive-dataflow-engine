@@ -90,6 +90,7 @@ pub fn run(
         "dataset/spec mismatch",
     )?;
     let time_flags = resource_time_flags();
+    let run_id = uuid::Uuid::new_v4().to_string();
     let mut expected_output = None;
     let mut warmups = Vec::new();
     let mut iterations = Vec::new();
@@ -101,6 +102,11 @@ pub fn run(
                 root,
                 engine_request,
                 time_flags.as_deref(),
+                ChildIdentity {
+                    run_id: &run_id,
+                    iteration_index: index,
+                    warmup,
+                },
             );
             let mut it = invoke(&mut command, index, warmup)?;
             if let Some(o) = &it.outcome {
@@ -149,7 +155,7 @@ pub fn run(
     };
     let result = BenchmarkResultV1 {
         schema_version: 1,
-        run_id: uuid::Uuid::new_v4().to_string(),
+        run_id,
         created_at: chrono::Utc::now(),
         repository: RepositoryInfo::collect(),
         environment: EnvironmentInfo::collect(),
@@ -168,12 +174,20 @@ pub fn run(
     Ok(result)
 }
 
+#[derive(Clone, Copy)]
+struct ChildIdentity<'a> {
+    run_id: &'a str,
+    iteration_index: u32,
+    warmup: bool,
+}
+
 fn child_command(
     executable: &Path,
     spec_path: &Path,
     root: &Path,
     engine_request: &EngineRequest,
     time_flags: Option<&[&str]>,
+    identity: ChildIdentity<'_>,
 ) -> Command {
     let mut command = if let Some(flags) = time_flags {
         let mut c = Command::new("/usr/bin/time");
@@ -189,7 +203,13 @@ fn child_command(
         .arg("--spec")
         .arg(spec_path)
         .arg("--dataset")
-        .arg(root);
+        .arg(root)
+        .env("ADE_BENCH_RUN_ID", identity.run_id)
+        .env(
+            "ADE_BENCH_ITERATION_INDEX",
+            identity.iteration_index.to_string(),
+        )
+        .env("ADE_BENCH_WARMUP", identity.warmup.to_string());
     for option in &engine_request.options {
         command.arg("--engine-option").arg(option);
     }
@@ -230,6 +250,11 @@ mod tests {
             Path::new("dataset"),
             &request,
             None,
+            ChildIdentity {
+                run_id: "test-run-id",
+                iteration_index: 3,
+                warmup: false,
+            },
         );
         let args = command
             .get_args()
@@ -251,6 +276,18 @@ mod tests {
                 "adapter_specific=value with spaces",
             ]
         );
+        let env = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.unwrap().to_string_lossy().into_owned(),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(env["ADE_BENCH_RUN_ID"], "test-run-id");
+        assert_eq!(env["ADE_BENCH_ITERATION_INDEX"], "3");
+        assert_eq!(env["ADE_BENCH_WARMUP"], "false");
     }
 }
 

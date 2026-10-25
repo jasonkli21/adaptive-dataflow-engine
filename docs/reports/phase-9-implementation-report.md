@@ -1,6 +1,6 @@
 # Phase 9 — Bounded adaptive operators v1
 
-Status: COMPLETE — bounded v1 (2026-10-24). Correctness, all declared Phase9 empirical guards and accepted Phase6–8 regressions pass.
+Status: COMPLETE — bounded v1 with independent-review fixes (2026-10-24). Historical release guards and accepted Phase6–8 regressions remain recorded against their original source snapshots.
 
 ## Authority and source identity
 
@@ -22,10 +22,12 @@ confirmations are explicit; no Phase8 criterion was waived inside Phase9.
 Phase9 frozen release source: 9b0330aa533f0ed403dc7856349ff36952ef4214;
 `crates` tree: fab08a06457e2f3f1e62877e3223f6c502afecc9. Early unmeasured snapshots
 were superseded before timing to fence capture against manifest bytes and keep
-terminal receive hashing off the legacy aggregate path. The final implementation
-commit is the commit containing this report; its runtime tree must equal this
-measured tree. Final commit SHA is also recorded in the release identity artifact
-and the session handoff, avoiding a self-referential SHA inside its own Git content.
+terminal receive hashing off the legacy aggregate path. The review-fix commit
+has a later source/tree identity; the original immutable release and measured
+runtime tree are preserved without rewriting timings or sidecars. Review fixes
+affect validation, refusal diagnostics, evidence attribution and documentation;
+no performance gates were rerun or retuned. The original evidence's detailed
+per-arm attribution remains qualified under its verifier-v1 limitations.
 
 ## Delivered mechanisms and contracts
 
@@ -74,7 +76,7 @@ and result return. Any failure discards the attempt's retained output.
 |---|---|---|
 | Default GroupBySum | All five static retention modes, threshold/expected-cost, static/static_packed/sampled48 routing; accepted one-final-loss replay/restore | Existing producer/multiple losses, replay mismatch, poisoning, recovery failure and legacy oversized aggregate spill bucket remain failures |
 | Non-fixed GroupBySum | adaptive_v1/raw_partial; all five static modes, threshold retention and normal sampled48 routing on2–4 processes | Source snapshots/replay, complete-copy cost modes and failure hooks; benchmark requires recovery_enabled=false. No byte-identical adaptive replay claim |
-| InnerEquiJoin |2–4 fixed localhost workers, observed/forced repartition/broadcast, left/right build, hash-only/auto/grace, spill exchange | Other exchange modes, expected-cost copies/recovery, one-sided sampled layout, prefetch/slow-consumer hooks, arbitrary SQL/types/nulls, general skew/sort-merge/scheduler |
+| InnerEquiJoin |2–4 fixed localhost workers, observed/forced repartition/broadcast, left/right build, hash-only/auto/grace, spill exchange | Other exchange modes, expected-cost copies/recovery, one-sided sampled layout, prefetch/slow-consumer hooks, arbitrary SQL/types/nulls; one-level grace may refuse a distinct-key collision when a partition has probe rows and build rows > `hash_rows`; no general skew/sort-merge/scheduler |
 | Join loss/error | Cancel both source stores and all survivors, quarantine partial gather, clean retained local files | No join replay/restore. Dead-worker files are removed on parent-owned fixture teardown; no independent-host/cloud durability claim |
 
 Actual adaptive partial ingests its original prefix into hash state; it is not a
@@ -94,10 +96,12 @@ ceiling1GiB), deadline120s. Hash rows/heads and IO/output transients reserve bef
 allocation. The auto conversion evacuates every old row, the exact unprocessed
 trigger-batch suffix and subsequent inputs before output, then releases the old
 hash table. Spill has side/partition/version headers, count/checksum footers and
-bounded one-file IO; validate all relevant partitions before output. An oversized
-matching build partition, including unsplittable hot keys, returns JoinSkew.
-Spill-disabled/hash-only/output/spill/deadline refusals are structured core errors,
-carried as bounded remote error codes/messages; none is counted as a valid result.
+bounded one-file IO; validate all relevant partitions before output. A partition
+with any probe rows and more build rows than capacity returns `JoinSkew`, even
+when distinct colliding keys mean its true result is empty. This conservative
+one-level v1 refusal is accepted; no recursive/sort-merge rescue is claimed.
+Spill-disabled/hash-only-capacity/output/spill/deadline refusals are structured
+core errors, carried as bounded remote error codes/messages; none is valid output.
 
 Full source: <=64files/1m rows/64MiB physical bytes per side. API reads capped64MiB,
 metadata1MiB, selected rowgroup key/value decode1MiB, actual selected batch64KiB;
@@ -261,7 +265,9 @@ The release tag points to the original public planning baseline, NOT the measure
 source or final implementation. Use bundled source.bundle for9b0330a/runtimefab08a0.
 The separate
 [implementation identity](https://github.com/jasonkli21/adaptive-dataflow-engine/releases/download/phase9-evidence-2026-10-24/implementation-identity.json)
-binds the user's one implementation commit/identical runtime tree to the bundle.
+binds the original measured implementation commit/runtime tree to the bundle.
+The remediation source is later and is not represented as part of those
+historical timings.
 Closure bundle SHA256: `0ff08b13acd749de6339f235282576aeaa9e5f5fc98de54c6ff1875b1bfd2b94`.
 
 
@@ -275,3 +281,62 @@ claimed modes. Five primary samples exceed the plan's minimum three. No numeric
 exit guard was weakened after measurements. No Phase10/11 work was started.
 General sort-merge/skew spooling, adaptive replay, other join retention modes,
 independent-host fault domains and scheduler/IR remain future work.
+
+## Independent review remediation (2026-10-24)
+
+The attached review findings were applied without changing the Phase8 closure,
+the Phase9 timing thresholds, or the immutable evidence archive:
+
+- **F-01:** version-2 join metrics now carry result `run_id`, warmup/iteration
+  slot and child PID. Verifier v2 checks those fields, exact effective join
+  config and both source file inventories against the corresponding result/manifest.
+  It also holds each side's source identity stable across that run. The
+  acceptance run records the source archive hash with its commit and `crates`
+  tree; the bundler and verifier check it against the included Git bundle.
+  Result schema v1 is unchanged. Standalone `validate` keeps diagnostic
+  sidecar v1 without run context. Historical release sidecars remain under
+  verifier v1 and were not retrofitted.
+- **F-02:** canonicalization enforces the complete ordered join schema,
+  including names and nullability, on each batch. The regression includes
+  renamed columns with unchanged arrays and a zero-row nullable schema.
+- **F-03:** the deterministic collision fixture uses two distinct build keys
+  and a distinct probe key in the same 32-way grace partition with
+  `hash_rows=1`. It expects pre-output `JoinSkew`, source shutdown and spill
+  cleanup. ADR, README and this report state that one-level v1 can refuse this
+  mathematically disjoint input; recursive or sort-merge fallback remains out
+  of scope.
+- **F-04:** hash-only capacity exhaustion now has the typed
+  `JoinHashCapacityExceeded` diagnostic. `SpillDisabled` only reports an
+  actually disabled spill configuration. The pressure negative expectation is
+  updated; the real distributed refusal emitted the new capacity-specific
+  message. Historical negative logs are preserved unchanged.
+- **F-05:** the reports index lists Phases 8/9, benchmark methodology covers
+  ADE adapters and sidecars, and metric boundaries distinguish operator wall
+  work, local ledger, spill, encoded exchange payload, and child RSS.
+
+The original eight timing guards remain historical results for source
+`9b0330aa533f0ed403dc7856349ff36952ef4214`; no new timing experiment was run
+for these fixes. Fresh verification and test command outcomes for this review
+commit:
+
+- `cargo fmt --all -- --check`: PASS.
+- `cargo check --workspace --all-targets`: PASS.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: PASS.
+- `cargo test --workspace --all-features`: PASS, 139 tests plus doc tests. The
+  first sandboxed attempt could not bind local TCP sockets; the same suite
+  passed when rerun with loopback access.
+- Python syntax checks: PASS. Six focused verifier tests pass, including valid
+  sidecar swaps, same-row source inventory/identity changes, effective-config
+  mismatch, source-hash tampering, and commit/tree/archive verification through
+  a Git bundle.
+- A local two-worker join smoke produced one warmup and two measured children.
+  `__check-join-metrics` and verifier-v2 binding checks passed for all three
+  records against the real run ID, config and left/right file inventories.
+- A local two-worker GroupBySum smoke also confirmed version-2 run-slot binding
+  for the existing distributed aggregate sidecar path.
+- `bash scripts/smoke.sh`: PASS after rebuilding. This covers the workspace
+  process smoke and standalone join `validate`, whose sidecar v1 remains
+  compatible with `__check-join-metrics`.
+- The full timed Phase9 acceptance matrix was not rerun. Its thresholds and
+  original raw measurements remain frozen historical evidence for the original
+  measured source; this verifier remediation does not rewrite those artifacts.

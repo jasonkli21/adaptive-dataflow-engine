@@ -17,6 +17,11 @@ with tempfile.TemporaryDirectory(prefix='ade-phase9-bundle-') as temporary:
     shutil.copytree(results,stage)
     with (stage/'source.tar').open('wb') as stream:
         subprocess.run(['git','archive','--format=tar',commit],stdout=stream,check=True)
+    source_identity=json.loads((stage/'source-identity.json').read_text())
+    source_hash=hashlib.sha256((stage/'source.tar').read_bytes()).hexdigest()
+    if source_identity['source_commit'] != commit or source_identity['source_archive_sha256'] != source_hash:
+        raise SystemExit('source archive does not match the measured implementation identity')
+    (stage/'implementation-identity.json').write_text(json.dumps(source_identity,indent=2)+'\n')
     # Preserve the exact snapshot commit as Git objects, so reviewers can rebuild
     # with the original clean repository identity rather than inventing a new SHA.
     subprocess.run(['git','bundle','create',str(stage/'source.bundle'),'--all',commit],check=True)

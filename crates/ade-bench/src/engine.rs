@@ -380,12 +380,8 @@ fn canonical(case: &BenchmarkCase, batches: &[RecordBatch]) -> Result<Canonical>
                 .ok_or_else(|| Error::Validation("join output count overflow".into()))?;
             require(total <= cap, "join output validation cap")?;
             require(
-                b.schema().fields().iter().map(|f| f.data_type()).eq([
-                    &DataType::UInt64,
-                    &DataType::Int64,
-                    &DataType::Int64,
-                ]),
-                "join output types",
+                b.schema() == ade_exec::join::output_schema(),
+                "join output schema",
             )?;
         }
         require(b.num_columns() == width, "output width mismatch")?;
@@ -837,6 +833,38 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[test]
+    fn join_canonicalization_rejects_renamed_or_nullable_schema_even_when_empty() {
+        let case = BenchmarkCase::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../benchmarks/specs/inner-equi-join.toml")
+                .as_path(),
+        )
+        .unwrap();
+        let key = Arc::new(UInt64Array::from(vec![1])) as ArrayRef;
+        let left = Arc::new(Int64Array::from(vec![10])) as ArrayRef;
+        let right = Arc::new(Int64Array::from(vec![20])) as ArrayRef;
+        let renamed_schema = Arc::new(Schema::new(vec![
+            Field::new("key", DataType::UInt64, false),
+            Field::new("right_value", DataType::Int64, false),
+            Field::new("left_value", DataType::Int64, false),
+        ]));
+        let renamed = RecordBatch::try_new(
+            renamed_schema,
+            vec![key.clone(), left.clone(), right.clone()],
+        )
+        .unwrap();
+        assert!(canonical(&case, &[renamed]).is_err());
+
+        let nullable_schema = Arc::new(Schema::new(vec![
+            Field::new("key", DataType::UInt64, false),
+            Field::new("left_value", DataType::Int64, false),
+            Field::new("right_value", DataType::Int64, true),
+        ]));
+        let empty_nullable = RecordBatch::new_empty(nullable_schema);
+        assert!(canonical(&case, &[empty_nullable]).is_err());
     }
 
     #[test]

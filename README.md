@@ -18,9 +18,9 @@ benchmark substrate
 
 ## Current status
 
-**Phase 9 bounded v1 is complete: observed broadcast/repartition joins, real hash-to-grace conversion and opt-in adaptive partial aggregation pass source-bound correctness and release acceptance.** Phase8 is closed with immutable public evidence. `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
+**Phase 9 bounded v1 is complete with review fixes: observed broadcast/repartition joins, real hash-to-grace conversion and opt-in adaptive partial aggregation preserve the declared result contract.** Phase8 is closed with immutable public evidence. The published Phase9 timing gates remain historical measurements of the frozen source and are not freshly measured for the review-fix commit. `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
 
-Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. The aggregate adapter preserves synthetic GroupBySum. The separate `ade-distributed-join` adapter adds bounded two-source inner equijoin with an independent DataFusion SQL bag oracle; all predeclared Phase9 guards and Phase6–8 regressions pass. See the [Phase9 report](docs/reports/phase-9-implementation-report.md) for all measured tradeoffs and immutable evidence.
+Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. The aggregate adapter preserves synthetic GroupBySum. The separate `ade-distributed-join` adapter adds bounded two-source inner equijoin with an independent DataFusion SQL bag oracle; its frozen release evidence passes the predeclared Phase9 guards and Phase6–8 regressions. See the [Phase9 report](docs/reports/phase-9-implementation-report.md) for the measured tradeoffs, review-fix checks, and immutable evidence.
 
 The completed Phase 0 architecture/benchmark lab in `crates/ade-bench` provides deterministic datasets, engine-independent workload definitions, a DataFusion baseline, process-isolated macrobenchmarks, versioned result artifacts, correctness validation, comparison tooling, and microbenchmark infrastructure.
 
@@ -381,7 +381,12 @@ relations preserve duplicate multiplicity and left/right output orientation.
 The local operator transitions before output when its reserved hash-row capacity
 is exhausted; 32 deeper-hash spill partitions are processed one at a time.
 An oversized/hot partition, output/spill cap, schema/null mismatch or deadline
-returns an error. Sort-merge, general skew recovery and arbitrary joins are deferred.
+returns an error. A grace partition is refused before output when it contains
+any probe rows and more build rows than `hash_rows`, even if the keys are
+different and the true join result for that partition would be empty. One-level
+v1 has no recursive refinement or sort-merge rescue; this conservative
+`JoinSkew` refusal is part of the supported-domain boundary and never returns a
+partial result. Sort-merge, general skew recovery and arbitrary joins are deferred.
 
 Join v1 supports 2–4 fixed localhost worker processes with spill exchange only.
 Each side has independent stage identities and exact terminal closure; gather
@@ -407,4 +412,9 @@ codec, queue and harness output allocations are separately bounded; this is not
 an RSS guarantee. See [ADR-0016](docs/adr/0016-adaptive-operators-v1.md) for the
 supported domain and [release experiment v1](docs/research/phase-9-experiment.md)
 for all forced comparisons. `scripts/phase9-acceptance.sh` requires a clean release
-checkout; `phase9-verify.py` and `phase9-bundle.py` retain source-bound raw evidence.
+checkout; verifier v2 binds each macrobenchmark-run join sidecar to its run/child slot, effective
+configuration, both source inventories and source archive identity. The
+immutable original release remains auditable under its original verifier v1;
+its measurements were not rewritten. Standalone `validate` diagnostics retain
+sidecar v1 because they have no result run/iteration identity. `phase9-bundle.py`
+retains source-bound raw evidence.

@@ -1,6 +1,6 @@
 # ADR-0016 — Bounded adaptive operators v1
 
-Status: Accepted 2026-10-24 —136 workspace tests, smoke, all118 Phase9 children/95 measured samples,3 expected negatives and all8 fixed empirical guards pass, alongside Phase6–8 regressions. Exact source, raw evidence and limits are in the Phase9 implementation report.
+Status: Accepted bounded v1 (2026-10-24). Original frozen evidence records 118 successful Phase9 children/95 measured samples,3 expected negatives, all8 fixed guards and Phase6–8 regressions. Follow-up review fixes pass the 139-test all-features workspace suite; the historical timing evidence is unchanged. See the Phase9 implementation report for source identities and limits.
 Date: 2026-10-22. Baseline: user branch c87d2baa5a2489994ddaa32103d03bbf7c696ede,
 plus completed Phase8 remediation matching clean source ab7404b/runtime432cc7dd.
 The Phase8 report and immutable release record closure before Phase9 source work.
@@ -125,6 +125,34 @@ recursive unsplittable-key salting, worker movement and a general optimizer are
 deferred: they add different semantics/ownership without being required for
 this bounded mechanism/policy experiment. A plan conflict or unmet required
 outcome must be reported explicitly; implementation alone is not completion.
+
+## Accepted bounded-v1 refusal and review clarifications (2026-10-24)
+
+Grace uses one fixed set of 32 deeper-hash partitions. After all partition files
+are sealed and validated, but before the first output, it returns `JoinSkew` if
+any partition has at least one probe row and more build rows than `hash_rows`.
+The check is conservative: a partition containing two distinct build keys and a
+different probe key can be refused even though its true join result is empty.
+That collision refusal is a supported v1 failure mode; callers must not treat
+it as successful empty output. Refinement, recursive repartition and sort-merge
+rescue remain deferred. The refusal and cleanup are covered by a focused test.
+
+Hash-only exhaustion now returns `JoinHashCapacityExceeded` even when spilling
+is enabled. `SpillDisabled` is reserved for a configuration that actually
+disables spilling. The remote error carries the accurate typed message while
+retaining fail-closed cancellation and cleanup.
+
+The independent join oracle now checks the exact `key UInt64 nonnull`,
+`left_value Int64 nonnull`, `right_value Int64 nonnull` schema on each batch,
+including zero-row batches, before comparing duplicate-aware bags. Benchmark
+result schema v1 is unchanged. Macrobenchmark `run` emits version-2 diagnostic
+sidecars with the existing run ID and warmup/iteration slot plus child PID;
+standalone `validate` without a result identity retains sidecar v1. Verifier v2
+binds the slot to the run's effective config and both manifest-derived source inventories. Phase 9
+evidence includes a source archive SHA-256 tied to the commit and runtime tree,
+and bundled verification checks it against the included Git bundle. The
+immutable historical release and its verifier-v1 artifacts remain unchanged;
+they do not acquire the new arm binding retroactively.
 
 The benchmark admits the new query through a separate `ade-distributed-join`
 adapter. This keeps the aggregate adapter's options and defaults unambiguous;

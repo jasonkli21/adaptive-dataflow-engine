@@ -701,8 +701,13 @@ fn run(
                 continue;
             }
             cx.memory.pressure();
-            if !cx.config.spill_enabled || cx.config.algorithm == Algorithm::HashOnly {
+            if !cx.config.spill_enabled {
                 return Err(Error::SpillDisabled);
+            }
+            if cx.config.algorithm == Algorithm::HashOnly {
+                return Err(Error::JoinHashCapacityExceeded {
+                    capacity_rows: cx.config.hash_rows,
+                });
             }
             cx.metrics.transitioned = true;
             cx.metrics.switch_build_rows = state.rows.len() as u64;
@@ -968,6 +973,73 @@ mod tests {
                 );
             }
         }
+    }
+    #[test]
+    fn grace_refuses_disjoint_keys_colliding_in_an_oversized_partition_before_output() {
+        let partition_id = partition(0);
+        let keys: Vec<u64> = (1..)
+            .filter(|key| partition(*key) == partition_id)
+            .take(3)
+            .collect();
+        assert_eq!(keys.len(), 3);
+        assert_ne!(keys[0], keys[1]);
+        assert_ne!(keys[0], keys[2]);
+        assert_ne!(keys[1], keys[2]);
+
+        let parent = tempfile::tempdir().unwrap();
+        let stopped: Arc<AtomicU64> = Arc::default();
+        let mut emitted = 0usize;
+        let result = execute(
+            input(&[(keys[2], 30)], 7, &stopped),
+            input(&[(keys[0], 10), (keys[1], 20)], 3, &stopped),
+            &Config {
+                build: Side::Right,
+                hash_rows: 1,
+                ..Default::default()
+            },
+            &CancellationToken::default(),
+            Some(parent.path()),
+            |batch| {
+                emitted += batch.num_rows();
+                Ok(())
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(Error::JoinSkew {
+                partition,
+                build_rows: 2,
+                capacity_rows: 1,
+            }) if partition == partition_id
+        ));
+        assert_eq!(emitted, 0);
+        assert!(stopped.load(Ordering::Relaxed) >= 2);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+    #[test]
+    fn hash_only_capacity_error_is_distinct_from_disabled_spill() {
+        let parent = tempfile::tempdir().unwrap();
+        let stopped: Arc<AtomicU64> = Arc::default();
+        let result = execute(
+            input(&[(1, 10)], 7, &stopped),
+            input(&[(1, 20), (2, 30)], 3, &stopped),
+            &Config {
+                build: Side::Right,
+                algorithm: Algorithm::HashOnly,
+                hash_rows: 1,
+                spill_enabled: true,
+                ..Default::default()
+            },
+            &CancellationToken::default(),
+            Some(parent.path()),
+            |_| Ok(()),
+        );
+        assert!(matches!(
+            result,
+            Err(Error::JoinHashCapacityExceeded { capacity_rows: 1 })
+        ));
+        assert!(stopped.load(Ordering::Relaxed) >= 2);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
     }
     #[test]
     fn typed_bounds_cancellation_sink_failure_and_cleanup() {

@@ -603,6 +603,7 @@ mod tests {
             })
             .collect();
         let prepare = crate::protocol::Request::PrepareJob(crate::protocol::JobSpec {
+            schedule: None,
             job: JobId(42),
             execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
             workers,

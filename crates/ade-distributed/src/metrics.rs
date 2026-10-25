@@ -23,6 +23,12 @@ impl NetworkMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
+    #[serde(default)]
+    pub source_verify_ns: u64,
+    #[serde(default)]
+    pub lease_wait_ns: u64,
+    #[serde(default)]
+    pub lease_ack_ns: u64,
     pub partial: Option<ade_exec::partial::Metrics>,
     /// Original partial-input rows ingested before layout commitment.
     pub prefix_rows: usize,
@@ -56,6 +62,8 @@ pub struct TaskMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    #[serde(default)]
+    pub scheduler: Option<crate::scheduler::Metrics>,
     pub topology: Option<crate::topology::Decision>,
     pub topology_commit_ns: u64,
     pub topology_probe_ns: u64,

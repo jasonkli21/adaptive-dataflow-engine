@@ -18,6 +18,8 @@ benchmark substrate
 
 ## Current status
 
+**Phase 10 is partial: the opt-in file-morsel scheduler implements real pending-work stealing and producer activation/drain within 2–4 pre-registered processes, but all frozen performance guards failed.** All62 release children passed oracle/lease/terminal correctness. Physical process membership remains fixed. See the [Phase10 report](docs/reports/phase-10-implementation-report.md) for the failed experiment and remaining PRD gaps. Static scheduling remains the default.
+
 **Phase 9 bounded v1 is complete with review fixes: observed broadcast/repartition joins, real hash-to-grace conversion and opt-in adaptive partial aggregation preserve the declared result contract.** Phase8 is closed with immutable public evidence. The published Phase9 timing gates remain historical measurements of the frozen source and are not freshly measured for the review-fix commit. `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
 
 Phase 2 local execution remains available. `ade-exec` owns managed memory, partitioned aggregate spill, external sort and bounded Parquet prefetch alongside scan/filter/project/limit/collect. `ade-local` executes six synthetic specs through the independent oracle, including order-aware sort validation. The aggregate adapter preserves synthetic GroupBySum. The separate `ade-distributed-join` adapter adds bounded two-source inner equijoin with an independent DataFusion SQL bag oracle; its frozen release evidence passes the predeclared Phase9 guards and Phase6–8 regressions. See the [Phase9 report](docs/reports/phase-9-implementation-report.md) for the measured tradeoffs, review-fix checks, and immutable evidence.
@@ -31,7 +33,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-9-implementation-plan.md`](docs/plans/phase-9-implementation-plan.md) — active Phase9 contract; Phase8 closure is preserved in its implementation report.
+4. [`docs/plans/phase-10-implementation-plan.md`](docs/plans/phase-10-implementation-plan.md) — active Phase10 contract; Phase8/9 closures retain their original evidence.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -418,3 +420,39 @@ immutable original release remains auditable under its original verifier v1;
 its measurements were not rewritten. Standalone `validate` diagnostics retain
 sidecar v1 because they have no result run/iteration identity. `phase9-bundle.py`
 retains source-bound raw evidence.
+
+## Opt-in leased aggregation
+
+```bash
+cargo build --workspace
+ADE_DISTRIBUTED_METRICS_FILE=/tmp/ade-leases.jsonl target/debug/ade-bench run \
+  --engine ade-distributed --spec benchmarks/specs/aggregate-low-cardinality.toml \
+  --dataset PATH_TO_DATA --engine-option workers=4 \
+  --engine-option scheduler_policy=leased_v1 \
+  --engine-option recovery_enabled=false --engine-option exchange_mode=spill \
+  --warmups 1 --iterations 3 --output /tmp/ade-leased-result.json
+```
+
+`static` is unchanged modulo assignment; `leased_no_steal` is the diagnostic
+control. Leased execution requires fixed_hash, static hash ownership, spill
+retention and a verified non-replayable manifest snapshot. Recovery, complete
+copies, sampled routing, adaptive/raw partials and joins are refused. Any leased
+producer/final loss or ambiguous lease cancels the entire job with no output.
+File morsels cannot split one large file. Locality labels are declared hints,
+not evidence of remote placement. Integer capacity weights1..1000 influence
+normalized remaining-work choices; they are not measured hardware speeds.
+
+`scheduler_initial_active`, `scheduler_capacities=1,4,4,4`, and bounded JSON
+`scheduler_participation` controls support in-job parked→active and drain/spot
+notice transitions. Events have `after_completed`, `worker`, and `action` fields;
+action is `"activate"`, `"drain"`, or `{"spot_notice":{"grace_ms":5000}}`.
+Drain preserves the worker's final-owner receiver until job teardown. All N×N
+terminals, including zero-work producers, and full lease coverage must validate
+before gather commit. No physical worker add/remove, failover or autoscaler is
+claimed. See [ADR0017](docs/adr/0017-morsel-scheduler-v1.md) for bounds and fencing.
+
+Optional `data generate synthetic --file-row-weights 15,1,1,1` creates physical
+file imbalance without changing logical rows. Weight count must equal `--files`.
+Omitting the option preserves historical serialization and equal file ranges.
+Timing gates in `scripts/phase10-acceptance.py` are local release evidence only;
+normal CI checks correctness. Protocol is ADETCP12, exchange wire2, result schema1.

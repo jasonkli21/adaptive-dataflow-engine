@@ -914,6 +914,94 @@ pub fn execute_to_sink(
     Ok(cx.metrics)
 }
 
+/// Build a fixed hash partial, then emit exact representable contributions.
+/// A file's i128 sum may require several Int64 contributions even when the
+/// eventual cross-file sum fits. Reuses the existing bounded hash/spill drain;
+/// no raw tail or adaptive choice is introduced.
+/// # Errors
+/// Rejects other roots and releases source, reservations and spill on every error.
+pub fn execute_hash_partials_to_sink(
+    plan: LocalPlan,
+    config: ExecutionConfig,
+    cancellation: CancellationToken,
+    mut sink: impl FnMut(RecordBatch) -> Result<()>,
+) -> Result<ExecutionMetrics> {
+    let mut cx = ExecContext::new(config, cancellation, None)?;
+    let mut root = Node::build(plan, &mut cx)?;
+    let result = (|| {
+        let Kind::Aggregate {
+            input,
+            key,
+            value,
+            count: None,
+            ..
+        } = &mut root.kind
+        else {
+            return Err(Error::Invalid(
+                "hash partial requires a producer hash root".into(),
+            ));
+        };
+        let mut drain =
+            aggregate::Aggregate::build(input, [*key, *value], None, root.id, &mut cx, None)?
+                .into_raw();
+        loop {
+            cx.cancellation.check()?;
+            let start = Instant::now();
+            let rows = cx.config.output_batch_rows;
+            let mut reservation = cx.memory.reservation(root.id);
+            reservation.grow(
+                rows.checked_mul(24)
+                    .and_then(|n| n.checked_add(1024))
+                    .ok_or(Error::Overflow("partial output"))?,
+            )?;
+            let mut keys = Vec::with_capacity(rows);
+            let mut sums = Vec::with_capacity(rows);
+            let mut counts = Vec::with_capacity(rows);
+            for _ in 0..rows {
+                let Some((key, sum, count)) = drain.next(&mut cx)? else {
+                    break;
+                };
+                keys.push(key);
+                sums.push(sum);
+                counts.push(count);
+            }
+            if keys.is_empty() {
+                cx.work(root.id, start);
+                break;
+            }
+            let batch = RecordBatch::try_new(
+                root.schema.clone(),
+                vec![
+                    Arc::new(arrow::array::UInt64Array::from(keys)),
+                    Arc::new(arrow::array::Int64Array::from(sums)),
+                    Arc::new(arrow::array::UInt64Array::from(counts)),
+                ],
+            )?;
+            cx.memory(root.id, batch.get_array_memory_size())?;
+            let metric = cx
+                .metrics
+                .operators
+                .get_mut(&root.id)
+                .ok_or_else(|| Error::Invalid("missing hash metrics".into()))?;
+            metric.output_rows += batch.num_rows();
+            metric.output_batches += 1;
+            cx.metrics.output_rows += batch.num_rows();
+            cx.metrics.output_batches += 1;
+            cx.work(root.id, start);
+            sink(batch)?;
+        }
+        cx.cancellation.check()
+    })();
+    let shutdown = root.shutdown(&mut cx);
+    drop(root);
+    result?;
+    shutdown?;
+    cx.metrics.managed = cx.memory.snapshot();
+    cx.metrics.spill = cx.spill.snapshot();
+    cx.spill.close()?;
+    Ok(cx.metrics)
+}
+
 /// Merge live partial aggregates through the existing spillable operator and sink loop.
 /// # Errors
 /// Returns source, execution, cancellation or sink errors with no partial success.

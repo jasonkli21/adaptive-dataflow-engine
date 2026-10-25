@@ -609,3 +609,34 @@ async fn q1_cutoff_and_tolerance_reference() {
     assert_eq!(baseline.result_fingerprint, candidate.result_fingerprint);
     assert!(dataset::register_tpch(directory.path(), 0.001, "test".into()).is_err());
 }
+
+#[test]
+fn weighted_file_layout_preserves_logical_rows_and_manifest_verification() {
+    let root = tempfile::tempdir().unwrap();
+    let c = SyntheticConfig {
+        rows: 3200,
+        files: 4,
+        ..SyntheticConfig::default()
+    };
+    let balanced = dataset::generate(&root.path().join("balanced"), "weighted-test", &c).unwrap();
+    let mut skew = c.clone();
+    skew.file_row_weights = vec![13, 1, 1, 1];
+    let weighted =
+        dataset::generate(&root.path().join("weighted"), "weighted-test", &skew).unwrap();
+    assert_eq!(balanced.logical_fingerprint, weighted.logical_fingerprint);
+    assert_ne!(balanced.identity().unwrap(), weighted.identity().unwrap());
+    assert_eq!(
+        weighted.files.iter().map(|f| f.rows).collect::<Vec<_>>(),
+        [2600, 200, 200, 200]
+    );
+    dataset::inspect(&root.path().join("weighted"), true).unwrap();
+    assert!(
+        !serde_json::to_string(&c)
+            .unwrap()
+            .contains("file_row_weights")
+    );
+    skew.file_row_weights = vec![0, 1, 1, 1];
+    assert!(skew.validate().is_err());
+    skew.file_row_weights = vec![1, 1];
+    assert!(skew.validate().is_err());
+}

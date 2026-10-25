@@ -44,4 +44,4 @@ run_case hash-bucket-skew 2 static_packed normal 3 1
 run_case tiny 2 sampled_v1 normal 1 0
 run_case hash-bucket-skew 2 sampled_v1 replay 1 0
 run_case hash-bucket-skew 2 sampled_v1 restore 1 0
-python3 scripts/phase8-verify.py "$results" | tee "$results/verifier.stdout.txt"
+python3 scripts/phase8-verify.py "$results" "${ADE_CONTROL_PROTOCOL:-ADETCP12}" | tee "$results/verifier.stdout.txt"

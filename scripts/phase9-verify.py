@@ -133,7 +133,7 @@ def check_join_record(record, run, expected_config, expected_sources,
         })
     assert actual_sources == expected_sources, 'sidecar source inventory differs from benchmark arm'
 
-def verify(root):
+def verify(root, control_protocol="ADETCP11"):
     load=lambda name:json.loads((root/name).read_text())
     commit=(root/'source-commit.txt').read_text().strip()
     runtime=(root/'runtime-tree.txt').read_text().strip()
@@ -157,7 +157,7 @@ def verify(root):
             if regime not in datasets:datasets[regime]=dataset_identity
             assert datasets[regime]==dataset_identity
             oracle=load(regime+'-oracle-stdout.log');assert oracle['validated'] and oracle['schema_version']==1
-            c=run['engine']['configuration'];assert c['workers']==str(n) and c['control_protocol']=='ADETCP11' and c['exchange_wire_version']=='2' and c['hash_version']=='1'
+            c=run['engine']['configuration'];assert c['workers']==str(n) and c['control_protocol']==control_protocol and c['exchange_wire_version']=='2' and c['hash_version']=='1'
             assert c['exchange_mode']=='spill' and c['recovery_enabled']=='false'
             agg=regime in ['low','high'];assert run['engine']['name']==('ade-distributed' if agg else 'ade-distributed-join')
             if agg:
@@ -234,7 +234,7 @@ def verify(root):
     return dict(verification_version=2,passed=all(gates.values()),correctness_passed=True,source_commit=commit,runtime_tree=runtime,children=children,measured=measured,gates=gates,ratios=ratios,summaries=summaries)
 if __name__=='__main__':
     root=pathlib.Path(sys.argv[1]).resolve()
-    try:result=verify(root)
+    try:result=verify(root, sys.argv[2] if len(sys.argv)==3 else "ADETCP11")
     except Exception as e:
         result=dict(passed=False,correctness_passed=False,error=str(e));(root/'verification.json').write_text(json.dumps(result,indent=2)+'\n');raise
     (root/'verification.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:v for k,v in result.items() if k!='summaries'},indent=2));sys.exit(0 if result['passed'] else 1)

@@ -66,3 +66,26 @@ Whole-child peak RSS includes benchmark validation and does not aggregate the
 distributed worker processes. These observations support bounded mechanism
 and overhead claims, not general hardware, cloud-cost, or latency-optimality
 claims. See the Phase 9 report and [ADR-0016](../adr/0016-adaptive-operators-v1.md).
+
+## Phase 10 leased source scheduling
+
+Leased GroupBySum preserves the independent DataFusion aggregate oracle and
+result schema v1. Sidecar3 binds run ID, warmup/iteration index, child PID,
+effective controls and the manifest-derived ordered source catalog. Its frozen
+schedule digest includes execution/registry/task configuration. The Rust verifier
+reconstructs every grant from pending preferred queues and declared capacities;
+the release verifier additionally checks exact source coverage, producer/final
+conservation, actual steal/participation and the full sample inventory. A sidecar
+is diagnostic evidence, never a substitute for the query oracle. Standalone
+validate has no result run/slot identity.
+
+The premeasurement Phase10 protocol uses identical files within each arm pair,
+one warmup/five measured primary2-worker children and one/three4-worker children.
+Static remains the default. Leased/no-steal add per-file hash contributions and
+source verification, so their extra partial rows/bytes and control work belong
+in the comparison. Query wall and maximum producer completion are distinct;
+operator work is wall time, not CPU. Source verification/acquire/ACK wall times,
+encoded payload, control bytes, memory ledgers, spill and child RSS have separate
+scopes. Local capacity weights and locality labels do not establish physical
+heterogeneity, remote locality or cloud economics. Fixed process membership is
+an explicit PRD gap. See the [Phase10 experiment](phase-10-experiment.md).

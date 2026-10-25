@@ -64,4 +64,4 @@ for regime,mode in [('balanced','forced_broadcast'),('pressure','hash_only'),('h
 (root/'post-vm.txt').write_bytes(subprocess.check_output(['vm_stat']))
 (root/'post-top.txt').write_bytes(subprocess.check_output(['top','-l','1','-n','0']))
 # The verifier is authoritative, not runner exit codes or hand-picked successful rows.
-subprocess.run([sys.executable,'scripts/phase9-verify.py',str(root)],check=True)
+subprocess.run([sys.executable,'scripts/phase9-verify.py',str(root),os.environ.get('ADE_CONTROL_PROTOCOL','ADETCP12')],check=True)

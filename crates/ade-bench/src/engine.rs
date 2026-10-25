@@ -113,7 +113,7 @@ pub struct EngineRequest {
 pub enum ResolvedEngine {
     DataFusion(DataFusionConfig),
     AdeLocal(crate::ade_local::AdeLocalConfig),
-    AdeDistributed(crate::ade_distributed::AdeDistributedConfig),
+    AdeDistributed(Box<crate::ade_distributed::AdeDistributedConfig>),
     AdeJoin(crate::ade_join::JoinConfig),
 }
 
@@ -130,9 +130,9 @@ impl EngineRequest {
             "ade-distributed-join" => Ok(ResolvedEngine::AdeJoin(
                 crate::ade_join::JoinEngine::parse_config(&self.options)?,
             )),
-            "ade-distributed" => Ok(ResolvedEngine::AdeDistributed(
+            "ade-distributed" => Ok(ResolvedEngine::AdeDistributed(Box::new(
                 crate::ade_distributed::AdeDistributedEngine::parse_config(&self.options)?,
-            )),
+            ))),
             "ade-local" => Ok(ResolvedEngine::AdeLocal(
                 crate::ade_local::AdeLocalEngine::parse_config(&self.options)?,
             )),

@@ -43,6 +43,7 @@ pub fn schema() -> SchemaRef {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Payload {
     Aggregate,
+    LeasedAggregate,
     JoinRows,
     JoinPairs,
 }
@@ -50,13 +51,14 @@ impl Payload {
     fn version(self) -> u32 {
         match self {
             Self::Aggregate => 1,
+            Self::LeasedAggregate => 4,
             Self::JoinRows => 2,
             Self::JoinPairs => 3,
         }
     }
     fn schema(self) -> SchemaRef {
         match self {
-            Self::Aggregate => schema(),
+            Self::Aggregate | Self::LeasedAggregate => schema(),
             Self::JoinRows => ade_exec::join::input_schema(),
             Self::JoinPairs => ade_exec::join::output_schema(),
         }
@@ -101,7 +103,7 @@ impl Header {
                 && self.wire_version == 2
                 && match self.schema_version {
                     1 => self.context.is_none(),
-                    2 | 3 => self
+                    2..=4 => self
                         .context
                         .as_ref()
                         .is_some_and(|c| c.len() == 64 && c.bytes().all(|b| b.is_ascii_hexdigit())),
@@ -799,9 +801,33 @@ impl Store {
         });
         loop {
             self.cancellation.check()?;
-            let mut frame = protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT);
             let mut length = [0; 4];
-            frame.read_exact(&mut length)?;
+            if self.payload == Payload::LeasedAggregate {
+                // Idle between file morsels is valid. Poll cancellation without
+                // losing a partially received length prefix or resetting the job deadline.
+                let mut offset = 0;
+                while offset < length.len() {
+                    self.cancellation.check()?;
+                    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+                    match socket.read(&mut length[offset..]) {
+                        Ok(0) => {
+                            return Err(
+                                std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into()
+                            );
+                        }
+                        Ok(n) => offset += n,
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                            ) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            } else {
+                protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT).read_exact(&mut length)?;
+            }
+            let mut frame = protocol::DeadlineStream::new(socket, crate::IO_TIMEOUT);
             let length = u32::from_le_bytes(length) as usize;
             require(length <= MAX_FRAME_BYTES, "exchange frame too large")?;
             let mut sequence = [0; 8];
@@ -2111,6 +2137,85 @@ mod join_tests {
             }
             assert_eq!(store.metrics().unwrap().transfers, 0);
             assert!(store.cancellation.check().is_err());
+            drop(receiver);
+        }
+    }
+}
+
+#[cfg(test)]
+mod leased_tests {
+    use super::*;
+    use crate::ids::JobId;
+    #[test]
+    fn leased_persistent_idle_session_hash_context_and_poison() {
+        let root = tempfile::tempdir().unwrap();
+        let id = crate::ids::transfer(JobId(1), 0, 0, 0);
+        let batch = RecordBatch::try_new(
+            schema(),
+            vec![
+                Arc::new(arrow::array::UInt64Array::from(vec![1])),
+                Arc::new(arrow::array::Int64Array::from(vec![7])),
+                Arc::new(arrow::array::UInt64Array::from(vec![1])),
+            ],
+        )
+        .unwrap();
+        for fault in 0..4 {
+            let store = Arc::new(
+                Store::typed(
+                    root.path(),
+                    [id].into(),
+                    CancellationToken::default(),
+                    ExchangeConfig {
+                        mode: ExchangeMode::Spill,
+                        ..ExchangeConfig::default()
+                    },
+                    Payload::LeasedAggregate,
+                    "a".repeat(64),
+                    IngressLimits {
+                        rows: 10,
+                        bytes: 1 << 20,
+                        batches: 10,
+                    },
+                    None,
+                )
+                .unwrap(),
+            );
+            let receiving = store.clone();
+            let receiver = Receiver::start(TcpListener::bind("127.0.0.1:0").unwrap(), move |_| {
+                Ok(receiving.clone())
+            })
+            .unwrap();
+            let mut sender = Sender::typed(
+                receiver.address,
+                id,
+                CancellationToken::default(),
+                Payload::LeasedAggregate,
+                Some(if fault == 1 {
+                    "b".repeat(64)
+                } else {
+                    "a".repeat(64)
+                }),
+            )
+            .unwrap();
+            if fault == 3 {
+                store.poison();
+            }
+            let written = sender.batch(&batch);
+            if fault == 0 {
+                thread::sleep(crate::IO_TIMEOUT + Duration::from_millis(150));
+                sender.batch(&batch).unwrap();
+                let (sent, manifest) = sender.finish_manifest().unwrap();
+                assert_eq!(sent.transfers, 1);
+                assert_eq!(sent.batches, 2);
+                assert_eq!(manifest.rows, 2);
+                assert_eq!(store.metrics().unwrap().transfers, 1);
+            } else {
+                if fault == 2 {
+                    sender.fingerprint = blake3::Hasher::new();
+                }
+                assert!(written.is_err() || sender.finish().is_err());
+                assert_eq!(store.metrics().unwrap().transfers, 0);
+            }
             drop(receiver);
         }
     }

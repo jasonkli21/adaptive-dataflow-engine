@@ -31,7 +31,7 @@ impl JoinConfig {
             ("workers".into(), self.workers.to_string()),
             ("exchange_mode".into(), "spill".into()),
             ("recovery_enabled".into(), "false".into()),
-            ("control_protocol".into(), "ADETCP11".into()),
+            ("control_protocol".into(), "ADETCP12".into()),
             ("exchange_wire_version".into(), "2".into()),
             ("hash_version".into(), "1".into()),
         ]);

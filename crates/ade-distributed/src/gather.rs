@@ -26,11 +26,21 @@ impl Gather {
     pub(crate) fn new(parent: &Path, job: JobId, workers: usize) -> Result<Self> {
         Self::with_active(parent, job, workers, (0..workers as u64).collect())
     }
+    #[cfg(test)]
     pub(crate) fn with_active(
         parent: &Path,
         job: JobId,
         workers: usize,
         active: std::collections::BTreeSet<u64>,
+    ) -> Result<Self> {
+        Self::with_context(parent, job, workers, active, None)
+    }
+    pub(crate) fn with_context(
+        parent: &Path,
+        job: JobId,
+        workers: usize,
+        active: std::collections::BTreeSet<u64>,
+        schedule: Option<(&str, &crate::scheduler::Config)>,
     ) -> Result<Self> {
         require(
             !active.is_empty() && active.iter().all(|p| *p < workers as u64),
@@ -40,11 +50,28 @@ impl Gather {
         for p in active.iter().copied() {
             stores.insert(
                 (p, 0),
-                Arc::new(Store::new(
-                    parent,
-                    [transfer(job, 1, 0, workers as u64 + p)].into(),
-                    ade_exec::CancellationToken::default(),
-                )?),
+                Arc::new(if let Some((digest, c)) = schedule {
+                    Store::typed(
+                        parent,
+                        [transfer(job, 1, 0, workers as u64 + p)].into(),
+                        ade_exec::CancellationToken::default(),
+                        crate::ExchangeConfig::default(),
+                        exchange::Payload::LeasedAggregate,
+                        digest.into(),
+                        exchange::IngressLimits {
+                            rows: c.max_input_rows,
+                            bytes: c.max_exchange_bytes,
+                            batches: c.max_exchange_frames,
+                        },
+                        None,
+                    )?
+                } else {
+                    Store::new(
+                        parent,
+                        [transfer(job, 1, 0, workers as u64 + p)].into(),
+                        ade_exec::CancellationToken::default(),
+                    )?
+                }),
             );
         }
         let routing = stores.clone();

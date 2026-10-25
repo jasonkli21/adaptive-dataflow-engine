@@ -20,3 +20,7 @@ listed below.
 - [Phase 9](phase-9-implementation-report.md)
 
 Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke results, limitations, deferred work, and next-phase considerations.
+
+## Active phase / partial outcomes
+
+- [Phase 10](phase-10-implementation-report.md) — bounded scheduler; fixed process membership remains a PRD gap.

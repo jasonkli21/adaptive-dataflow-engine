@@ -23,6 +23,7 @@ pub mod partition;
 mod probe;
 pub mod protocol;
 pub mod recovery;
+pub mod scheduler;
 pub mod topology;
 pub mod worker;
 use serde::{Deserialize, Serialize};
@@ -78,6 +79,8 @@ pub struct WorkerEndpoint {
 #[serde(deny_unknown_fields)]
 pub struct TaskConfig {
     #[serde(default)]
+    pub scheduler: scheduler::Config,
+    #[serde(default)]
     pub partial: ade_exec::partial::Config,
     pub topology: topology::TopologyConfig,
     pub batch_size: usize,
@@ -91,6 +94,7 @@ pub struct TaskConfig {
 impl Default for TaskConfig {
     fn default() -> Self {
         Self {
+            scheduler: scheduler::Config::default(),
             partial: ade_exec::partial::Config::default(),
             topology: topology::TopologyConfig::default(),
             batch_size: 8192,
@@ -121,6 +125,26 @@ impl TaskConfig {
         self.exchange.validate()?;
         self.topology.validate()?;
         self.partial.validate()?;
+        if self.scheduler.leased() {
+            require(
+                self.partial.mode == ade_exec::partial::Mode::FixedHash
+                    && self.topology.policy == topology::PartitionPolicy::Static
+                    && self.exchange.mode == ExchangeMode::Spill
+                    && self.exchange.cost.is_none(),
+                "leased scheduler requires fixed_hash/static routing/spill and no complete copies",
+            )?;
+            require(
+                !self.scheduler.recovery_enabled,
+                "leased scheduler requires recovery_enabled=false",
+            )?;
+            #[cfg(feature = "research-hooks")]
+            require(
+                self.research_exit_final_partition.is_none()
+                    && self.exchange.pressure.target_partition.is_none(),
+                "leased scheduler rejects legacy recovery/pressure hooks",
+            )?;
+        }
+
         if self.partial.mode != ade_exec::partial::Mode::FixedHash {
             require(
                 self.exchange.cost.is_none(),

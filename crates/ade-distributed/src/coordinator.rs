@@ -197,6 +197,23 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     let started = Instant::now();
     validate_topology(&job.workers)?;
     job.config.validate()?;
+    job.config.scheduler.validate(job.workers.len())?;
+    if job.config.scheduler.leased() {
+        require(
+            job.workers
+                .iter()
+                .all(|w| w.control.ip().is_loopback() && w.exchange.ip().is_loopback()),
+            "leased scheduler v1 requires loopback registry",
+        )?;
+        let snapshot = job.snapshot.as_ref().ok_or_else(|| {
+            Error::Invalid("leased scheduler requires verified source snapshot".into())
+        })?;
+        require(
+            !snapshot.replayable && snapshot.morsels.len() <= job.config.scheduler.max_morsels,
+            "leased replay/source catalog refusal",
+        )?;
+    }
+
     require(
         job.config.partial.mode == ade_exec::partial::Mode::FixedHash || job.snapshot.is_none(),
         "non-fixed partial source/replay graph is not admitted; disable recovery",
@@ -210,10 +227,43 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
     require(unique.len() == job.files.len(), "duplicate source path")?;
     if let Some(snapshot) = &job.snapshot {
         snapshot.validate(&job.files)?;
+        if job.config.scheduler.leased() {
+            let bytes = snapshot.morsels.iter().try_fold(0u64, |sum, m| {
+                sum.checked_add(m.bytes)
+                    .ok_or_else(|| Error::Invalid("source size overflow".into()))
+            })?;
+            require(
+                bytes <= job.config.scheduler.max_source_bytes,
+                "scheduler source byte cap",
+            )?;
+            crate::scheduler::verify_sources(
+                &snapshot.morsels,
+                &ade_exec::CancellationToken::default(),
+                started + job.task_timeout.min(crate::TASK_TIMEOUT),
+            )?;
+            require(
+                started.elapsed() < job.task_timeout,
+                "scheduler admission deadline",
+            )?;
+        }
     }
     // JobId is intentionally cluster-local and remains part of logical transfer
     // identity. Shared object stores also need a globally unique execution scope.
     let execution_namespace = uuid::Uuid::new_v4().to_string();
+    let scheduler = if job.config.scheduler.leased() {
+        Some(crate::scheduler::Service::start(
+            job.id,
+            &execution_namespace,
+            &job.workers,
+            &job.config,
+            job.snapshot
+                .clone()
+                .ok_or_else(|| Error::Invalid("leased snapshot missing".into()))?,
+            job.task_timeout.saturating_sub(started.elapsed()),
+        )?)
+    } else {
+        None
+    };
     let mut state = JobState::Prepared;
     let result = (|| {
         for worker in &job.workers {
@@ -229,6 +279,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         }
         for worker in &job.workers {
             let spec = JobSpec {
+                schedule: scheduler.as_ref().map(|s| s.spec.clone()),
                 job: job.id,
                 execution_namespace: execution_namespace.clone(),
                 workers: job.workers.clone(),
@@ -337,11 +388,14 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 .is_none_or(|p| active.contains(&p)),
             "failure target is inactive under committed layout",
         )?;
-        let mut gather = crate::gather::Gather::with_active(
+        let mut gather = crate::gather::Gather::with_context(
             parent.path(),
             job.id,
             job.workers.len(),
             active.clone(),
+            scheduler
+                .as_ref()
+                .map(|s| (s.spec.fence.digest.as_str(), &job.config.scheduler)),
         )?;
         state = JobState::FinalsRunning;
         let producers = assignments
@@ -351,7 +405,11 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 job: job.id,
                 task: TaskId(i as u64),
                 attempt: AttemptId(0),
-                files,
+                files: if scheduler.is_some() {
+                    Vec::new()
+                } else {
+                    files
+                },
             })
             .collect();
         let finals = job
@@ -376,6 +434,35 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             lost,
         } = tasks(job, producers, finals, started)?;
         crate::recovery::validate_producers(job.id, job.workers.len(), &producers)?;
+        let schedule_metrics = scheduler
+            .as_ref()
+            .map(crate::scheduler::Service::finish)
+            .transpose()?;
+        if let Some(s) = &schedule_metrics {
+            crate::scheduler::verify_metrics(s)?;
+            require(
+                lost.is_empty(),
+                "leased final loss is fatal; replay forbidden",
+            )?;
+            for (w, m) in &producers {
+                let completed: Vec<_> = s
+                    .entries
+                    .iter()
+                    .filter_map(|e| e.completion.as_ref())
+                    .filter(|c| c.lease.worker.0 == *w)
+                    .collect();
+                require(
+                    m.source_files == completed.len()
+                        && m.input_rows as u64
+                            == completed.iter().map(|c| c.input_rows).sum::<u64>()
+                        && m.output_rows as u64
+                            == completed.iter().map(|c| c.output_rows).sum::<u64>()
+                        && m.output_rows as u64 == m.sent.rows,
+                    "leased source/producer conservation failure",
+                )?;
+            }
+        }
+
         require(
             producers
                 .values()
@@ -626,6 +713,7 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
             .filter_map(|p| finals.remove(&p).map(|m| (p, m)))
             .collect();
         let metrics = DistributedMetrics {
+            scheduler: schedule_metrics,
             topology,
             topology_commit_ns,
             topology_probe_ns,

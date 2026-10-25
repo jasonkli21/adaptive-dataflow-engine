@@ -7,6 +7,19 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--verify-scheduler" {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .take(ade_distributed::protocol::MAX_CONTROL_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > ade_distributed::protocol::MAX_CONTROL_BYTES {
+            return Err("overlarge scheduler evidence".into());
+        }
+        let metrics: ade_distributed::scheduler::Metrics = serde_json::from_slice(&bytes)?;
+        ade_distributed::scheduler::verify_metrics(&metrics)?;
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--verify-topology" {
         use std::io::Read;
         #[derive(serde::Deserialize)]

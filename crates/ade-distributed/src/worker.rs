@@ -208,6 +208,13 @@ fn producer(
     attempt: AttemptId,
     target: Option<(usize, SocketAddr)>,
 ) -> Result<TaskMetrics> {
+    if job.spec.schedule.is_some() {
+        require(
+            target.is_none() && attempt == AttemptId(0) && files.is_empty(),
+            "leased producer cannot replay or accept assigned files",
+        )?;
+        return leased_producer(job, task);
+    }
     let start = Instant::now();
     let token = job.store.cancellation.clone();
     let layout = committed_layout(job)?;
@@ -367,6 +374,155 @@ fn producer(
     metrics.layout_digest = layout.as_ref().map(|l| l.digest.clone());
     Ok(metrics)
 }
+// A lease is not an exchange attempt. Append every file's contributions to
+// this ONE sender set, and emit exactly one terminal per destination at the end.
+#[allow(
+    clippy::too_many_lines,
+    reason = "One persistent producer session owns lease completion and terminal closure."
+)]
+fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
+    let start = Instant::now();
+    let token = job.store.cancellation.clone();
+    let schedule = job.spec.schedule.as_ref().expect("leased spec");
+    let client = crate::scheduler::Client::start(
+        schedule.clone(),
+        crate::ids::WorkerId(task.0),
+        &job.spec.config.scheduler,
+        token.clone(),
+    )?;
+    let open = |p: usize| {
+        Sender::typed(
+            job.spec.workers[p].exchange,
+            transfer(job.spec.job, 0, p as u64, task.0),
+            token.clone(),
+            crate::exchange::Payload::LeasedAggregate,
+            Some(schedule.fence.digest.clone()),
+        )
+    };
+    let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
+    let mut metrics = TaskMetrics::default();
+    loop {
+        let wait_started = Instant::now();
+        let next = client.next()?;
+        metrics.lease_wait_ns += crate::materialization::ns(wait_started);
+        let Some(lease) = next else {
+            break;
+        };
+        let source = job.spec.snapshot.as_ref().expect("leased source");
+        require(
+            source.morsels.get(
+                usize::try_from(lease.morsel.id.0)
+                    .map_err(|_| Error::Invalid("morsel index overflow".into()))?,
+            ) == Some(&lease.morsel),
+            "lease source differs from frozen catalog",
+        )?;
+        let verify_started = Instant::now();
+        crate::scheduler::verify_sources(
+            std::slice::from_ref(&lease.morsel),
+            &token,
+            start + crate::TASK_TIMEOUT,
+        )?;
+        metrics.source_verify_ns += crate::materialization::ns(verify_started);
+        token.check()?;
+        #[cfg(feature = "research-hooks")]
+        if job.spec.config.scheduler.research_delay_worker == Some(task.0) {
+            let until =
+                Instant::now() + Duration::from_millis(job.spec.config.scheduler.research_delay_ms);
+            while Instant::now() < until {
+                token.check()?;
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        let file_start = Instant::now();
+        let output = ade_exec::execute_hash_partials_to_sink(
+            producer_plan(job, std::slice::from_ref(&lease.morsel.path)),
+            job.spec.config.execution(),
+            token.clone(),
+            |batch| {
+                for p in 0..senders.len() {
+                    let route_start = Instant::now();
+                    let selected =
+                        partition::select(&batch, p, senders.len()).map_err(local_sink_error)?;
+                    metrics.routing_ns += crate::materialization::ns(route_start);
+                    if selected.num_rows() > 0 {
+                        let send_start = Instant::now();
+                        if senders[p].is_none() {
+                            senders[p] = Some(open(p).map_err(local_sink_error)?);
+                        }
+                        senders[p]
+                            .as_mut()
+                            .expect("opened")
+                            .batch(&selected)
+                            .map_err(local_sink_error)?;
+                        #[cfg(feature = "research-hooks")]
+                        if job.spec.config.scheduler.research_exit_after_emit_worker == Some(task.0)
+                        {
+                            std::process::exit(87);
+                        }
+                        metrics.sending_ns += crate::materialization::ns(send_start);
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        let verify_started = Instant::now();
+        crate::scheduler::verify_sources(
+            std::slice::from_ref(&lease.morsel),
+            &token,
+            start + crate::TASK_TIMEOUT,
+        )?;
+        metrics.source_verify_ns += crate::materialization::ns(verify_started);
+        let m = task_metrics(file_start, &output, 1);
+        let ack_started = Instant::now();
+        client.complete(crate::scheduler::Completion {
+            lease: lease.clone(),
+            input_rows: m.input_rows as u64,
+            output_rows: m.output_rows as u64,
+            work_ns: m.operator_work_ns,
+        })?;
+        metrics.lease_ack_ns += crate::materialization::ns(ack_started);
+        metrics.source_files += 1;
+        metrics.input_rows = metrics
+            .input_rows
+            .checked_add(m.input_rows)
+            .ok_or_else(|| Error::Invalid("leased input rows overflow".into()))?;
+        metrics.output_rows = metrics
+            .output_rows
+            .checked_add(m.output_rows)
+            .ok_or_else(|| Error::Invalid("leased output rows overflow".into()))?;
+        metrics.operator_work_ns = metrics
+            .operator_work_ns
+            .checked_add(m.operator_work_ns)
+            .ok_or_else(|| Error::Invalid("leased work overflow".into()))?;
+        metrics.spill_bytes += m.spill_bytes;
+        metrics.managed_peak = metrics.managed_peak.max(m.managed_peak);
+        metrics.production.source_bytes = metrics
+            .production
+            .source_bytes
+            .checked_add(lease.morsel.bytes)
+            .ok_or_else(|| Error::Invalid("leased bytes overflow".into()))?;
+    }
+    metrics.production.operator_work_ns = metrics.operator_work_ns;
+    metrics.production.wall_elapsed_ns = crate::materialization::ns(start);
+    metrics.production.source_requests = metrics.source_files as u64;
+    metrics.production.consumer_count = 1;
+    for (p, sender) in senders.into_iter().enumerate() {
+        let sender = match sender {
+            Some(s) => s,
+            None => open(p)?,
+        };
+        let (sent, manifest) = sender.finish_manifest()?;
+        metrics.sent.add(&sent);
+        metrics.destinations.insert(p as u64, sent);
+        metrics.manifests.insert(p as u64, manifest);
+    }
+    client.closed()?;
+    metrics.production.output_bytes = metrics.sent.payload_bytes;
+    metrics.production.output_segments = metrics.sent.batches;
+    metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+    token.check()?;
+    Ok(metrics)
+}
 fn final_task(
     job: &Job,
     gather: SocketAddr,
@@ -380,6 +536,15 @@ fn final_task(
     let start = Instant::now();
     let token = job.store.cancellation.clone();
     let open = || {
+        if let Some(schedule) = &job.spec.schedule {
+            return Sender::typed(
+                gather,
+                transfer(job.spec.job, 1, 0, task.0).with_attempt(attempt),
+                token.clone(),
+                crate::exchange::Payload::LeasedAggregate,
+                Some(schedule.fence.digest.clone()),
+            );
+        }
         Sender::new(
             gather,
             transfer(job.spec.job, 1, 0, task.0).with_attempt(attempt),
@@ -405,6 +570,13 @@ fn final_task(
                 .batch(&batch)
                 .map_err(local_sink_error)?;
             #[cfg(feature = "research-hooks")]
+            if job.spec.schedule.is_some()
+                && job.spec.config.scheduler.research_exit_final_worker
+                    == Some(task.0 - job.spec.workers.len() as u64)
+            {
+                std::process::exit(88);
+            }
+            #[cfg(feature = "research-hooks")]
             if attempt == AttemptId(0)
                 && job.spec.config.research_exit_final_partition
                     == Some(task.0 - job.spec.workers.len() as u64)
@@ -427,7 +599,13 @@ fn final_task(
         Some(sender) => sender,
         None => open()?,
     };
-    metrics.sent = sender.finish()?;
+    if job.spec.schedule.is_some() {
+        let (sent, manifest) = sender.finish_manifest()?;
+        metrics.sent = sent;
+        metrics.manifests.insert(0, manifest);
+    } else {
+        metrics.sent = sender.finish()?;
+    }
     metrics.received = job.store.metrics()?;
     metrics.retention = job.store.retention_metrics()?;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -700,6 +878,29 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 "non-fixed partial source/replay graph is not admitted; disable recovery",
             )?;
             crate::coordinator::validate_topology(&spec.workers)?;
+            spec.config.scheduler.validate(spec.workers.len())?;
+            require(
+                spec.config.scheduler.leased() == spec.schedule.is_some(),
+                "missing/unsolicited schedule spec",
+            )?;
+            if let Some(schedule) = &spec.schedule {
+                let source = spec
+                    .snapshot
+                    .as_ref()
+                    .ok_or_else(|| Error::Invalid("leased source snapshot required".into()))?;
+                require(
+                    !source.replayable,
+                    "leased source cannot authorize recovery",
+                )?;
+                schedule.validate(
+                    spec.job,
+                    &spec.execution_namespace,
+                    &spec.workers,
+                    &spec.config,
+                    source,
+                )?;
+            }
+
             #[cfg(feature = "research-hooks")]
             require(
                 spec.config
@@ -754,13 +955,35 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             let expected = (0..spec.workers.len())
                 .map(|p| transfer(spec.job, 0, state.endpoint.id.0, p as u64))
                 .collect();
-            let store = Arc::new(Store::configured_with_backend(
-                &state.parent,
-                expected,
-                CancellationToken::default(),
-                spec.config.exchange.clone(),
-                state.object_backend.as_ref(),
-            )?);
+            let store = Arc::new(if let Some(schedule) = &spec.schedule {
+                let c = &spec.config.scheduler;
+                Store::typed(
+                    &state.parent,
+                    expected,
+                    CancellationToken::default(),
+                    spec.config.exchange.clone(),
+                    crate::exchange::Payload::LeasedAggregate,
+                    schedule.fence.digest.clone(),
+                    crate::exchange::IngressLimits {
+                        rows: c.max_input_rows,
+                        bytes: c.max_exchange_bytes,
+                        batches: c.max_exchange_frames,
+                    },
+                    Some(crate::exchange::HashOwner {
+                        workers: spec.workers.len(),
+                        destination: usize::try_from(state.endpoint.id.0)
+                            .map_err(|_| Error::Invalid("worker index overflow".into()))?,
+                    }),
+                )?
+            } else {
+                Store::configured_with_backend(
+                    &state.parent,
+                    expected,
+                    CancellationToken::default(),
+                    spec.config.exchange.clone(),
+                    state.object_backend.as_ref(),
+                )?
+            });
             let accepted_job_id = spec.job;
             let accepted_execution_namespace = spec.execution_namespace.clone();
             let copy_poison = Arc::new(AtomicBool::new(false));
@@ -1046,7 +1269,9 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                         !job.producer_started.swap(true, Ordering::AcqRel),
                         "producer task already started",
                     )?;
-                    if let Some(snapshot) = &job.spec.snapshot {
+                    if let Some(snapshot) = &job.spec.snapshot
+                        && job.spec.schedule.is_none()
+                    {
                         let morsels = snapshot.producer_morsels(task_id, job.spec.workers.len());
                         require(
                             morsels.iter().map(|m| &m.path).eq(files.iter()),
@@ -1290,6 +1515,7 @@ mod tests {
             },
         ];
         let spec = |id| JobSpec {
+            schedule: None,
             job: id,
             execution_namespace: "8abade70-a479-4c7e-9bd8-989ed8f1a1d7".into(),
             workers: workers.clone(),

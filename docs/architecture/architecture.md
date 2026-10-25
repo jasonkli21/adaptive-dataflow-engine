@@ -1009,6 +1009,27 @@ The scheduler and storage policy exchange information through well-defined model
 
 ---
 
+### 13.4 Phase10 bounded implementation refinement
+
+ADR0017 implements file-morsel leasing for fixed-hash GroupBySum in a fixed
+2–4-process loopback registry. The coordinator owns exclusive Pending/Leased/
+Completed state; a pure policy chooses pending preferred work or steals it using
+bounded byte-work/capacity/locality/remaining-deadline observations. Producer
+activation/drain changes participation only. Final ownership and original
+producer transfer identities stay fixed, and every worker closes N terminals.
+One independent heartbeat thread renews the same lease while source/aggregate/
+exchange work blocks. Ambiguous completion, expiry or any process loss cancels;
+leased mode refuses legacy modulo-lineage recovery and complete-copy decisions.
+Source fingerprints verify at admission and before/after each leased read.
+Schema4 adds schedule context and terminal hashes to the original aggregate
+arrays on wire2; schema1/static behavior is unchanged. Catalog/control/audit and
+ingress limits are explicit; memory ledgers remain separate from process RSS.
+Physical process add/remove and state migration are still unmet PRD Phase10
+goals; elastic producer participation must not be described as full elasticity.
+This refines §§6.2,9,13,17,22,27–31 without weakening INV1–10.
+
+---
+
 ## 14. Adaptive Policy Engine
 
 ### 14.1 Inputs

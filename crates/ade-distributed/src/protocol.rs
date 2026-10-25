@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP11";
+const MAGIC: &[u8; 8] = b"ADETCP12";
 /// Wake a blocking accept during shutdown, including wildcard-bound listeners.
 pub(crate) fn wake_listener(mut address: SocketAddr) {
     if address.ip().is_unspecified() {
@@ -34,6 +34,7 @@ pub struct Envelope<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JobSpec {
+    pub schedule: Option<crate::scheduler::Spec>,
     pub job: JobId,
     /// Unique execution scope for shared object-store keys; excluded from logical transfer IDs.
     pub execution_namespace: String,

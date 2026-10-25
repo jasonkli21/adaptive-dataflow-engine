@@ -29,6 +29,10 @@ pub struct SyntheticConfig {
     pub rows: u64,
     #[arg(long, default_value_t = 2)]
     pub files: usize,
+    /// Optional bounded physical file-size skew; row content and order are unchanged.
+    #[arg(long, value_delimiter = ',')]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_row_weights: Vec<u64>,
     #[arg(long, default_value_t = 65536)]
     pub row_group_rows: usize,
     #[arg(long, default_value = "snappy")]
@@ -51,6 +55,7 @@ impl Default for SyntheticConfig {
         Self {
             rows: 100_000,
             files: 2,
+            file_row_weights: vec![],
             row_group_rows: 65536,
             compression: "snappy".into(),
             key_cardinality: 100,
@@ -76,6 +81,19 @@ impl SyntheticConfig {
             self.files > 0 && u64::try_from(self.files).is_ok_and(|files| files <= self.rows),
             "files must be in 1..=rows",
         )?;
+        if !self.file_row_weights.is_empty() {
+            require(
+                self.files <= 1024
+                    && self.file_row_weights.len() == self.files
+                    && self.file_row_weights.iter().all(|w| (1..=1000).contains(w)),
+                "invalid file row weights",
+            )?;
+            let total = self.file_row_weights.iter().sum::<u64>();
+            require(
+                self.rows >= total,
+                "weighted files require at least one row per weight",
+            )?;
+        }
         require(
             self.row_group_rows > 0 && self.payload_size <= 1_048_576,
             "invalid row group/payload size",
@@ -455,9 +473,22 @@ pub fn generate(output: &Path, dataset_id: &str, c: &SyntheticConfig) -> Result<
                 .build();
             let mut writer =
                 ArrowWriter::try_new(File::create(output.join(&name))?, schema(), Some(props))?;
-            let index = u64::try_from(index)
+            let index_u64 = u64::try_from(index)
                 .map_err(|_| crate::Error::Invalid("file index exceeds u64".into()))?;
-            let (start, end) = file_range(c.rows, file_count, index)?;
+            let (start, end) = if c.file_row_weights.is_empty() {
+                file_range(c.rows, file_count, index_u64)?
+            } else {
+                let total = c.file_row_weights.iter().sum::<u64>();
+                let prior = c.file_row_weights[..index].iter().sum::<u64>();
+                let boundary = |w: u64| {
+                    u64::try_from(u128::from(c.rows) * u128::from(w) / u128::from(total))
+                        .map_err(|_| crate::Error::Invalid("weighted row range overflow".into()))
+                };
+                (
+                    boundary(prior)?,
+                    boundary(prior + c.file_row_weights[index])?,
+                )
+            };
             let mut cursor = start;
             while cursor < end {
                 let next = (cursor + 8192).min(end);

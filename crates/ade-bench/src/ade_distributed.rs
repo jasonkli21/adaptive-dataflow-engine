@@ -31,6 +31,7 @@ impl AdeDistributedConfig {
         };
         let mut info = local.info();
         add_partial_info(&mut info, &self.task.partial);
+        add_scheduler_info(&mut info, &self.task.scheduler);
         add_topology_info(&mut info, &self.task.topology);
         info.name = "ade-distributed".into();
         info.configuration
@@ -108,7 +109,7 @@ impl AdeDistributedConfig {
             .insert("exchange_wire_version".into(), "2".into());
         info.configuration.insert("hash_version".into(), "1".into());
         info.configuration
-            .insert("control_protocol".into(), "ADETCP11".into());
+            .insert("control_protocol".into(), "ADETCP12".into());
         info.configuration.insert(
             "max_frame_bytes".into(),
             ade_distributed::exchange::MAX_FRAME_BYTES.to_string(),
@@ -118,6 +119,19 @@ impl AdeDistributedConfig {
             ade_distributed::TASK_TIMEOUT.as_secs().to_string(),
         );
         info
+    }
+}
+fn add_scheduler_info(info: &mut EngineInfo, c: &ade_distributed::scheduler::Config) {
+    if let Ok(serde_json::Value::Object(values)) = serde_json::to_value(c) {
+        for (k, v) in values {
+            if k == "recovery_enabled" || !c.leased() && k != "policy" {
+                continue;
+            }
+            info.configuration.insert(
+                format!("scheduler_{k}"),
+                v.as_str().map_or_else(|| v.to_string(), str::to_owned),
+            );
+        }
     }
 }
 fn add_partial_info(info: &mut EngineInfo, partial: &ade_exec::partial::Config) {
@@ -209,6 +223,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
         reason = "Single strict adapter option parser keeps duplicate and mode checks together."
     )]
     fn parse_config(options: &[String]) -> Result<Self::Config> {
+        let mut scheduler_values = serde_json::Map::new();
         let mut topology_values = serde_json::Map::new();
         let mut partial_values = serde_json::Map::new();
         let mut workers = None;
@@ -219,6 +234,54 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut exit_final = None;
         let mut recovery_enabled = true;
         for option in options {
+            if let Some(option) = option.strip_prefix("scheduler_") {
+                let (field, value) = option
+                    .split_once('=')
+                    .ok_or_else(|| Error::Invalid("scheduler option requires value".into()))?;
+                let v = match field {
+                    "policy" => serde_json::Value::String(value.into()),
+                    "capacities" => serde_json::Value::Array(
+                        value
+                            .split(',')
+                            .map(|v| {
+                                v.parse::<u64>().map(serde_json::Value::from).map_err(|_| {
+                                    Error::Invalid("invalid scheduler capacity".into())
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    ),
+                    "locality" | "preferred_locality" => serde_json::Value::Array(
+                        value
+                            .split(',')
+                            .map(|v| serde_json::Value::String(v.into()))
+                            .collect(),
+                    ),
+                    "research_delay_worker"
+                    | "research_exit_after_emit_worker"
+                    | "research_no_heartbeat_worker"
+                    | "research_exit_final_worker" => serde_json::Value::from(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| Error::Invalid("invalid scheduler worker hook".into()))?,
+                    ),
+                    "participation" => serde_json::from_str(value)?,
+                    "recovery_enabled" => {
+                        return Err(Error::Invalid(
+                            "use recovery_enabled=false for leased admission".into(),
+                        ));
+                    }
+                    _ => serde_json::Value::from(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| Error::Invalid("invalid scheduler number".into()))?,
+                    ),
+                };
+                require(
+                    scheduler_values.insert(field.into(), v).is_none(),
+                    "duplicate scheduler option",
+                )?;
+                continue;
+            }
             if option.starts_with("aggregate_") {
                 let (key, value) = option
                     .split_once('=')
@@ -433,19 +496,31 @@ impl BenchmarkEngine for AdeDistributedEngine {
             "non-fixed partial recovery is not admitted; set recovery_enabled=false",
         )?;
         exchange.validate()?;
+        let scheduler_tuned = scheduler_values.keys().any(|k| k != "policy");
+        let mut scheduler: ade_distributed::scheduler::Config =
+            serde_json::from_value(serde_json::Value::Object(scheduler_values))?;
+        scheduler.recovery_enabled = recovery_enabled;
+        scheduler.validate(workers)?;
+        require(
+            !scheduler_tuned || scheduler.leased(),
+            "scheduler tuning requires leased policy",
+        )?;
+        let task = TaskConfig {
+            scheduler,
+            partial,
+            topology,
+            exchange,
+            batch_size: local.batch_size,
+            memory_limit_bytes: local.execution.memory_limit_bytes,
+            spill_enabled: local.execution.spill_enabled,
+            prefetch_batches: local.execution.prefetch_batches,
+            research_exit_final_partition: exit_final,
+        };
+        task.validate()?;
         Ok(AdeDistributedConfig {
             workers,
             recovery_enabled,
-            task: TaskConfig {
-                partial,
-                topology,
-                exchange,
-                batch_size: local.batch_size,
-                memory_limit_bytes: local.execution.memory_limit_bytes,
-                spill_enabled: local.execution.spill_enabled,
-                prefetch_batches: local.execution.prefetch_batches,
-                research_exit_final_partition: exit_final,
-            },
+            task,
         })
     }
     async fn prepare(
@@ -486,7 +561,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 .to_string(),
             schema_fingerprint: manifest.schema_fingerprint.clone(),
             logical_fingerprint: manifest.logical_fingerprint.clone(),
-            replayable: true,
+            replayable: !config.task.scheduler.leased(),
             morsels: manifest
                 .files
                 .iter()
@@ -531,7 +606,8 @@ impl BenchmarkEngine for AdeDistributedEngine {
             workers: self.cluster.workers.clone(),
             config: self.config.task.clone(),
             task_timeout: ade_distributed::TASK_TIMEOUT,
-            snapshot: self.config.recovery_enabled.then(|| self.snapshot.clone()),
+            snapshot: (self.config.recovery_enabled || self.config.task.scheduler.leased())
+                .then(|| self.snapshot.clone()),
         };
         let output = ade_distributed::coordinator::execute(&job)?;
         // The harness intentionally captures child stderr. This explicit diagnostic
@@ -550,7 +626,9 @@ impl BenchmarkEngine for AdeDistributedEngine {
                         .parse::<bool>()
                         .map_err(|_| Error::Invalid("metrics warmup identity invalid".into()))?;
                     serde_json::json!({
-                        "sidecar_version": 2,
+                        "sidecar_version": if self.config.task.scheduler.leased() {3} else {2},
+                        "effective_config": self.config.info().configuration,
+                        "source": self.snapshot,
                         "run_id": run_id,
                         "iteration_index": iteration_index,
                         "warmup": warmup,
@@ -559,7 +637,9 @@ impl BenchmarkEngine for AdeDistributedEngine {
                     })
                 }
                 Err(std::env::VarError::NotPresent) => serde_json::json!({
-                    "sidecar_version": 1,
+                    "sidecar_version": if self.config.task.scheduler.leased() {3} else {1},
+                    "effective_config": self.config.info().configuration,
+                    "source": self.snapshot,
                     "process_id": std::process::id(),
                     "metrics": output.metrics,
                 }),
@@ -584,6 +664,60 @@ impl BenchmarkEngine for AdeDistributedEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scheduler_options_are_explicit_and_strict() {
+        let base = [
+            "scheduler_policy=leased_v1",
+            "exchange_mode=spill",
+            "recovery_enabled=false",
+        ];
+        let parse = |v: Vec<&str>| {
+            AdeDistributedEngine::parse_config(
+                &v.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+            )
+        };
+        let c = parse(base.to_vec()).unwrap();
+        assert!(c.task.scheduler.leased());
+        for extra in [
+            "scheduler_unknown=1",
+            "scheduler_capacities=0,1",
+            "scheduler_capacities=NaN,1",
+            "scheduler_lease_ms=0",
+            "scheduler_initial_active=3",
+            "scheduler_policy=static",
+        ] {
+            let mut options = base.to_vec();
+            options.push(extra);
+            assert!(parse(options).is_err());
+        }
+        for options in [
+            vec!["scheduler_policy=leased_v1", "exchange_mode=spill"],
+            vec!["scheduler_policy=leased_v1", "recovery_enabled=false"],
+            vec!["scheduler_max_morsels=1"],
+            vec![
+                "scheduler_policy=leased_v1",
+                "exchange_mode=spill",
+                "recovery_enabled=false",
+                "partition_policy=sampled_v1",
+            ],
+            vec![
+                "scheduler_policy=leased_v1",
+                "exchange_mode=spill",
+                "recovery_enabled=false",
+                "aggregate_policy=raw_partial",
+            ],
+        ] {
+            assert!(parse(options).is_err());
+        }
+        let c = parse(vec![
+            "scheduler_policy=leased_v1",
+            "recovery_enabled=false",
+            "exchange_mode=spill",
+            "scheduler_capacities=1,4",
+        ])
+        .unwrap();
+        assert_eq!(c.info().configuration["scheduler_capacities"], "[1,4]");
+    }
     #[test]
     fn cost_configuration_is_explicit_effective_and_strict() {
         let config = AdeDistributedEngine::parse_config(&[

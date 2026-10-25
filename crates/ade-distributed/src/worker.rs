@@ -878,7 +878,16 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                 "non-fixed partial source/replay graph is not admitted; disable recovery",
             )?;
             crate::coordinator::validate_topology(&spec.workers)?;
-            spec.config.scheduler.validate(spec.workers.len())?;
+            if spec.config.scheduler.leased() {
+                spec.config.scheduler.validate_for_source(
+                    spec.workers.len(),
+                    spec.snapshot
+                        .as_ref()
+                        .map_or(0, |snapshot| snapshot.morsels.len()),
+                )?;
+            } else {
+                spec.config.scheduler.validate(spec.workers.len())?;
+            }
             require(
                 spec.config.scheduler.leased() == spec.schedule.is_some(),
                 "missing/unsolicited schedule spec",

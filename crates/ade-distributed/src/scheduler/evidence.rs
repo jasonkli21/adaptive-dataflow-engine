@@ -19,7 +19,9 @@ pub fn verify_metrics(metrics: &Metrics) -> Result<()> {
     let workers = metrics.registry.len();
     crate::coordinator::validate_topology(&metrics.registry)?;
     task.validate()?;
-    metrics.config.validate(workers)?;
+    metrics
+        .config
+        .validate_for_source(workers, metrics.source.morsels.len())?;
     require(
         task.scheduler == metrics.config
             && metrics.config.leased()
@@ -122,13 +124,25 @@ pub fn verify_metrics(metrics: &Metrics) -> Result<()> {
             }),
             "overlapping producer leases",
         )?;
-        let mut active =
-            metrics.config.initial_active == 0 || worker < metrics.config.initial_active;
-        for event in &metrics.events {
-            if event.worker == lease.worker && event.sequence < entry.granted_sequence {
-                active = matches!(event.action, Action::Activate);
-            }
+        let initial_active = if metrics.config.initial_active == 0 {
+            workers
+        } else {
+            metrics.config.initial_active
+        };
+        let mut active_workers = (0..workers)
+            .map(|id| id < initial_active)
+            .collect::<Vec<_>>();
+        for event in metrics
+            .events
+            .iter()
+            .filter(|event| event.sequence < entry.granted_sequence)
+        {
+            let event_worker = usize::try_from(event.worker.0)
+                .map_err(|_| Error::Invalid("event worker overflow".into()))?;
+            require(event_worker < workers, "event worker out of bounds")?;
+            active_workers[event_worker] = matches!(event.action, Action::Activate);
         }
+        let active = active_workers[worker];
         require(active, "lease granted to parked/draining worker")?;
         let mut queued = vec![0u64; workers];
         let mut pending = vec![];
@@ -155,6 +169,7 @@ pub fn verify_metrics(metrics: &Metrics) -> Result<()> {
         let decision = decide(&Observation {
             pending,
             queued,
+            active_workers,
             capacities: if metrics.config.capacities.is_empty() {
                 vec![1; workers]
             } else {

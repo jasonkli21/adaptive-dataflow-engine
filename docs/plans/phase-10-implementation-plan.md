@@ -189,3 +189,15 @@ representable cross-file sum must not be falsely refused by the new file lease
 boundary. This is fixed-hash build over the complete file, without adaptive/raw
 tail execution; static operators remain unchanged. Admission also verifies the
 full immutable catalog and caps physical bytes before any producer output.
+
+Independent review remediation keeps the predeclared experiment and its numeric
+guards unchanged. Actual catalog size now bounds completion-count events before
+preparation; infeasible last-active drains reject during that same admission
+check. Scheduled activations keep their producer session open until the event is
+applied. `min_steal_bytes` remains an opportunistic preference: when it excludes
+all off-preference candidates, an active requester has no local pending work,
+and all pending preferred owners are parked/draining/drained, leased_v1 takes
+the best pending morsel for progress. If a pending preferred owner remains
+active, the requester waits. The no-steal control keeps its refusal contract.
+See ADR-0017 and the implementation report for the review fixes and evidence;
+Phase10 acceptance remains gated on a new passing release.

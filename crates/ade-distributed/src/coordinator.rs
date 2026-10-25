@@ -208,6 +208,9 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
         let snapshot = job.snapshot.as_ref().ok_or_else(|| {
             Error::Invalid("leased scheduler requires verified source snapshot".into())
         })?;
+        job.config
+            .scheduler
+            .validate_for_source(job.workers.len(), snapshot.morsels.len())?;
         require(
             !snapshot.replayable && snapshot.morsels.len() <= job.config.scheduler.max_morsels,
             "leased replay/source catalog refusal",

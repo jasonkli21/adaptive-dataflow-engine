@@ -1,5 +1,14 @@
 use super::*;
 fn ledger(n: usize, workers: usize) -> Ledger {
+    let config = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        audit_capacity: 1,
+        ..Config::default()
+    };
+    ledger_with(n, workers, config)
+}
+fn ledger_with(n: usize, workers: usize, config: Config) -> Ledger {
     let source = SourceSnapshot {
         version: 1,
         manifest_fingerprint: "manifest".into(),
@@ -21,13 +30,7 @@ fn ledger(n: usize, workers: usize) -> Ledger {
         epoch: 1,
         digest: "d".repeat(64),
     };
-    let c = Config {
-        policy: Policy::LeasedV1,
-        recovery_enabled: false,
-        audit_capacity: 1,
-        ..Config::default()
-    };
-    let mut l = Ledger::new(fence, source, c, workers, 100_000).unwrap();
+    let mut l = Ledger::new(fence, source, config, workers, 100_000).unwrap();
     for w in 0..workers {
         rpc(&mut l, w, Op::Ready, 0).unwrap();
     }
@@ -188,7 +191,17 @@ fn fencing_owner_nonce_source_conflicts_and_expiry() {
 }
 #[test]
 fn participation_drain_has_cutoff_and_spot_deadline() {
-    let mut l = ledger(8, 4);
+    let config = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        participation: vec![Participation {
+            after_completed: 1,
+            worker: WorkerId(2),
+            action: Action::Activate,
+        }],
+        ..Config::default()
+    };
+    let mut l = ledger_with(8, 4, config);
     l.metrics.workers[2] = WorkerState::Parked;
     l.metrics.workers[3] = WorkerState::Parked;
     assert!(matches!(
@@ -196,24 +209,25 @@ fn participation_drain_has_cutoff_and_spot_deadline() {
         Response::Wait
     ));
     let lease = next(&mut l, 0, 1);
-    l.transition(2, Action::Activate, 2).unwrap();
-    let _ = next(&mut l, 2, 2);
-    l.transition(0, Action::SpotNotice { grace_ms: 100 }, 3)
+    let other = next(&mut l, 1, 2);
+    rpc(&mut l, 1, Op::Complete(ack(other)), 3).unwrap();
+    let activated = next(&mut l, 2, 4);
+    l.transition(0, Action::SpotNotice { grace_ms: 100 }, 5)
         .unwrap();
-    l.transition(0, Action::Drain, 4).unwrap();
+    l.transition(0, Action::Drain, 6).unwrap();
     assert!(
         l.metrics
             .events
             .iter()
             .any(|e| e.in_flight == Some(lease.morsel.id))
     );
-    rpc(&mut l, 0, Op::Complete(ack(lease)), 5).unwrap();
+    rpc(&mut l, 0, Op::Complete(ack(lease)), 7).unwrap();
     assert!(matches!(
-        rpc(&mut l, 0, Op::Acquire, 6).unwrap(),
+        rpc(&mut l, 0, Op::Acquire, 8).unwrap(),
         Response::Finish
     ));
-    rpc(&mut l, 0, Op::Closed, 7).unwrap();
-    rpc(&mut l, 0, Op::Closed, 8).unwrap();
+    rpc(&mut l, 0, Op::Closed, 9).unwrap();
+    rpc(&mut l, 2, Op::Complete(ack(activated)), 10).unwrap();
     l.check(104).unwrap();
     let mut l = ledger(4, 2);
     let _ = next(&mut l, 0, 1);
@@ -221,7 +235,7 @@ fn participation_drain_has_cutoff_and_spot_deadline() {
         .unwrap();
     assert!(l.check(3).is_err());
     l.metrics.workers[1] = WorkerState::Drained;
-    assert!(l.transition(0, Action::Drain, 2).is_err());
+    assert!(l.transition(0, Action::Drain, 2).is_ok());
 }
 #[test]
 fn no_steal_empty_producer_deadlines_and_bounds() {
@@ -271,6 +285,7 @@ fn pure_capacity_locality_critical_path_and_overflow() {
         pending: vec![(MorselId(1), 1, 100, true), (MorselId(2), 2, 100, false)],
         queued: vec![0, 100, 1000],
         capacities: vec![1, 1, 1],
+        active_workers: vec![true, true, true],
         requester: 0,
         critical: false,
         steal: true,
@@ -294,6 +309,7 @@ fn pure_capacity_locality_critical_path_and_overflow() {
         pending: vec![(MorselId(0), 0, 100, false), (MorselId(1), 1, 200, false)],
         queued: vec![100, 1000],
         capacities: vec![10, 1],
+        active_workers: vec![true, true],
         requester: 0,
         critical: true,
         steal: true,
@@ -303,6 +319,176 @@ fn pure_capacity_locality_critical_path_and_overflow() {
     o.capacities[0] = 1;
     o.capacities[1] = 100;
     assert_eq!(decide(&o).unwrap().unwrap().preferred, WorkerId(0));
+}
+
+#[test]
+fn minimum_steal_waits_for_active_owner_and_falls_back_for_inactive_owners() {
+    let mut observation = Observation {
+        pending: vec![(MorselId(1), 1, 100, false)],
+        queued: vec![0, 100],
+        capacities: vec![1, 1],
+        active_workers: vec![true, true],
+        requester: 0,
+        critical: false,
+        steal: true,
+        min_steal_bytes: 1_000,
+    };
+    assert!(decide(&observation).unwrap().is_none());
+
+    observation.active_workers[1] = false;
+    let decision = decide(&observation).unwrap().unwrap();
+    assert_eq!(decision.morsel, MorselId(1));
+    assert_eq!(decision.reason, "steal_pending_for_progress");
+
+    observation.steal = false;
+    assert!(decide(&observation).unwrap().is_none());
+}
+
+#[test]
+fn parked_producer_waits_for_scheduled_activation_then_closes() {
+    let config = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        initial_active: 2,
+        participation: vec![Participation {
+            after_completed: 3,
+            worker: WorkerId(2),
+            action: Action::Activate,
+        }],
+        ..Config::default()
+    };
+    let mut l = ledger_with(4, 4, config);
+
+    let first = next(&mut l, 0, 1);
+    rpc(&mut l, 0, Op::Complete(ack(first)), 2).unwrap();
+    let second = next(&mut l, 1, 3);
+    rpc(&mut l, 1, Op::Complete(ack(second)), 4).unwrap();
+    let third = next(&mut l, 0, 5);
+    let fourth = next(&mut l, 1, 6);
+
+    assert!(matches!(
+        rpc(&mut l, 2, Op::Acquire, 7).unwrap(),
+        Response::Wait
+    ));
+    rpc(&mut l, 0, Op::Complete(ack(third)), 8).unwrap();
+    assert_eq!(l.metrics.workers[2], WorkerState::Active);
+    assert!(matches!(
+        rpc(&mut l, 2, Op::Acquire, 9).unwrap(),
+        Response::Finish
+    ));
+    rpc(&mut l, 2, Op::Closed, 10).unwrap();
+
+    rpc(&mut l, 1, Op::Complete(ack(fourth)), 11).unwrap();
+    for worker in [0, 1, 3] {
+        assert!(matches!(
+            rpc(&mut l, worker, Op::Acquire, 12).unwrap(),
+            Response::Finish
+        ));
+        rpc(&mut l, worker, Op::Closed, 13).unwrap();
+    }
+    assert_eq!(l.finish(14).unwrap().events.len(), 1);
+}
+
+#[test]
+fn parked_without_activation_closes_and_small_pending_work_makes_progress() {
+    let config = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        initial_active: 1,
+        min_steal_bytes: 1_000_000,
+        ..Config::default()
+    };
+    let mut l = ledger_with(2, 2, config.clone());
+    let first = next(&mut l, 0, 1);
+    rpc(&mut l, 0, Op::Complete(ack(first)), 2).unwrap();
+    let stolen = next(&mut l, 0, 3);
+    assert_eq!(stolen.morsel.id, MorselId(1));
+    assert!(
+        l.metrics
+            .decisions
+            .iter()
+            .any(|decision| decision.reason == "steal_pending_for_progress")
+    );
+    rpc(&mut l, 0, Op::Complete(ack(stolen)), 4).unwrap();
+    for worker in 0..2 {
+        assert!(matches!(
+            rpc(&mut l, worker, Op::Acquire, 5).unwrap(),
+            Response::Finish
+        ));
+        rpc(&mut l, worker, Op::Closed, 6).unwrap();
+    }
+    l.finish(7).unwrap();
+
+    let mut empty_parked = ledger_with(1, 2, config);
+    assert!(matches!(
+        rpc(&mut empty_parked, 1, Op::Acquire, 1).unwrap(),
+        Response::Finish
+    ));
+    let only = next(&mut empty_parked, 0, 1);
+    rpc(&mut empty_parked, 0, Op::Complete(ack(only)), 2).unwrap();
+    rpc(&mut empty_parked, 0, Op::Closed, 3).unwrap();
+    rpc(&mut empty_parked, 1, Op::Closed, 3).unwrap();
+    empty_parked.finish(4).unwrap();
+}
+
+#[test]
+fn source_catalog_bounds_participation_and_rejects_last_active_drain() {
+    let impossible_count = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        participation: vec![Participation {
+            after_completed: 2,
+            worker: WorkerId(1),
+            action: Action::Activate,
+        }],
+        ..Config::default()
+    };
+    assert!(impossible_count.validate(2).is_ok());
+    assert!(impossible_count.validate_for_source(2, 1).is_err());
+
+    let last_drain = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        initial_active: 1,
+        participation: vec![Participation {
+            after_completed: 1,
+            worker: WorkerId(0),
+            action: Action::Drain,
+        }],
+        ..Config::default()
+    };
+    assert!(last_drain.validate_for_source(2, 2).is_err());
+
+    let final_activation = Config {
+        policy: Policy::LeasedV1,
+        recovery_enabled: false,
+        initial_active: 1,
+        participation: vec![Participation {
+            after_completed: 1,
+            worker: WorkerId(1),
+            action: Action::Activate,
+        }],
+        ..Config::default()
+    };
+    let mut l = ledger_with(1, 2, final_activation);
+    assert!(matches!(
+        rpc(&mut l, 1, Op::Acquire, 1).unwrap(),
+        Response::Wait
+    ));
+    let only = next(&mut l, 0, 1);
+    rpc(&mut l, 0, Op::Complete(ack(only)), 2).unwrap();
+    assert_eq!(l.metrics.workers[1], WorkerState::Active);
+    assert!(matches!(
+        rpc(&mut l, 1, Op::Acquire, 3).unwrap(),
+        Response::Finish
+    ));
+    rpc(&mut l, 1, Op::Closed, 4).unwrap();
+    assert!(matches!(
+        rpc(&mut l, 0, Op::Acquire, 4).unwrap(),
+        Response::Finish
+    ));
+    rpc(&mut l, 0, Op::Closed, 5).unwrap();
+    l.finish(6).unwrap();
 }
 
 #[test]

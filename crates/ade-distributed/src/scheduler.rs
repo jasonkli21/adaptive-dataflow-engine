@@ -210,6 +210,66 @@ impl Config {
         }
         Ok(())
     }
+
+    /// Validate completion-count controls against the frozen source catalog.
+    ///
+    /// `validate` checks the configured upper bound. This additional check is
+    /// required before worker preparation so an event cannot wait for a
+    /// completion count that this job can never reach.
+    ///
+    /// # Errors
+    /// Rejects impossible catalog-relative events and last-active drains.
+    pub fn validate_for_source(&self, workers: usize, morsels: usize) -> Result<()> {
+        self.validate(workers)?;
+        require(
+            self.participation
+                .iter()
+                .all(|event| event.after_completed <= morsels),
+            "scheduler event exceeds source catalog size",
+        )?;
+
+        let active = if self.initial_active == 0 {
+            workers
+        } else {
+            self.initial_active
+        };
+        let mut states = (0..workers)
+            .map(|worker| {
+                if worker < active {
+                    WorkerState::Active
+                } else {
+                    WorkerState::Parked
+                }
+            })
+            .collect::<Vec<_>>();
+        for event in &self.participation {
+            let worker = usize::try_from(event.worker.0)
+                .map_err(|_| Error::Invalid("scheduler worker index overflow".into()))?;
+            match event.action {
+                Action::Activate => {
+                    require(
+                        matches!(states[worker], WorkerState::Parked | WorkerState::Active),
+                        "scheduler activation follows producer termination",
+                    )?;
+                    states[worker] = WorkerState::Active;
+                }
+                Action::Drain | Action::SpotNotice { .. } => {
+                    if states[worker] == WorkerState::Active && event.after_completed < morsels {
+                        require(
+                            states.iter().enumerate().any(|(other, state)| {
+                                other != worker && *state == WorkerState::Active
+                            }),
+                            "scheduler drains the last active producer with work remaining",
+                        )?;
+                    }
+                    if states[worker] != WorkerState::Drained {
+                        states[worker] = WorkerState::Draining;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 /// Pure policy observation: estimated work is physical bytes, capacity is declared.
 #[derive(Debug, Clone)]
@@ -217,6 +277,8 @@ pub struct Observation {
     pub pending: Vec<(MorselId, usize, u64, bool)>,
     pub queued: Vec<u64>,
     pub capacities: Vec<u64>,
+    /// Whether each preferred owner can currently request new work.
+    pub active_workers: Vec<bool>,
     pub requester: usize,
     pub critical: bool,
     pub steal: bool,
@@ -235,9 +297,16 @@ pub struct Decision {
 /// # Errors
 /// Invalid indices, weights and overflowing score observations fail explicitly.
 pub fn decide(o: &Observation) -> Result<Option<Decision>> {
+    decide_with_progress_fallback(o, false)
+}
+fn decide_with_progress_fallback(
+    o: &Observation,
+    progress_fallback: bool,
+) -> Result<Option<Decision>> {
     require(
         (2..=4).contains(&o.capacities.len())
             && o.queued.len() == o.capacities.len()
+            && o.active_workers.len() == o.capacities.len()
             && o.requester < o.queued.len()
             && o.capacities.iter().all(|c| (1..=1000).contains(c)),
         "invalid scheduling observation",
@@ -249,7 +318,7 @@ pub fn decide(o: &Observation) -> Result<Option<Decision>> {
             p < o.queued.len() && bytes > 0 && bytes <= o.queued[p],
             "bogus scheduling work observation",
         )?;
-        if p != o.requester && (!o.steal || bytes < o.min_steal_bytes) {
+        if p != o.requester && (!o.steal || !progress_fallback && bytes < o.min_steal_bytes) {
             continue;
         }
         let score = u64::try_from(u128::from(o.queued[p]) * 1000 / u128::from(o.capacities[p]))
@@ -279,9 +348,22 @@ pub fn decide(o: &Observation) -> Result<Option<Decision>> {
         };
         kb.cmp(&ka).then(a.0.cmp(&b.0)).then(a.1.cmp(&b.1))
     });
+    if candidates.is_empty()
+        && !own
+        && o.steal
+        && !progress_fallback
+        && o.pending
+            .iter()
+            .all(|(_, preferred, _, _)| !o.active_workers[*preferred])
+    {
+        // A minimum steal size is an optimization preference. If it leaves an
+        // idle producer with no eligible work, let it take pending work rather
+        // than waiting forever for a parked or drained preferred owner.
+        return decide_with_progress_fallback(o, true);
+    }
     Ok(candidates
         .first()
-        .map(|&(id, p, _, local, score)| Decision {
+        .map(|&(id, p, bytes, local, score)| Decision {
             morsel: id,
             preferred: WorkerId(p as u64),
             actual: WorkerId(o.requester as u64),
@@ -290,6 +372,8 @@ pub fn decide(o: &Observation) -> Result<Option<Decision>> {
             critical: o.critical,
             reason: if p == o.requester {
                 "preferred_queue"
+            } else if progress_fallback && bytes < o.min_steal_bytes {
+                "steal_pending_for_progress"
             } else {
                 "steal_pending_longest_queue"
             }

@@ -90,8 +90,32 @@ path by MORE than10%. For queued bytes Q, candidate bytes B and declared weights
 C, compare max((Q_requester+B)/C_requester,(Q_donor-B)/C_donor) against
 0.90*(Q_donor/C_donor), using the checked fixed-point scores in code. Without
 local pending work, the minimum-byte steal threshold applies without that
-hysteresis. Normal ordering is locality, normalized donor queue, candidate bytes;
+hysteresis. If it filters every off-preference candidate and the requester has
+no local Pending work and every pending morsel's preferred owner is parked,
+draining, or drained, the scheduler may take the best remaining morsel for
+progress. If a pending preferred owner remains active, the requester waits for
+that owner to take its local work. Normal ordering is locality, normalized donor queue, candidate bytes;
 critical ordering swaps the first two; ties use MorselId then preferred WorkerId.
 This clarifies the earlier prose's local-queue shorthand; the pure function,
 reconstruction tests and release guards are unchanged. The final runtime snapshot
 predates this explanatory paragraph; no engine byte or timing threshold changes.
+
+Independent review follow-up on source `48a6760`: a producer with a scheduled
+future activation remains open while that event is outstanding, even when no
+Pending morsel is currently visible. A parked producer with no future activation
+can close immediately; the fixed final receiver remains in service. The minimum
+steal size is enforced while an eligible candidate exists. If it filters every
+off-preference candidate, the requester has no local Pending work, and every
+pending preferred owner is parked, draining, or drained, leased_v1 may take the
+best remaining morsel with reason `steal_pending_for_progress`. If any pending
+preferred owner remains active, the requester waits. LeasedNoSteal never takes
+this fallback. The same pure decision is used by offline evidence
+reconstruction, using participation transitions recorded before each grant.
+
+Before preparation, admission now validates every completion threshold against
+the actual frozen source-catalog size and simulates configured activation/drain
+transitions. An activation at the final completion is valid and can immediately
+close an empty producer. A drain of the last active producer while catalog work
+remains is rejected before worker preparation. These changes refine the §13
+control lifecycle and preserve INV-3/5/9; they do not change lease, exchange,
+result, or sample-gate schemas.

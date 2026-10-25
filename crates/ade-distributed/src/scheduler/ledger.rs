@@ -21,7 +21,7 @@ impl Ledger {
         workers: usize,
         duration_ms: u64,
     ) -> Result<Self> {
-        c.validate(workers)?;
+        c.validate_for_source(workers, source.morsels.len())?;
         require(
             source.morsels.len() <= c.max_morsels
                 && (c.preferred_locality.is_empty()
@@ -149,7 +149,9 @@ impl Ledger {
                 self.metrics.workers[w] = WorkerState::Active;
             }
             Action::Drain | Action::SpotNotice { .. } => {
-                if self.metrics.entries.iter().any(|e| e.lease.is_none()) {
+                if *state == WorkerState::Active
+                    && self.metrics.entries.iter().any(|e| e.lease.is_none())
+                {
                     require(
                         self.metrics
                             .workers
@@ -228,7 +230,11 @@ impl Ledger {
                     return Ok(Response::Finish);
                 }
                 if self.metrics.workers[worker] == WorkerState::Parked {
-                    return Ok(Response::Wait);
+                    return Ok(if self.has_future_activation(worker) {
+                        Response::Wait
+                    } else {
+                        Response::Finish
+                    });
                 }
                 let mut queued = vec![0u64; self.ready.len()];
                 let mut pending = vec![];
@@ -257,6 +263,12 @@ impl Ledger {
                 let observation = Observation {
                     pending,
                     queued,
+                    active_workers: self
+                        .metrics
+                        .workers
+                        .iter()
+                        .map(|state| *state == WorkerState::Active)
+                        .collect(),
                     capacities: if self.metrics.config.capacities.is_empty() {
                         vec![1; self.ready.len()]
                     } else {
@@ -269,7 +281,7 @@ impl Ledger {
                 };
                 let Some(decision) = decide(&observation)? else {
                     return Ok(
-                        if observation.pending.is_empty()
+                        if observation.pending.is_empty() && !self.has_future_activation(worker)
                             || self.metrics.config.policy == Policy::LeasedNoSteal
                                 && !observation.pending.iter().any(|(_, p, _, _)| *p == worker)
                         {
@@ -399,6 +411,11 @@ impl Ledger {
             "stale/conflicting lease owner/nonce/source",
         )?;
         Ok(e)
+    }
+    fn has_future_activation(&self, worker: usize) -> bool {
+        self.metrics.config.participation[self.next_event..]
+            .iter()
+            .any(|event| event.worker.0 == worker as u64 && event.action == Action::Activate)
     }
     pub(super) fn finish(&self, now: u64) -> Result<Metrics> {
         self.check(now)?;

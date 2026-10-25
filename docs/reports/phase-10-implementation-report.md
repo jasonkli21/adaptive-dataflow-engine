@@ -249,6 +249,59 @@ Offline re-verification using the bundled binaries reproduces correctness=true
 and all 6 failed gates; every file digest and outer archive hash matches. Follow
 REPRODUCE.md. These artifacts are local/ignored and were not pushed or published.
 
+## Independent review follow-up — acceptance still partial
+
+The review handoff is treated as findings and evidence, not as authority to
+change the phase boundary or timing gates. The follow-up fixes F-02 through F-05:
+
+- A producer with a scheduled future activation waits while that event is still
+  pending, including when all remaining morsels are leased. A parked producer
+  with no future activation can close immediately.
+- `min_steal_bytes` remains a preference. If it excludes every off-preference
+  candidate, an active requester has no local pending work, and all pending
+  preferred owners are parked/draining/drained, leased_v1 takes the best
+  remaining morsel to preserve progress. If any preferred owner remains active,
+  the requester waits. `leased_no_steal` is unchanged.
+- Admission validates event thresholds against the actual source catalog and
+  rejects an infeasible last-active drain before worker preparation. An event at
+  the catalog's final completion remains valid and is applied before closure.
+- Acceptance and verifier checks now use an explicit `VerificationError` /
+  `require` path that remains active under optimized Python. Dataset generation
+  and oracle commands execute outside checks. The Phase10 verifier performs its
+  own source-bundle/commit/tree/archive checks instead of importing Phase9's
+  assertion-based helper.
+
+Focused ledger tests pass for the four-worker late activation interleaving, the
+under-threshold stranded queue, empty parked closure, active-owner threshold
+behavior, actual-catalog event bounds, final-completion activation, and
+last-active drain refusal. The full workspace gate also reran the real
+multi-process steal/activation/drain integration test successfully with local
+loopback access.
+
+Follow-up quality gate on this source: `cargo fmt --all -- --check`,
+`cargo check --workspace --all-targets --offline`,
+`cargo clippy --workspace --all-targets --all-features --offline -- -D warnings`,
+and `cargo test --workspace --all-features --offline` all pass (158
+unit/integration tests plus doc tests). `bash scripts/smoke.sh` passes. The smoke
+comparison emitted a one-sample regression classification for its configured
+static comparison; it is a correctness smoke, not Phase10 timing acceptance.
+
+The optimized verifier was run against the original local release inventory and
+captured binaries: correctness remains true for 62 children/49 measurements and
+the same six predeclared timing guards remain failed at ratios 2.074546/2.008443,
+3.400814 (2 workers) and 1.556017/1.415445, 3.493694 (4 workers). A copied
+evidence tree rejected eight attacks under `python3 -O`. The local
+closure archive and its 492-file checksum manifest also verify against the
+reported outer SHA256. The archive remains ignored and unpublished, so external
+reviewers still need a release asset or supplied bundle to reproduce that audit.
+
+F-01 remains open: no timing optimization was implemented or measured in this
+follow-up. The original measurements already quantify source hashing, lease/ACK
+control and per-file partial amplification, and remain preserved. The current
+runtime therefore has no source-bound timing acceptance evidence, and Phase10
+stays PARTIAL. Do not attribute the old ratios to this follow-up source or relax
+the guards.
+
 ## Remaining PRD gaps and handoff
 
 Phase10 remains partial. The current slice fails all empirical guards; even a future passing slice would not mean full Phase10 completion:

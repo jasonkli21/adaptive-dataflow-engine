@@ -194,6 +194,27 @@ fn tasks(
     reason = "Explicit producer/final stage transitions and failure cleanup remain in one place."
 )]
 pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
+    execute_inner(job, None, None)
+}
+
+pub(crate) fn execute_bounded(
+    job: &StaticAggregateJob,
+    output_limits: crate::bounded_output::OutputLimits,
+    mut adapt: impl FnMut(RecordBatch) -> Result<RecordBatch>,
+) -> Result<JobOutput> {
+    output_limits.validate()?;
+    execute_inner(job, Some(output_limits), Some(&mut adapt))
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "Explicit producer/final stage transitions and failure cleanup remain in one place."
+)]
+fn execute_inner(
+    job: &StaticAggregateJob,
+    output_limits: Option<crate::bounded_output::OutputLimits>,
+    mut adapt: Option<&mut dyn FnMut(RecordBatch) -> Result<RecordBatch>>,
+) -> Result<JobOutput> {
     let started = Instant::now();
     validate_topology(&job.workers)?;
     job.config.validate()?;
@@ -684,7 +705,14 @@ pub fn execute(job: &StaticAggregateJob) -> Result<JobOutput> {
                 && accepted.rows == finals.values().map(|m| m.input_rows as u64).sum::<u64>(),
             "exchange conservation failure",
         )?;
-        let (batches, gather_metrics) = gather.collect()?;
+        let (batches, gather_metrics) = if let Some(limits) = output_limits {
+            let adapt = adapt.take().ok_or_else(|| {
+                Error::Invalid("bounded gather requires an output adapter".into())
+            })?;
+            gather.collect_bounded(limits, adapt)?
+        } else {
+            gather.collect()?
+        };
         state = JobState::GatherComplete;
         let mut adaptive = crate::adaptive::AdaptiveSummary::default();
         if job.config.exchange.mode == crate::ExchangeMode::Adaptive {

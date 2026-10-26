@@ -273,6 +273,10 @@ async fn source_drift_caps_cancellation_and_forged_graph_no_result() {
         .plan_sql("SELECT key,value_i64 FROM input", Target::Local)
         .await
         .unwrap();
+    let expired = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_millis(1))
+        .unwrap();
+    assert!(c.execute_until(&p, Options::default(), expired).is_err());
     p.max_output_rows = 1;
     assert!(c.execute(&p, Options::default()).is_err());
     p.max_output_rows = 100;
@@ -313,6 +317,156 @@ async fn source_drift_caps_cancellation_and_forged_graph_no_result() {
         .write_all(b"drift")
         .unwrap();
     assert!(c.execute(&p, Options::default()).is_err());
+}
+
+fn accounted_output_bytes(batches: &[RecordBatch]) -> u64 {
+    batches
+        .iter()
+        .map(|batch| u64::try_from(batch.get_array_memory_size() + 128).unwrap())
+        .sum()
+}
+
+#[tokio::test]
+async fn distributed_output_bytes_are_checked_while_gathering() {
+    let (_dir, _root, c) = fixture(257, false);
+    let mut aggregate = c
+        .plan_sql(
+            "SELECT key,SUM(value_i64) AS sum,COUNT(*) AS count FROM input GROUP BY key",
+            Target::DistributedAggregate,
+        )
+        .await
+        .unwrap();
+    let mut aggregate_options = Options {
+        worker_binary: Some(worker()),
+        ..Options::default()
+    };
+    aggregate_options.aggregate.batch_size = 1;
+    let aggregate_output = c.execute(&aggregate, aggregate_options.clone()).unwrap();
+    assert!(aggregate_output.batches().len() > 1);
+    let aggregate_exact = accounted_output_bytes(aggregate_output.batches());
+    aggregate.max_output_bytes = aggregate_exact;
+    assert!(c.execute(&aggregate, aggregate_options.clone()).is_ok());
+    aggregate.max_output_bytes = aggregate_exact - 1;
+    assert!(c.execute(&aggregate, aggregate_options.clone()).is_err());
+    aggregate.max_output_bytes = 1;
+    assert!(c.execute(&aggregate, aggregate_options).is_err());
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("join");
+    ade_bench::join_dataset::generate(
+        &root,
+        "join-output-budget",
+        &ade_bench::join_dataset::Config {
+            left_rows: 31,
+            right_rows: 17,
+            left_key_domain: 5,
+            right_key_domain: 5,
+            files_per_side: 2,
+            row_group_rows: 16,
+            seed: 42,
+        },
+    )
+    .unwrap();
+    let mut join_catalog = Catalog::default();
+    for name in ["ade_left", "ade_right"] {
+        join_catalog
+            .register_manifest(name, &root, &root.join("manifest.json"))
+            .unwrap();
+    }
+    let mut join = join_catalog
+        .plan_sql(
+            "SELECT l.key FROM ade_left l INNER JOIN ade_right r ON l.key=r.key",
+            Target::DistributedJoin,
+        )
+        .await
+        .unwrap();
+    let mut join_options = Options {
+        worker_binary: Some(worker()),
+        ..Options::default()
+    };
+    join_options.join.local.output_batch_rows = 1;
+    let join_output = join_catalog.execute(&join, join_options.clone()).unwrap();
+    assert!(join_output.batches().len() > 1);
+    let join_exact = accounted_output_bytes(join_output.batches());
+    join.max_output_bytes = join_exact;
+    assert!(join_catalog.execute(&join, join_options.clone()).is_ok());
+    join.max_output_bytes = join_exact - 1;
+    assert!(join_catalog.execute(&join, join_options.clone()).is_err());
+    join.max_output_bytes = 1;
+    assert!(join_catalog.execute(&join, join_options).is_err());
+}
+
+#[tokio::test]
+async fn allowlisted_schema_fingerprints_are_recomputed_from_canonical_definitions() {
+    let (_dir, root, catalog) = fixture(8, false);
+    let events_fingerprint = ade_physical::fingerprint(
+        b"synthetic-events-v1:row_id=u64,key=u64,secondary=u64,value_i64=i64,value_f64=f64,category=u32,payload=utf8,event_time=timestamp_ms;all_nonnull",
+    );
+    assert_eq!(
+        catalog.native().bindings[0].source.schema_identity,
+        events_fingerprint
+    );
+    let manifest = root.join("manifest.json");
+    let mut forged: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    forged["schema_fingerprint"] = "0".repeat(64).into();
+    let forged_manifest = root.join("forged-schema.json");
+    std::fs::write(&forged_manifest, serde_json::to_vec(&forged).unwrap()).unwrap();
+    assert!(
+        Catalog::default()
+            .register_manifest("input", &root, &forged_manifest)
+            .is_err()
+    );
+
+    let join_root = root.join("join-fixture");
+    ade_bench::join_dataset::generate(
+        &join_root,
+        "join-schema-fingerprint",
+        &ade_bench::join_dataset::Config {
+            left_rows: 4,
+            right_rows: 3,
+            left_key_domain: 2,
+            right_key_domain: 2,
+            files_per_side: 2,
+            row_group_rows: 16,
+            seed: 42,
+        },
+    )
+    .unwrap();
+    let join_manifest = join_root.join("manifest.json");
+    let mut join_catalog = Catalog::default();
+    join_catalog
+        .register_manifest("ade_left", &join_root, &join_manifest)
+        .unwrap();
+    assert_eq!(
+        join_catalog.native().bindings[0].source.schema_identity,
+        ade_physical::fingerprint(
+            b"left-v1:key=u64,value_i64=i64;right-v1:key=u64,value_i64=i64;all_nonnull"
+        )
+    );
+    let mut forged: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&join_manifest).unwrap()).unwrap();
+    forged["schema_fingerprint"] = "0".repeat(64).into();
+    let forged_manifest = join_root.join("forged-schema.json");
+    std::fs::write(&forged_manifest, serde_json::to_vec(&forged).unwrap()).unwrap();
+    assert!(
+        Catalog::default()
+            .register_manifest("ade_left", &join_root, &forged_manifest)
+            .is_err()
+    );
+}
+
+#[test]
+fn manifest_registration_refuses_an_expired_caller_deadline() {
+    let (_dir, root, _) = fixture(8, false);
+    let deadline = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_millis(1))
+        .unwrap();
+    assert!(
+        Catalog::default()
+            .register_manifest_until("input", &root, &root.join("manifest.json"), deadline,)
+            .is_err()
+    );
 }
 use std::io::Write;
 fn replace_values(root: &Path, values: &[i64], nullable: bool) {
@@ -406,7 +560,14 @@ impl ErrorText for ade_frontend::Result<ade_frontend::execution::Output> {
     }
 }
 fn worker() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/ade-worker")
+    let query_binary = PathBuf::from(env!("CARGO_BIN_EXE_ade-query"));
+    let worker = query_binary.with_file_name(format!("ade-worker{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        worker.is_file(),
+        "ade-worker is missing from this Cargo target directory: {}. Build it with matching features into the same target directory before running this focused test (cargo build -p ade-distributed --bin ade-worker --features research-hooks), or run cargo test --workspace.",
+        worker.display()
+    );
+    worker
 }
 #[tokio::test]
 async fn real_distributed_aggregate_and_join_oracle() {
@@ -497,6 +658,19 @@ fn cli_explain_execute_and_no_output_on_refusal() {
     // Extra directory files must never enter the registered source list.
     std::fs::write(root.join("unlisted.parquet"), b"not parquet").unwrap();
     let binary = env!("CARGO_BIN_EXE_ade-query");
+    let help = std::process::Command::new(binary)
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&help.stdout).contains("End-to-end budget"));
+    let expired = std::process::Command::new(binary)
+        .args(["execute", "--dataset"])
+        .arg(&root)
+        .args(["--sql", "SELECT key FROM input", "--timeout-ms", "0"])
+        .output()
+        .unwrap();
+    assert!(!expired.status.success());
+    assert_eq!(expired.stdout, [] as [u8; 0]);
     let oversized_sql = root.join("oversized.sql");
     std::fs::write(&oversized_sql, vec![b' '; 16 * 1024 + 1]).unwrap();
     let refused = std::process::Command::new(binary)
@@ -619,5 +793,26 @@ async fn join_four_workers_forced_baseline_empty_and_failure_controls() {
         options.join.policy = ade_distributed::join_policy::Policy::ForcedRepartition;
         options.join.local.algorithm = ade_exec::join::Algorithm::Grace;
         compare(&catalog,"SELECT l.key,l.value_i64 AS left_value,r.value_i64 AS right_value FROM ade_left l INNER JOIN ade_right r ON l.key=r.key",Target::DistributedJoin,options,false).await;
+        if left_rows == 0 {
+            let mut plan = catalog
+                .plan_sql(
+                    "SELECT l.key,l.value_i64 AS left_value,r.value_i64 AS right_value FROM ade_left l INNER JOIN ade_right r ON l.key=r.key",
+                    Target::DistributedJoin,
+                )
+                .await
+                .unwrap();
+            plan.max_output_bytes = 1;
+            let output = catalog
+                .execute(
+                    &plan,
+                    Options {
+                        workers,
+                        worker_binary: Some(worker()),
+                        ..Options::default()
+                    },
+                )
+                .unwrap();
+            assert_eq!(output.batches().len(), 0);
+        }
     }
 }

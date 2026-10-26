@@ -49,14 +49,38 @@ impl Catalog {
     /// Execute a previously compiled graph against exactly its registered sources.
     /// # Errors
     /// Unsupported targets/configurations/source drift or native failure return no result.
-    pub fn execute(&self, plan: &PlanV1, mut options: Options) -> Result<Output> {
-        plan.validate()?;
-        let catalog = self.bind(plan)?;
+    pub fn execute(&self, plan: &PlanV1, options: Options) -> Result<Output> {
         require(
             !options.timeout.is_zero() && options.timeout <= Duration::from_secs(120),
             "timeout must be <=120s and positive",
         )?;
         let deadline = Instant::now() + options.timeout;
+        self.execute_until(plan, options, deadline)
+    }
+
+    /// Execute a graph using a caller-owned absolute deadline shared with setup.
+    ///
+    /// # Errors
+    /// Refuses expired or overlong deadlines, unsupported targets/configurations,
+    /// source drift, or native failures without returning partial output.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "One absolute deadline is threaded through validation and native execution."
+    )]
+    pub fn execute_until(
+        &self,
+        plan: &PlanV1,
+        mut options: Options,
+        deadline: Instant,
+    ) -> Result<Output> {
+        options.timeout = deadline.saturating_duration_since(Instant::now());
+        require(
+            !options.timeout.is_zero() && options.timeout <= Duration::from_secs(120),
+            "timeout must be <=120s and positive",
+        )?;
+        plan.validate()?;
+        let catalog = self.bind(plan)?;
+        require(Instant::now() < deadline, "query execution deadline")?;
         options.join.local.max_output_rows = plan.max_output_rows;
         let mut effective = match plan.target {
             Target::Local => {
@@ -70,13 +94,15 @@ impl Catalog {
             }
         };
         let native = if plan.target == Target::Local {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            require(!remaining.is_zero(), "query execution deadline")?;
             NativeOutput::Local(Box::new(ade_exec::physical::execute(
                 plan,
                 &catalog,
                 options.local,
                 options.batch_size,
                 ade_exec::CancellationToken::default(),
-                options.timeout,
+                remaining,
             )?))
         } else {
             require((2..=4).contains(&options.workers), "workers must be 2..4")?;

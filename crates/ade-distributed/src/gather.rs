@@ -1,6 +1,7 @@
 //! Internal attempt commit boundary, isolated from external sink transactions.
 use crate::{
     Result,
+    bounded_output::{OutputBudget, OutputLimits},
     exchange::{self, Receiver, Store},
     ids::{AttemptId, JobId, transfer},
     metrics::NetworkMetrics,
@@ -186,6 +187,25 @@ impl Gather {
     pub(crate) fn collect(
         &self,
     ) -> Result<(Vec<arrow::record_batch::RecordBatch>, NetworkMetrics)> {
+        self.collect_inner(None, Ok)
+    }
+
+    pub(crate) fn collect_bounded(
+        &self,
+        limits: OutputLimits,
+        adapt: impl FnMut(arrow::record_batch::RecordBatch) -> Result<arrow::record_batch::RecordBatch>,
+    ) -> Result<(Vec<arrow::record_batch::RecordBatch>, NetworkMetrics)> {
+        let budget = OutputBudget::new(limits)?;
+        self.collect_inner(Some(budget), adapt)
+    }
+
+    fn collect_inner(
+        &self,
+        mut budget: Option<OutputBudget>,
+        mut adapt: impl FnMut(
+            arrow::record_batch::RecordBatch,
+        ) -> Result<arrow::record_batch::RecordBatch>,
+    ) -> Result<(Vec<arrow::record_batch::RecordBatch>, NetworkMetrics)> {
         require(
             self.committed
                 .keys()
@@ -198,7 +218,14 @@ impl Gather {
         let mut metrics = NetworkMetrics::default();
         for (p, attempt) in &self.committed {
             let store = &self.stores[&(*p, attempt.0)];
-            batches.extend(exchange::collect(store)?);
+            exchange::visit_batches(store, |batch| {
+                let batch = adapt(batch)?;
+                if let Some(budget) = budget.as_mut() {
+                    budget.include(&batch)?;
+                }
+                batches.push(batch);
+                Ok(())
+            })?;
             metrics.add(&store.metrics()?);
         }
         Ok((batches, metrics))

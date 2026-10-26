@@ -2,6 +2,7 @@
 //! Static routing is the default; optional pre-exchange key-shard routing,
 //! selectable retention and bounded lineage recovery are supported.
 pub mod adaptive;
+mod bounded_output;
 pub mod cost;
 pub mod materialization;
 mod retention;

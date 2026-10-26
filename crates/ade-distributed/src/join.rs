@@ -631,6 +631,29 @@ fn cancel(spec: &Spec) {
 /// # Errors
 /// Any admission, source, protocol, resource or process failure cancels every endpoint; no partial result is returned.
 pub fn execute(spec: &Spec, timeout: Duration) -> Result<Output> {
+    execute_inner_bounded(spec, timeout, None, None)
+}
+
+pub(crate) fn execute_bounded(
+    spec: &Spec,
+    timeout: Duration,
+    output_limits: crate::bounded_output::OutputLimits,
+    mut adapt: impl FnMut(RecordBatch) -> Result<RecordBatch>,
+) -> Result<Output> {
+    output_limits.validate()?;
+    execute_inner_bounded(spec, timeout, Some(output_limits), Some(&mut adapt))
+}
+
+fn execute_inner_bounded(
+    spec: &Spec,
+    timeout: Duration,
+    output_limits: Option<crate::bounded_output::OutputLimits>,
+    adapt: Option<&mut dyn FnMut(RecordBatch) -> Result<RecordBatch>>,
+) -> Result<Output> {
+    require(
+        output_limits.is_none() || adapt.is_some(),
+        "bounded join gather requires an output adapter",
+    )?;
     spec.validate()?;
     require(
         !timeout.is_zero() && timeout <= Duration::from_secs(120),
@@ -638,7 +661,7 @@ pub fn execute(spec: &Spec, timeout: Duration) -> Result<Output> {
     )?;
     let started = Instant::now();
     let deadline = started + timeout;
-    let result = execute_inner(spec, deadline, started);
+    let result = execute_inner(spec, deadline, started, output_limits, adapt);
     cancel(spec);
     result
 }
@@ -795,7 +818,13 @@ fn gather(
     })?;
     Ok((stores, gather_receiver))
 }
-fn execute_inner(spec: &Spec, deadline: Instant, started: Instant) -> Result<Output> {
+fn execute_inner(
+    spec: &Spec,
+    deadline: Instant,
+    started: Instant,
+    output_limits: Option<crate::bounded_output::OutputLimits>,
+    mut adapt: Option<&mut dyn FnMut(RecordBatch) -> Result<RecordBatch>>,
+) -> Result<Output> {
     let (decision, probe_ns, commit_ns) = prepare(spec, deadline)?;
     let root = tempfile::tempdir()?;
     let token = CancellationToken::default();
@@ -847,11 +876,27 @@ fn execute_inner(spec: &Spec, deadline: Instant, started: Instant) -> Result<Out
     }
     let mut batches = Vec::new();
     let mut rows = 0u64;
+    let mut output_budget = output_limits
+        .map(crate::bounded_output::OutputBudget::new)
+        .transpose()?;
     for store in &stores {
         let mut source = store.reader();
         while let Some(batch) = source.next_batch(&token)? {
-            rows += batch.num_rows() as u64;
+            let batch = if let Some(adapt) = adapt.as_deref_mut() {
+                adapt(batch)?
+            } else {
+                batch
+            };
+            rows = rows
+                .checked_add(
+                    u64::try_from(batch.num_rows())
+                        .map_err(|_| Error::Invalid("join gather row overflow".into()))?,
+                )
+                .ok_or_else(|| Error::Invalid("join gather row overflow".into()))?;
             require(rows <= total_output, "join gather row overflow")?;
+            if let Some(budget) = &mut output_budget {
+                budget.include(&batch)?;
+            }
             batches.push(batch);
         }
         source.shutdown();

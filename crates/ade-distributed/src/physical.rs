@@ -84,6 +84,10 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
     let deadline = Instant::now() + options.timeout;
     let token = CancellationToken::default();
     catalog.verify(plan, &token, deadline, true)?;
+    let output_limits = crate::bounded_output::OutputLimits {
+        rows: plan.max_output_rows,
+        bytes: plan.max_output_bytes,
+    };
     let mut base = plan.output;
     while let Operator::Project { input, .. } = plan.nodes[base as usize].operator {
         base = input;
@@ -111,14 +115,18 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
                     })
                     .collect(),
             };
-            let output = coordinator::execute(&StaticAggregateJob {
-                id: job,
-                files: b.files.clone(),
-                workers,
-                config: options.aggregate,
-                task_timeout: deadline.saturating_duration_since(Instant::now()),
-                snapshot: Some(snapshot),
-            })?;
+            let output = coordinator::execute_bounded(
+                &StaticAggregateJob {
+                    id: job,
+                    files: b.files.clone(),
+                    workers,
+                    config: options.aggregate,
+                    task_timeout: deadline.saturating_duration_since(Instant::now()),
+                    snapshot: Some(snapshot),
+                },
+                output_limits,
+                |batch| adapt(plan, base, &batch),
+            )?;
             (output.batches, Metrics::Aggregate(Box::new(output.metrics)))
         }
         Target::DistributedJoin => {
@@ -146,7 +154,7 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
             }
             let mut config = options.join;
             config.local.max_output_rows = plan.max_output_rows;
-            let output = join::execute(
+            let output = join::execute_bounded(
                 &join::Spec {
                     job,
                     execution: uuid::Uuid::new_v4().to_string(),
@@ -157,6 +165,8 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
                     config,
                 },
                 deadline.saturating_duration_since(Instant::now()),
+                output_limits,
+                |batch| adapt(plan, base, &batch),
             )?;
             (output.batches, Metrics::Join(Box::new(output.metrics)))
         }
@@ -164,19 +174,9 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
     };
     catalog.verify(plan, &token, deadline, false)?;
     let mut result = vec![];
-    let (mut rows, mut bytes) = (0u64, 0u64);
+    let mut final_budget = crate::bounded_output::OutputBudget::new(output_limits)?;
     for batch in batches {
-        let batch = adapt(plan, base, &batch)?;
-        rows = rows
-            .checked_add(batch.num_rows() as u64)
-            .ok_or_else(|| Error::Invalid("output row overflow".into()))?;
-        bytes = bytes
-            .checked_add(batch.get_array_memory_size() as u64 + 128)
-            .ok_or_else(|| Error::Invalid("output byte overflow".into()))?;
-        require(
-            rows <= plan.max_output_rows && bytes <= plan.max_output_bytes,
-            "physical output cap; no committed output",
-        )?;
+        final_budget.include(&batch)?;
         result.push(batch);
     }
     Ok(Output {

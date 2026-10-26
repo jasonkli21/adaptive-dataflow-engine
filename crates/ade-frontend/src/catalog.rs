@@ -40,6 +40,27 @@ impl Catalog {
     /// # Errors
     /// Refuses traversal, symlink escape, forged metadata and source/resource drift.
     pub fn register_manifest(&mut self, table: &str, root: &Path, manifest: &Path) -> Result<()> {
+        self.register_manifest_until(
+            table,
+            root,
+            manifest,
+            Instant::now() + Duration::from_secs(120),
+        )
+    }
+
+    /// Register a manifest under a caller-owned absolute deadline.
+    /// OS file operations are not preemptible; source verification checks the
+    /// deadline between bounded reads and decode batches.
+    /// # Errors
+    /// Refuses expired deadlines, traversal, symlink escape, forged metadata and source drift.
+    pub fn register_manifest_until(
+        &mut self,
+        table: &str,
+        root: &Path,
+        manifest: &Path,
+        deadline: Instant,
+    ) -> Result<()> {
+        require(Instant::now() < deadline, "manifest registration deadline")?;
         require(
             self.native.bindings.len() < 2
                 && !self.native.bindings.iter().any(|b| b.source.table == table),
@@ -53,12 +74,18 @@ impl Catalog {
         let mut bytes = Vec::new();
         file.take(1024 * 1024 + 1).read_to_end(&mut bytes)?;
         require(bytes.len() <= 1024 * 1024, "manifest cap 1MiB")?;
+        require(Instant::now() < deadline, "manifest registration deadline")?;
         let m: Manifest = serde_json::from_slice(&bytes)?;
         require(
             m.schema_version == 1 && m.dataset_version == 1 && m.format == "parquet",
             "manifest version/format",
         )?;
         let schema = source_schema(table, &m.required_schema)?;
+        require(
+            canonical_schema_fingerprint(&m.required_schema)
+                .is_some_and(|expected| m.schema_fingerprint == expected),
+            "manifest schema fingerprint does not match allowlisted v1 schema",
+        )?;
         require(
             m.files.iter().try_fold(0u64, |a, f| a.checked_add(f.rows)) == Some(m.row_count),
             "manifest total rows",
@@ -122,12 +149,7 @@ impl Catalog {
         NativeCatalog {
             bindings: vec![binding],
         }
-        .verify(
-            &plan,
-            &CancellationToken::default(),
-            Instant::now() + Duration::from_secs(120),
-            true,
-        )?;
+        .verify(&plan, &CancellationToken::default(), deadline, true)?;
         self.native.bindings.push(Binding { source, files });
         Ok(())
     }
@@ -181,6 +203,19 @@ impl Catalog {
 }
 fn blake3_hash(bytes: &[u8]) -> String {
     ade_physical::fingerprint(bytes)
+}
+
+fn canonical_schema_fingerprint(required_schema: &str) -> Option<String> {
+    let canonical = match required_schema {
+        "synthetic-events-v1" => {
+            b"synthetic-events-v1:row_id=u64,key=u64,secondary=u64,value_i64=i64,value_f64=f64,category=u32,payload=utf8,event_time=timestamp_ms;all_nonnull".as_slice()
+        }
+        "synthetic-join-v1" => {
+            b"left-v1:key=u64,value_i64=i64;right-v1:key=u64,value_i64=i64;all_nonnull".as_slice()
+        }
+        _ => return None,
+    };
+    Some(blake3_hash(canonical))
 }
 
 fn source_schema(table: &str, required_schema: &str) -> Result<Vec<Field>> {

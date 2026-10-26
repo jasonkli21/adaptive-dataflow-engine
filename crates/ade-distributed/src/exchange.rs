@@ -1234,12 +1234,23 @@ impl Drop for Receiver {
 /// Returns incomplete-transfer, file, or IPC decode errors.
 pub fn collect(store: &Store) -> Result<Vec<RecordBatch>> {
     let mut output = Vec::new();
+    visit_batches(store, |batch| {
+        output.push(batch);
+        Ok(())
+    })?;
+    Ok(output)
+}
+
+pub(crate) fn visit_batches(
+    store: &Store,
+    mut visit: impl FnMut(RecordBatch) -> Result<()>,
+) -> Result<()> {
     for path in store.paths()? {
         for batch in StreamReader::try_new(File::open(path)?, None)? {
-            output.push(batch?);
+            visit(batch?)?;
         }
     }
-    Ok(output)
+    Ok(())
 }
 
 #[cfg(test)]

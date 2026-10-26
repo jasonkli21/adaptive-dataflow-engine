@@ -16,10 +16,11 @@ physical membership remains fixed. The Phase 10 report, ADR-0017, experiment,
 thresholds, historical source identities and failed evidence are untouched.
 Phase 8/9 accepted contracts and historical measurement identities remain intact.
 
-The final source is the single commit containing this report (obtain its exact
-SHA with `git log -1 --format=%H`). No intermediate commits were created. The
-initial untracked Phase 11 plan is included with a session reconciliation; the
-unrelated bootstrap prompt remains untracked and untouched. Local, ignored
+The original bounded-v1 implementation source was reviewed baseline
+`39237b2dd3f37ec5998aab7310cf779d61bc5eb9`; its evidence is recorded below and
+is not rewritten by the review remediation amendment. No timing evidence is
+reclassified. The unrelated bootstrap prompt remains untracked and untouched.
+Local, ignored
 `benchmarks/results/phase11-quality/source-identity.json` records SHA-256 for
 Cargo manifests/lockfile, toolchain file and every Rust source, plus the aggregate
 runtime-source digest
@@ -55,7 +56,9 @@ both manifest file inventories to the native join Source fingerprints before
 join::Spec execution. It invokes the existing coordinator/join runners, never
 an unrelated benchmark-query enum. Root projections preserve exact aliases and
 column order. Existing gather/terminal completeness and attempt isolation remain
-owned by those runners. No partial result returns on job/postflight/cap failure.
+owned by those runners. The review amendment below adds incremental, adapted
+output-byte admission during gather collection. No partial result returns on
+job/postflight/cap failure.
 
 `ade-frontend` binds SQL with public DataFusion 55.2.0 `sql_to_statement` and
 `statement_to_plan`, using registered schema-only EmptyTable providers. It does
@@ -96,11 +99,12 @@ refuses rows beyond the manifest immediately. Local input/output batches<=8192.
 
 Output is capped at1m rows/64MiB accounted Arrow buffer estimates plus batch
 metadata; CLI defaults1000rows/16MiB. Caps refuse, never truncate successful
-results. Local collection retains its managed reservation; distributed collection
-is bounded by the admitted source/output domain and the existing native gather.
-Configured task budgets, exchange bounds and transient decoding/Arrow cast
-allocations remain separate. No allocator-exact/process RSS or total spill-volume
-cap is claimed. Registration/preflight add I/O; no speed claim is made.
+results. Local collection retains its managed reservation; the review amendment
+below makes distributed collection check each adapted gather batch before result
+retention. Configured task budgets, exchange bounds and transient decoding/Arrow
+cast allocations remain separate. No allocator-exact/process RSS or total
+spill-volume cap is claimed. Registration/preflight add I/O; no speed claim is
+made.
 
 Files hash again before output returns. The existing immutable-file assumption
 remains: before/after validation is not transactional filesystem isolation and
@@ -124,7 +128,7 @@ and benchmark child protocol remain unchanged. Dependency-tree inspection for
 ade-physical/ade-exec/ade-distributed finds no DataFusion or ade-frontend. Cargo.lock
 adds only the two new workspace packages/edges; no upstream versions change.
 
-## Verification and evidence
+## Original bounded-v1 verification and evidence (review baseline 39237b2)
 
 Environment: Darwin arm64, rustc1.99.1 (58cf8f9c3 2026-10-13), cargo1.99.1
 (5f94df478 2026-08-27), debug builds, locked cached dependencies, localhost workers.
@@ -219,3 +223,62 @@ Python/Substrait, streaming/writes, physical membership, Phase10 performance and
 Phase12 HA remain future work. Resolve Phase10's original debt separately before
 claiming broader phase ordering or production elasticity. No further phase is
 authorized by this implementation.
+
+## Independent review remediation (2026-10-26)
+
+The remediation addresses the source-level findings against baseline
+`39237b2dd3f37ec5998aab7310cf779d61bc5eb9` without changing Phase 10 status,
+thresholds, wire protocols or benchmark result schemas.
+
+- **Distributed output admission:** aggregate and join collectors now stream
+  committed IPC batches, adapt each batch to the final IR output schema, check
+  checked row/byte totals (`get_array_memory_size() + 128` bytes per batch), and
+  retain it only if the cap admits it. A failed collection returns no batches;
+  the aggregate gather drop/cancellation and join cancellation paths clean up
+  survivors. An over-budget batch can exist transiently while being decoded and
+  adapted. This remains a collector bound, not a process-RSS cap. Legacy
+  coordinator/job collectors keep their existing behavior.
+- **Schema identity:** registration recomputes the canonical schema-definition
+  hash for `synthetic-events-v1` and `synthetic-join-v1` and rejects a forged
+  value before source registration. `logical_fingerprint` remains an assertion
+  bound by the exact manifest bytes; source registration does not regenerate
+  logical rows from generator parameters.
+- **CLI timeout:** `ade-query --timeout-ms` now shares one absolute deadline
+  across bounded SQL-file reading, manifest registration, planning and native
+  execution. Catalog APIs expose `register_manifest_until` and
+  `execute_until`; default reusable registration/execution remain available.
+  OS calls and synchronous planner work cannot be preempted, and the CLI checks
+  immediately after those operations return.
+- **Test worker path:** the frontend integration test resolves the worker beside
+  Cargo's `CARGO_BIN_EXE_ade-query` in the active target directory and fails with
+  an explicit build prerequisite if it is absent. The focused worker build must
+  enable `research-hooks`, matching the frontend test graph's `ade-bench`
+  feature. A non-default target-directory alias run passed.
+
+The initial focused worker run used a worker without `research-hooks` and failed
+at request decoding; rebuilding the worker with matching features resolved that
+test setup error. A sandboxed run also denied loopback bind; the real-worker test
+was rerun with localhost access and passed. No timing campaign was run.
+
+Final remediation verification on the working source:
+
+- `cargo fmt --all -- --check` — PASS.
+- `cargo check --workspace --all-targets --offline` — PASS.
+- `cargo clippy --workspace --all-targets --all-features --offline -- -D warnings` — PASS.
+- `cargo build --workspace --all-features --offline` — PASS.
+- `cargo test -p ade-frontend --test queries --offline` — PASS, 11 tests, with
+  an explicitly prebuilt matching-feature worker. The aggregate and projected
+  join cases cover tiny-byte refusal, exact byte boundary and multi-batch output;
+  the join empty-output case succeeds with a one-byte cap.
+- `cargo test --workspace --all-features --offline` — PASS, 178 tests and no
+  doc-test failures, including real 2/4-worker aggregate, join, recovery and
+  leased-scheduler regressions.
+- `CARGO_TARGET_DIR=/private/tmp/ade-phase11-target-alias cargo test -p ade-frontend --test queries --offline real_distributed_aggregate_and_join_oracle -- --exact --nocapture` — PASS using the non-default target-directory alias.
+- `bash scripts/smoke.sh` — PASS. Its one-sample ADE comparison classifies as a
+  regression; that correctness smoke is not performance acceptance or a Phase10
+  guard result.
+- `git diff --check` — PASS.
+
+The successful bounded-v1 outcome remains limited to its documented frontend
+matrix. Phase 10 remains PARTIAL with all six frozen timing guards failed and
+fixed physical membership; those gates were not rerun or reclassified.

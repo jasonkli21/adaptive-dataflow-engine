@@ -16,9 +16,15 @@ target, semantic distribution, version and plan hash. `execute` prints diagnosti
 and rows only after success and source postflight. The CLI default output cap is
 1000 rows/16MiB; use `--max-output-rows`/`--max-output-bytes` within v1 ceilings.
 A cap overflow is a failure, never silent truncation. Use sorted SQL LIMIT for a
-prefix. `--manifest` selects an explicit manifest, `--sql-file` reads bounded SQL,
-`--memory-limit-bytes`, `--timeout-ms` and `--workers` set native controls.
-Execution performs no output file writes. Sources must remain immutable.
+prefix. `--manifest` selects an explicit manifest and `--sql-file` reads bounded SQL.
+`--timeout-ms` is one cooperative end-to-end budget spanning source registration,
+SQL planning and native execution; the CLI passes the remaining time to execution.
+Filesystem calls and synchronous portions of SQL planning cannot be preempted, so
+the deadline is checked as soon as those calls return. The reusable Rust
+`register_manifest` API keeps its independent 120-second default; callers can use
+`register_manifest_until` and `execute_until` to share one absolute deadline
+through native execution. `--memory-limit-bytes` and `--workers` set native
+controls. Execution performs no output file writes. Sources must remain immutable.
 
 The Rust API has the same compilation and native execution path:
 
@@ -58,10 +64,23 @@ remain out of scope. There is no DataFusion execution fallback.
 Source ceilings are 64 files/1m rows/64MiB per registered table; metadata/footer
 <=1MiB and declared uncompressed row group<=16MiB. Plans have <=64 nodes and
 256KiB canonical serialization; SQL<=16KiB. Output ceiling is 1m rows/64MiB of
-accounted Arrow buffers plus batch metadata. Managed task memory, exchange queues
-and decoder/allocator transients are separate; no total RSS cap is promised.
+accounted Arrow buffers plus batch metadata. Distributed aggregate and join
+collectors adapt and account each decoded output batch before retaining it in the
+result vector. A refusal returns no batches. Managed task memory, exchange queues
+and decoder/allocator transients are separate; this is not a total RSS cap.
 Registration and execution verify all listed files; extra directory files cannot
 enter a query. Source identities exclude absolute dataset-root paths.
+
+The real-worker frontend integration tests locate `ade-worker` beside
+`CARGO_BIN_EXE_ade-query` in Cargo's active target directory. The
+`cargo test --workspace` command builds it as part of the workspace gate. When
+running only the frontend integration target, build the worker into that same
+target directory first, for example:
+
+```bash
+cargo build -p ade-distributed --bin ade-worker --features research-hooks
+cargo test -p ade-frontend --test queries
+```
 
 Phase 10 remains PARTIAL with its six frozen timing failures and fixed physical
 membership. Phase 11 makes no performance claim and does not change those gates.

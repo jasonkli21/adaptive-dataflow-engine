@@ -647,12 +647,16 @@ impl BenchmarkEngine for AdeDistributedEngine {
                     return Err(Error::Invalid("metrics run identity is not UTF-8".into()));
                 }
             };
-            let mut file = std::fs::OpenOptions::new()
+            let file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(path)?;
+            // Bound diagnostic buffering; keep encoding, flush and errors inside
+            // the original query interval for both static and leased controls.
+            let mut file = std::io::BufWriter::with_capacity(64 * 1024, file);
             serde_json::to_writer(&mut file, &record)?;
             file.write_all(b"\n")?;
+            file.flush()?;
         }
         tracing::debug!(metrics = %serde_json::to_string(&output.metrics)?, "ADE distributed execution");
         Ok(output.batches)

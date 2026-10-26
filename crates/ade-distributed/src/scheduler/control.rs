@@ -163,6 +163,7 @@ impl Drop for Service {
 pub(crate) struct Client {
     spec: Spec,
     worker: WorkerId,
+    socket: Mutex<std::net::TcpStream>,
     active: Arc<Mutex<Option<Lease>>>,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -179,9 +180,11 @@ impl Client {
         let active = Arc::new(Mutex::new(None::<Lease>));
         let stop = Arc::new(AtomicBool::new(false));
         let heartbeat = Duration::from_millis(c.heartbeat_ms);
+        let socket = protocol::connect(spec.address, Duration::from_millis(1000))?;
         let mut client = Self {
             spec: spec.clone(),
             worker,
+            socket: Mutex::new(socket),
             active: active.clone(),
             stop: stop.clone(),
             handle: None,
@@ -195,18 +198,34 @@ impl Client {
         #[cfg(not(feature = "research-hooks"))]
         let skip_heartbeats = false;
         client.handle = Some(thread::spawn(move || {
+            let mut socket = None;
             while !stop.load(Ordering::Acquire) {
                 thread::park_timeout(heartbeat);
                 if stop.load(Ordering::Acquire) {
                     break;
                 }
                 let l = active.lock().expect("active lease");
-                if !skip_heartbeats
-                    && let Some(lease) = l.as_ref()
-                    && call(&spec, worker, Op::Renew(lease.clone()), deadline).is_err()
-                {
-                    token.cancel();
-                    break;
+                if !skip_heartbeats && let Some(lease) = l.as_ref() {
+                    let result = (|| {
+                        // Parked participants do not reserve a first-frame socket.
+                        if socket.is_none() {
+                            socket = Some(protocol::connect(
+                                spec.address,
+                                Duration::from_millis(1000),
+                            )?);
+                        }
+                        call(
+                            socket.as_mut().expect("renewal socket"),
+                            &spec,
+                            worker,
+                            Op::Renew(lease.clone()),
+                            deadline,
+                        )
+                    })();
+                    if result.is_err() {
+                        token.cancel();
+                        break;
+                    }
                 }
             }
         }));
@@ -214,9 +233,14 @@ impl Client {
     }
     fn call(&self, op: Op) -> Result<Response> {
         self.token.check()?;
-        call(&self.spec, self.worker, op, self.deadline)
+        let mut socket = self
+            .socket
+            .lock()
+            .map_err(|_| Error::Invalid("scheduler client poisoned".into()))?;
+        call(&mut socket, &self.spec, self.worker, op, self.deadline)
     }
     pub(crate) fn next(&self) -> Result<Option<Lease>> {
+        let mut backoff = Duration::from_micros(250);
         loop {
             match self.call(Op::Acquire)? {
                 Response::Lease(l) => {
@@ -225,7 +249,10 @@ impl Client {
                     return Ok(Some(l));
                 }
                 Response::Finish => return Ok(None),
-                Response::Wait => thread::sleep(Duration::from_millis(5)),
+                Response::Wait => {
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(Duration::from_millis(5));
+                }
                 _ => return Err(Error::Invalid("invalid acquire reply".into())),
             }
         }
@@ -250,18 +277,26 @@ impl Client {
         )
     }
 }
-fn call(spec: &Spec, worker: WorkerId, op: Op, deadline: Instant) -> Result<Response> {
+fn call(
+    socket: &mut std::net::TcpStream,
+    spec: &Spec,
+    worker: WorkerId,
+    op: Op,
+    deadline: Instant,
+) -> Result<Response> {
     require(Instant::now() < deadline, "scheduler client deadline")?;
-    let mut socket = protocol::connect(spec.address, Duration::from_millis(1000))?;
-    let mut socket = protocol::DeadlineStream::new(&mut socket, Duration::from_millis(1000));
+    // No retry after an ambiguous write/read: the caller fails and cancels.
+    let mut frame = Vec::new();
     protocol::write_message(
-        &mut socket,
+        &mut frame,
         &Rpc {
             fence: spec.fence.clone(),
             worker,
             op,
         },
     )?;
+    let mut socket = protocol::DeadlineStream::new(socket, Duration::from_millis(1000));
+    std::io::Write::write_all(&mut socket, &frame)?;
     match protocol::read_message(&mut socket)? {
         Response::Failed(s) => Err(Error::Invalid(s)),
         r => Ok(r),
@@ -273,111 +308,6 @@ impl Drop for Client {
         if let Some(h) = self.handle.take() {
             h.thread().unpark();
             let _ = h.join();
-        }
-    }
-}
-
-/// Hash bounded chunks with cancellation/deadline checks between OS reads.
-/// A single blocked kernel read retains the documented non-preemptibility limit.
-pub(crate) fn verify_sources(
-    morsels: &[super::SourceMorsel],
-    token: &CancellationToken,
-    deadline: Instant,
-) -> Result<()> {
-    // One bounded scratch allocation for the whole catalog/pass.
-    let mut bytes = vec![0u8; 256 * 1024];
-    for morsel in morsels {
-        token.check()?;
-        require(
-            Instant::now() < deadline,
-            "scheduler source verification deadline",
-        )?;
-        let mut file = std::fs::File::open(&morsel.path)?;
-        require(
-            file.metadata()?.len() == morsel.bytes,
-            "source snapshot size mismatch",
-        )?;
-        verify_reader(&mut file, morsel, token, deadline, &mut bytes)?;
-    }
-    Ok(())
-}
-
-fn verify_reader(
-    file: &mut impl std::io::Read,
-    morsel: &super::SourceMorsel,
-    token: &CancellationToken,
-    deadline: Instant,
-    bytes: &mut [u8],
-) -> Result<()> {
-    let mut digest = blake3::Hasher::new();
-    let mut read = 0u64;
-    loop {
-        token.check()?;
-        require(
-            Instant::now() < deadline,
-            "scheduler source verification deadline",
-        )?;
-        let n = file.read(bytes)?;
-        if n == 0 {
-            break;
-        }
-        read = read
-            .checked_add(n as u64)
-            .ok_or_else(|| Error::Invalid("source verification byte overflow".into()))?;
-        require(read <= morsel.bytes, "source grew during verification")?;
-        digest.update(&bytes[..n]);
-    }
-    require(
-        read == morsel.bytes && digest.finalize().to_hex().as_str() == morsel.fingerprint,
-        "source snapshot fingerprint mismatch",
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    struct InterruptRead {
-        token: CancellationToken,
-        expire: bool,
-    }
-    impl std::io::Read for InterruptRead {
-        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-            bytes.fill(42);
-            if self.expire {
-                thread::sleep(Duration::from_millis(3));
-            } else {
-                self.token.cancel();
-            }
-            Ok(bytes.len())
-        }
-    }
-    #[test]
-    fn source_pass_checks_cancellation_and_deadline_between_chunks() {
-        for expire in [false, true] {
-            let token = CancellationToken::default();
-            let mut reader = InterruptRead {
-                token: token.clone(),
-                expire,
-            };
-            let morsel = super::super::SourceMorsel {
-                id: crate::ids::MorselId(0),
-                path: "/unused".into(),
-                bytes: 1024 * 1024,
-                fingerprint: "a".repeat(64),
-            };
-            let error = verify_reader(
-                &mut reader,
-                &morsel,
-                &token,
-                Instant::now() + Duration::from_millis(if expire { 1 } else { 1000 }),
-                &mut vec![0; 256 * 1024],
-            )
-            .unwrap_err();
-            if expire {
-                assert!(error.to_string().contains("verification deadline"));
-            } else {
-                assert!(token.check().is_err());
-            }
         }
     }
 }

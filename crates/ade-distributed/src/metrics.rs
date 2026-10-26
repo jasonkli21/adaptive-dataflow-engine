@@ -23,6 +23,10 @@ impl NetworkMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
+    #[serde(default)]
+    pub source_hash_threads: usize,
+    #[serde(default)]
+    pub source_hash_scratch_peak_bytes: usize,
     /// Subsets of `operator_work_ns`, exclusive of upstream pulls and send calls.
     #[serde(default)]
     pub scan_decode_ns: u64,
@@ -67,6 +71,10 @@ pub struct TaskMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    #[serde(default)]
+    pub admission_hash_threads: usize,
+    #[serde(default)]
+    pub admission_hash_scratch_peak_bytes: usize,
     #[serde(default)]
     pub source_admission_ns: u64,
     #[serde(default)]

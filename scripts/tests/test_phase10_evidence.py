@@ -191,5 +191,30 @@ class SealedArtifactTests(ReadinessTests):
 
 
 
+class ResourceTests(unittest.TestCase):
+    def test_hash_and_provisional_buffer_bounds_including_parked_producers(self):
+        spec = importlib.util.spec_from_file_location('p10verify_resources', pathlib.Path(__file__).resolve().parents[1] / 'phase10-verify.py')
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        for workers in [2, 3, 4]:
+            metrics = dict(admission_hash_threads=8, admission_hash_scratch_peak_bytes=2 * 1024 * 1024,
+                producers={str(w): dict(source_files=1 if w else 0, source_hash_threads=8 // workers,
+                    source_hash_scratch_peak_bytes=1024 * 1024 if w else 0,
+                    routing_buffer_capacity_rows=workers * 1024, routing_buffer_peak_rows=100 if w else 0)
+                    for w in range(workers)})
+            verifier.check_resources(metrics, workers)
+            mutations = [
+                lambda m: m.update(admission_hash_threads=9),
+                lambda m: m.update(admission_hash_scratch_peak_bytes=2 * 1024 * 1024 + 1),
+                lambda m: m['producers']['1'].update(source_hash_threads=9),
+                lambda m: m['producers']['0'].update(source_hash_scratch_peak_bytes=1024 * 1024),
+                lambda m: m['producers']['1'].update(routing_buffer_peak_rows=workers * 1024 + 1),
+            ]
+            for mutate in mutations:
+                bad = copy.deepcopy(metrics)
+                mutate(bad)
+                with self.assertRaises(verifier.VerificationError): verifier.check_resources(bad, workers)
+
+
 if __name__ == '__main__':
     unittest.main()

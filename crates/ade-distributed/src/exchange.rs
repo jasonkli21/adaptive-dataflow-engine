@@ -287,13 +287,18 @@ impl Sender {
             staging.push(bytes, &self.cancellation)?;
         }
         let mut socket = protocol::DeadlineStream::new(&mut self.socket, crate::IO_TIMEOUT);
-        socket.write_all(
-            &u32::try_from(bytes.len())
-                .expect("bounded frame")
-                .to_le_bytes(),
+        let size = u32::try_from(bytes.len())
+            .expect("bounded frame")
+            .to_le_bytes();
+        let sequence = self.metrics.batches.to_le_bytes();
+        protocol::write_all_vectored(
+            &mut socket,
+            &mut [
+                std::io::IoSlice::new(&size),
+                std::io::IoSlice::new(&sequence),
+                std::io::IoSlice::new(bytes),
+            ],
         )?;
-        socket.write_all(&self.metrics.batches.to_le_bytes())?;
-        socket.write_all(bytes)?;
         self.fingerprint.update(&self.metrics.batches.to_le_bytes());
         self.fingerprint.update(&(bytes.len() as u64).to_le_bytes());
         self.fingerprint.update(bytes);

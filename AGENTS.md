@@ -44,11 +44,17 @@ file-morsel leasing, stealing and elastic producer participation in a fixed
 The user explicitly authorized Phase 11 bounded v1 on 2026-10-25 despite Phase 10 debt.
 Phase 11 bounded v1 is COMPLETE under docs/plans/phase-11-implementation-plan.md
 and ADR-0018. On 2026-10-26 the user authorized repo-wide readiness and bounded
-Phase 10 remediation, with at most two measured performance candidates and no
-subagents. This stabilization is the current scope; it does not widen recovery,
+Phase 10 remediation, without subagents. After the first measured candidate
+failed, the user explicitly instructed continued reassessment and remediation
+until the failures are addressed, superseding the earlier two-candidate time box. This stabilization is the current scope; it does not widen recovery,
 frontend admission or physical membership. Preserve historical source identities
 and failed gates. Static remains the supported default; leased scheduling remains
 experimental and unpromoted until all unchanged gates pass. Do not begin Phase 12.
+The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
+one measured candidate at fcc325e passes correctness but fails all six timing
+guards. The user subsequently authorized further source/scan and contribution work
+within the same bounded Phase 10 contract. Preserve every failed candidate and
+all six original gates; do not infer physical elasticity or Phase 12 authorization.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec` and `ade-frontend -> ade-physical`;
   native runtimes may depend on ade-physical, never on the frontend/DataFusion.

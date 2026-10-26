@@ -22,7 +22,8 @@ pub struct SpillMetrics {
 }
 #[derive(Debug)]
 pub struct SpillManager {
-    root: tempfile::TempDir,
+    root: Option<tempfile::TempDir>,
+    parent: Option<PathBuf>,
     pub metrics: SpillMetrics,
     read_bytes: Arc<AtomicU64>,
 }
@@ -34,14 +35,34 @@ impl SpillManager {
             tempfile::tempdir()?
         };
         Ok(Self {
-            root,
+            root: Some(root),
+            parent: None,
             metrics: SpillMetrics::default(),
             read_bytes: Arc::new(AtomicU64::new(0)),
         })
     }
+    /// File-local raw partials often never spill. Own the same cleanup boundary
+    /// without filesystem work until the first real spill; no shared directory.
+    pub(crate) fn lazy(parent: Option<&Path>) -> Self {
+        Self {
+            root: None,
+            parent: parent.map(Path::to_path_buf),
+            metrics: SpillMetrics::default(),
+            read_bytes: Arc::new(AtomicU64::new(0)),
+        }
+    }
     pub fn create(&mut self, id: OperatorId) -> Result<(PathBuf, File)> {
+        if self.root.is_none() {
+            self.root = Some(if let Some(parent) = &self.parent {
+                tempfile::tempdir_in(parent)?
+            } else {
+                tempfile::tempdir()?
+            });
+        }
         let path = self
             .root
+            .as_ref()
+            .expect("created spill root")
             .path()
             .join(format!("op-{}-{}.spill", id.0, self.metrics.files));
         let file = File::options().write(true).create_new(true).open(&path)?;
@@ -68,7 +89,9 @@ impl SpillManager {
         metrics
     }
     pub fn close(self) -> Result<()> {
-        self.root.close()?;
+        if let Some(root) = self.root {
+            root.close()?;
+        }
         Ok(())
     }
 }
@@ -96,6 +119,31 @@ impl Read for SpillReader {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn lazy_root_is_created_only_for_a_real_spill_and_closes_or_drops() {
+        let parent = tempfile::tempdir().unwrap();
+        for close in [false, true] {
+            let mut spill = SpillManager::lazy(Some(parent.path()));
+            assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+            let (path, mut file) = spill.create(OperatorId(0)).unwrap();
+            file.write_all(b"partial").unwrap();
+            drop(file);
+            spill.wrote(&path).unwrap();
+            assert_eq!(spill.snapshot().write_bytes, 7);
+            assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 1);
+            if close {
+                spill.close().unwrap();
+            } else {
+                drop(spill);
+            }
+            assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+        }
+        SpillManager::lazy(Some(parent.path())).close().unwrap();
+        let mut spill = SpillManager::lazy(Some(&parent.path().join("missing")));
+        assert!(spill.create(OperatorId(0)).is_err());
+        spill.close().unwrap();
+    }
+
     #[test]
     fn read_metrics_count_consumed_bytes_and_root_is_removed() {
         let parent = tempfile::tempdir().unwrap();

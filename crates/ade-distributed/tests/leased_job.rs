@@ -150,6 +150,20 @@ fn check(
         (workers * workers) as u64
     );
     assert_eq!(output.metrics.gather.transfers, workers as u64);
+    for (wid, producer) in &output.metrics.producers {
+        assert_eq!(producer.routing_buffer_capacity_rows, workers * 1024);
+        assert!(producer.routing_buffer_peak_rows <= producer.routing_buffer_capacity_rows);
+        assert_eq!(producer.sent.rows, producer.output_rows as u64);
+        assert_eq!(
+            producer.output_rows as u64,
+            m.entries
+                .iter()
+                .filter_map(|e| e.completion.as_ref())
+                .filter(|c| c.lease.worker.0 == *wid)
+                .map(|c| c.output_rows)
+                .sum::<u64>()
+        );
+    }
 }
 #[test]
 fn leased_exact_oracle_coverage_two_three_four_workers_and_empty_terminals() {

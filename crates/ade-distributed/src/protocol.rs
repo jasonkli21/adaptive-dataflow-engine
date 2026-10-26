@@ -136,13 +136,32 @@ pub fn write_message(stream: &mut impl Write, message: &impl Serialize) -> Resul
     // The bounded writer rejects growth before allocation, including caller-created large requests.
     let mut bytes = crate::exchange::BoundedBuffer::new(MAX_CONTROL_BYTES);
     serde_json::to_writer(&mut bytes, message)?;
-    stream.write_all(MAGIC)?;
-    stream.write_all(
-        &u32::try_from(bytes.0.len())
-            .map_err(|_| Error::Invalid("control length overflow".into()))?
-            .to_le_bytes(),
+    let size = u32::try_from(bytes.0.len())
+        .map_err(|_| Error::Invalid("control length overflow".into()))?
+        .to_le_bytes();
+    write_all_vectored(
+        stream,
+        &mut [
+            std::io::IoSlice::new(MAGIC),
+            std::io::IoSlice::new(&size),
+            std::io::IoSlice::new(&bytes.0),
+        ],
     )?;
-    stream.write_all(&bytes.0)?;
+    Ok(())
+}
+pub(crate) fn write_all_vectored(
+    stream: &mut impl Write,
+    mut buffers: &mut [std::io::IoSlice<'_>],
+) -> std::io::Result<()> {
+    std::io::IoSlice::advance_slices(&mut buffers, 0);
+    while !buffers.is_empty() {
+        match stream.write_vectored(buffers) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(n) => std::io::IoSlice::advance_slices(&mut buffers, n),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
     Ok(())
 }
 /// # Errors
@@ -243,6 +262,10 @@ impl Read for DeadlineStream<'_> {
     }
 }
 impl Write for DeadlineStream<'_> {
+    fn write_vectored(&mut self, bytes: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        self.socket.set_write_timeout(Some(self.remaining()?))?;
+        self.socket.write_vectored(bytes)
+    }
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         self.socket.set_write_timeout(Some(self.remaining()?))?;
         self.socket.write(bytes)
@@ -255,6 +278,69 @@ impl Write for DeadlineStream<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vectored_write_handles_partial_fallback_interruption_and_zero() {
+        #[derive(Default)]
+        struct Partial {
+            bytes: Vec<u8>,
+            interrupted: bool,
+            zero: bool,
+        }
+        impl Write for Partial {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if !self.interrupted {
+                    self.interrupted = true;
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                if self.zero {
+                    return Ok(0);
+                }
+                let n = bytes.len().min(2);
+                self.bytes.extend_from_slice(&bytes[..n]);
+                Ok(n)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut output = Partial::default();
+        write_all_vectored(
+            &mut output,
+            &mut [
+                std::io::IoSlice::new(b""),
+                std::io::IoSlice::new(b"length"),
+                std::io::IoSlice::new(b"sequence"),
+                std::io::IoSlice::new(b"data"),
+                std::io::IoSlice::new(b""),
+            ],
+        )
+        .unwrap();
+        assert_eq!(output.bytes, b"lengthsequencedata");
+        write_all_vectored(&mut output, &mut [std::io::IoSlice::new(b"")]).unwrap();
+        output.zero = true;
+        assert_eq!(
+            write_all_vectored(&mut output, &mut [std::io::IoSlice::new(b"x")])
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::WriteZero
+        );
+    }
+
+    #[test]
+    fn vectored_write_retains_total_deadline() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut socket = connect(listener.local_addr().unwrap(), Duration::from_secs(1)).unwrap();
+        let (_peer, _) = listener.accept().unwrap();
+        let mut bounded = DeadlineStream::new(&mut socket, Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(3));
+        assert_eq!(
+            write_all_vectored(&mut bounded, &mut [std::io::IoSlice::new(b"x")])
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::TimedOut
+        );
+    }
+
     #[test]
     fn total_deadline_rejects_a_continuously_progressing_peer() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

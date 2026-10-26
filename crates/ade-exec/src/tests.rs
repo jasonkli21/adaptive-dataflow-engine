@@ -1017,3 +1017,96 @@ fn adaptive_partial_releases_hash_before_tail_and_cleans_on_cancel() {
     assert_eq!(memory.snapshot().current, 0);
     assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn explicit_projected_parquet_matches_full_scan_projection_and_refuses_bad_columns() {
+    let (_root, full) = fixture(&[i64::MIN, 2, 3, 4, i64::MAX, -8, 0]);
+    let LocalPlan::ParquetScan { files, batch_size } = full.clone() else {
+        panic!("fixture")
+    };
+    for prefetch in [0, 1] {
+        let plan = |input| LocalPlan::Project {
+            input: Box::new(input),
+            columns: vec!["value".into(), "key".into()],
+        };
+        let config = ExecutionConfig {
+            prefetch_batches: prefetch,
+            ..ExecutionConfig::default()
+        };
+        let reference = execute_with_config(
+            plan(full.clone()),
+            config.clone(),
+            CancellationToken::default(),
+        )
+        .unwrap();
+        let projected = LocalPlan::ProjectedParquetScan {
+            files: files.clone(),
+            batch_size,
+            columns: vec!["value".into(), "key".into()],
+        };
+        let actual =
+            execute_with_config(plan(projected), config, CancellationToken::default()).unwrap();
+        assert_eq!(reference.batches, actual.batches);
+        assert!(actual.batches.iter().all(|b| b.num_columns() == 2));
+        assert_eq!(actual.metrics.output_rows, 7);
+    }
+    for columns in [vec![], vec!["missing".into()]] {
+        assert!(
+            execute(
+                LocalPlan::ProjectedParquetScan {
+                    files: files.clone(),
+                    batch_size,
+                    columns
+                },
+                CancellationToken::default()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn unordered_file_partials_conserve_rows_with_spill_and_propagate_sink_errors() {
+    let (_data, scan) = phase2_fixture(5000, 5000);
+    let plan = LocalPlan::HashAggregate {
+        input: Box::new(scan),
+        key: "key".into(),
+        value: "value".into(),
+    };
+    let expected: BTreeMap<_, _> = (0..5000u64)
+        .map(|i| ((i * 37) % 5000, (i128::from(i % 97) - 48, 1)))
+        .collect();
+    for limit in [20_000, 32 * 1024 * 1024] {
+        let config = ExecutionConfig {
+            memory_limit_bytes: limit,
+            output_batch_rows: 32,
+            ..ExecutionConfig::default()
+        };
+        let mut batches = Vec::new();
+        let metrics = execute_hash_partials_to_sink(
+            plan.clone(),
+            config.clone(),
+            CancellationToken::default(),
+            |batch| {
+                assert!(batch.num_rows() <= 32);
+                batches.push(batch);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(contribution_map(&batches), expected);
+        assert_eq!(metrics.managed.current, 0);
+        assert_eq!(metrics.spill.write_bytes > 0, limit == 20_000);
+        assert!(
+            execute_hash_partials_to_sink(
+                plan.clone(),
+                config,
+                CancellationToken::default(),
+                |_| Err(Error::Invalid("sink failure".into()))
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("sink failure")
+        );
+    }
+}

@@ -172,6 +172,66 @@ fn stalled_control_does_not_monopolize_minimum_lease_renewals() {
     assert!(first.next().is_err());
 }
 #[test]
+fn persistent_idle_main_session_retains_independent_renewals_and_closure() {
+    let fixture = ledger(2, 2);
+    let task = TaskConfig {
+        scheduler: Config {
+            lease_ms: 80,
+            heartbeat_ms: 20,
+            ..fixture.metrics.config.clone()
+        },
+        ..TaskConfig::default()
+    };
+    let workers = (0..2)
+        .map(|w| WorkerEndpoint {
+            id: WorkerId(w),
+            control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
+            exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let service = Service::start(
+        JobId(1),
+        "scope",
+        &workers,
+        &task,
+        fixture.metrics.source.clone(),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let first = Client::start(
+        service.spec.clone(),
+        WorkerId(0),
+        &task.scheduler,
+        CancellationToken::default(),
+    )
+    .unwrap();
+    let second = Client::start(
+        service.spec.clone(),
+        WorkerId(1),
+        &task.scheduler,
+        CancellationToken::default(),
+    )
+    .unwrap();
+    let a = first.next().unwrap().unwrap();
+    let b = second.next().unwrap().unwrap();
+    // Both main sockets are idle beyond the per-frame limit while separate
+    // persistent renewal sessions keep the minimum 80ms leases alive.
+    thread::sleep(Duration::from_millis(650));
+    assert!(service.ledger.lock().unwrap().failed.is_none());
+    assert!(service.ledger.lock().unwrap().metrics.renewals >= 20);
+    first.complete(ack(a)).unwrap();
+    second.complete(ack(b)).unwrap();
+    assert!(first.next().unwrap().is_none());
+    assert!(second.next().unwrap().is_none());
+    first.closed().unwrap();
+    second.closed().unwrap();
+    drop(first);
+    drop(second);
+    thread::sleep(Duration::from_millis(5));
+    service.finish().unwrap();
+}
+
+#[test]
 fn coverage_steal_duplicate_ack_and_bounded_log() {
     let mut l = ledger(16, 2);
     let first = next(&mut l, 0, 1);

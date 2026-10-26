@@ -17,6 +17,19 @@ def check_repetitions(run, workers):
     require(len(run['warmups']) == 1 and len(run['iterations']) == count, 'removed/best-only sample')
     return count
 
+def check_resources(metrics, workers):
+    require(metrics['admission_hash_threads'] == 8
+            and 0 < metrics['admission_hash_scratch_peak_bytes'] <= 8 * 256 * 1024,
+            'catalog hash resource bounds')
+    for task in metrics['producers'].values():
+        require(task['source_hash_threads'] == 8 // workers,
+                'producer hash thread budget')
+        require(task['source_hash_scratch_peak_bytes'] == (1024 * 1024 if task['source_files'] else 0),
+                'producer hash scratch bound')
+        require(task['routing_buffer_capacity_rows'] == workers * 1024
+                and 0 <= task['routing_buffer_peak_rows'] <= task['routing_buffer_capacity_rows'],
+                'provisional routing buffer bound')
+
 def check_source_identity(root, commit, runtime):
     identity = json.loads((root / 'source-identity.json').read_text())
     require(identity['schema_version'] == 1, 'unsupported source identity schema')
@@ -105,6 +118,7 @@ def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_
             require(p['source_files'] == len(expected[int(w)::n]), 'assertion failed at line 37')
         return
     s = m['scheduler']
+    check_resources(m, n)
     require(s['source'] == source, 'assertion failed at line 39')
     uuid.UUID(s['fence']['execution'])
     require(s['fence']['job'] == 0 and s['fence']['epoch'] == 1, 'assertion failed at line 40')

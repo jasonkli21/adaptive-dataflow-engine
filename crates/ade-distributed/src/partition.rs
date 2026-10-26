@@ -154,6 +154,9 @@ impl Pending {
     }
 }
 impl FramePacker {
+    pub(crate) fn pending_rows(&self) -> usize {
+        self.rows
+    }
     pub fn new(destinations: usize) -> Self {
         Self {
             pending: (0..destinations).map(|_| Pending::new()).collect(),

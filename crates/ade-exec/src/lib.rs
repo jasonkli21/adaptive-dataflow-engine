@@ -207,10 +207,22 @@ impl ExecContext {
         cancellation: CancellationToken,
         parent: Option<&std::path::Path>,
     ) -> Result<Self> {
+        Self::new_with_spill(config, cancellation, parent, false)
+    }
+    fn new_with_spill(
+        config: ExecutionConfig,
+        cancellation: CancellationToken,
+        parent: Option<&std::path::Path>,
+        lazy: bool,
+    ) -> Result<Self> {
         config.validate()?;
         Ok(Self {
             memory: MemoryManager::new(config.memory_limit_bytes)?,
-            spill: SpillManager::new(parent)?,
+            spill: if lazy {
+                SpillManager::lazy(parent)
+            } else {
+                SpillManager::new(parent)?
+            },
             external: None,
             config,
             cancellation,
@@ -266,6 +278,13 @@ pub enum LocalPlan {
     ParquetScan {
         files: Vec<PathBuf>,
         batch_size: usize,
+    },
+    /// Decode named root columns in source-schema order, deduplicating names.
+    /// Use Project to reorder the result. Every file's full schema is validated.
+    ProjectedParquetScan {
+        files: Vec<PathBuf>,
+        batch_size: usize,
+        columns: Vec<String>,
     },
     Filter {
         input: Box<Self>,
@@ -371,6 +390,60 @@ fn aggregate_schema() -> SchemaRef {
     ]))
 }
 impl Node {
+    fn scan(
+        files: Vec<PathBuf>,
+        batch_size: usize,
+        columns: Option<Vec<String>>,
+        cx: &mut ExecContext,
+    ) -> Result<(SchemaRef, Kind, &'static str)> {
+        if batch_size == 0 || files.is_empty() {
+            return Err(Error::Invalid(
+                "scan needs files and positive batch size".into(),
+            ));
+        }
+        let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(&files[0])?)?;
+        let source_schema = builder.schema().clone();
+        let projection = columns
+            .map(|names| {
+                let mut indices = names
+                    .iter()
+                    .map(|name| source_schema.index_of(name))
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                indices.sort_unstable();
+                indices.dedup();
+                if indices.is_empty() {
+                    return Err(Error::Invalid("empty source projection".into()));
+                }
+                Ok(indices)
+            })
+            .transpose()?;
+        let schema = match &projection {
+            Some(indices) => Arc::new(source_schema.project(indices)?),
+            None => source_schema.clone(),
+        };
+        Ok((
+            schema.clone(),
+            Kind::Scan({
+                let first = projection.as_ref().map(|_| Box::new(builder));
+                let scan = scan::SyncScan::new(files, source_schema, batch_size, projection, first);
+                if cx.config.prefetch_batches == 0 {
+                    scan::Scan::Sync(scan)
+                } else {
+                    scan::Scan::Prefetch(scan::Prefetch::start(
+                        scan,
+                        cx.config.prefetch_batches,
+                        cx.cancellation.clone(),
+                        cx.memory.clone(),
+                        OperatorId(
+                            u32::try_from(cx.metrics.operators.len())
+                                .map_err(|_| Error::Overflow("operator ID"))?,
+                        ),
+                    )?)
+                }
+            }),
+            "parquet-scan",
+        ))
+    }
     #[allow(
         clippy::too_many_lines,
         reason = "Exhaustive local plan compilation keeps IDs and validation together."
@@ -407,36 +480,13 @@ impl Node {
                 )
             }
             LocalPlan::ParquetScan { files, batch_size } => {
-                if batch_size == 0 || files.is_empty() {
-                    return Err(Error::Invalid(
-                        "scan needs files and positive batch size".into(),
-                    ));
-                }
-                let schema = ParquetRecordBatchReaderBuilder::try_new(File::open(&files[0])?)?
-                    .schema()
-                    .clone();
-                (
-                    schema.clone(),
-                    Kind::Scan({
-                        let scan = scan::SyncScan::new(files, schema.clone(), batch_size);
-                        if cx.config.prefetch_batches == 0 {
-                            scan::Scan::Sync(scan)
-                        } else {
-                            scan::Scan::Prefetch(scan::Prefetch::start(
-                                scan,
-                                cx.config.prefetch_batches,
-                                cx.cancellation.clone(),
-                                cx.memory.clone(),
-                                OperatorId(
-                                    u32::try_from(cx.metrics.operators.len())
-                                        .map_err(|_| Error::Overflow("operator ID"))?,
-                                ),
-                            )?)
-                        }
-                    }),
-                    "parquet-scan",
-                )
+                Self::scan(files, batch_size, None, cx)?
             }
+            LocalPlan::ProjectedParquetScan {
+                files,
+                batch_size,
+                columns,
+            } => Self::scan(files, batch_size, Some(columns), cx)?,
             LocalPlan::Filter {
                 input,
                 column: name,
@@ -1017,7 +1067,7 @@ pub fn execute_hash_partials_to_sink(
     cancellation: CancellationToken,
     mut sink: impl FnMut(RecordBatch) -> Result<()>,
 ) -> Result<ExecutionMetrics> {
-    let mut cx = ExecContext::new(config, cancellation, None)?;
+    let mut cx = ExecContext::new_with_spill(config, cancellation, None, true)?;
     let mut root = Node::build(plan, &mut cx)?;
     let result = (|| {
         let Kind::Aggregate {
@@ -1033,8 +1083,7 @@ pub fn execute_hash_partials_to_sink(
             ));
         };
         let mut drain =
-            aggregate::Aggregate::build(input, [*key, *value], None, root.id, &mut cx, None)?
-                .into_raw();
+            aggregate::Aggregate::build_partials(input, [*key, *value], root.id, &mut cx)?;
         loop {
             cx.cancellation.check()?;
             let start = Instant::now();

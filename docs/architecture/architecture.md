@@ -1029,8 +1029,18 @@ goals; elastic producer participation must not be described as full elasticity.
 This refines §§6.2,9,13,17,22,27–31 without weakening INV1–10.
 The 2026-10-26 stabilization isolates partial control peers with a single-thread,
 nonblocking set capped at 2*N+1 sockets and 500ms per frame; saturation or malformed
-traffic still aborts. Full pre/post content hashes remain, using 256KiB bounded
-scratch per verification call. See ADR-0017 for evidence-v2 and liveness limits.
+traffic still aborts. Continued remediation retains full admission/pre/post
+content hashes with a scoped pool capped at eight hash threads per job stage.
+File-level catalog hashing uses at most eight 256KiB buffers (2MiB total);
+a producer retains one 1MiB buffer and hashes each file in its scoped pool. These are separate from task/exchange ledgers. Persistent main and
+renewal sockets fence every request; the 500ms deadline covers each in-progress
+frame, while acknowledged idle sessions remain subject to stage/lease deadlines.
+The provisional sender session packs exact contributions into at most N*1024
+rows plus one transient frame. Per-file acceptance conserves sent+pending rows;
+post-read verification precedes ACK and pending rows flush before terminal hashes.
+The fixed table uses positive counts as occupancy, preserving bucket and spill
+thresholds while reserving compact storage. See ADR-0017 for failed candidates,
+source/ACK invariants, evidence-v2 and liveness limits.
 
 ---
 

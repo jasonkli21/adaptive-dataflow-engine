@@ -155,3 +155,99 @@ bundles use their archived verifier; new verification refuses to promote them.
 New optional diagnostic fields subdivide existing exclusive operator wall time;
 parallel producer/final sums are never job CPU or critical-path wall time.
 The dated readiness report records empirical outcomes and the promotion decision.
+
+
+Stabilization outcome: clean fcc325e passes 183 Rust/17 Python correctness tests,
+all 62 release children and the three reached negative stages, but all six original
+timing guards still fail. Only one measured candidate was used; source/scan
+critical-path evidence rules out a sufficient contribution/control-only fix.
+Leased scheduling stays experimental/unpromoted. See the 2026-10-26 readiness
+report; neither this amendment nor Phase 11 closes physical elasticity or permits
+Phase 12.
+
+
+## Continued measured remediation (2026-10-26)
+
+The user explicitly overrode the initial stopping/time-box recommendation after
+fcc325e and authorized continued work to address the six failures. Historical
+negative results stay unchanged. Refines §§7–9/13/22 and INV-4/5/9: source content
+checks may use an explicit bounded, scoped CPU pool (at most eight hash threads
+per active job stage; split across the fixed producer registry). No global pool,
+unsafe mapping, content-pass removal or metadata-only substitute is admitted.
+Parallel BLAKE3 must retain the canonical descriptor hash and cooperative checks
+between bounded chunks; threads/FDs/scratch and startup/teardown costs must be
+measured. An explicit projected scan may decode only the aggregate's key/value
+columns while full-file source hashes still bind all bytes. Legacy static scans
+and benchmark result schema remain unchanged. Diagnostic output may use bounded
+buffered writes for both controls and leased arms, retaining complete sidecars,
+all error propagation and the original measured query boundary. No samples or
+sidecar work may be silently excluded from timing.
+
+The continued implementation uses 4MiB hash chunks, lazily reused within the
+owned verifier; at most eight buffers/32MiB and eight 512KiB hash-thread stacks
+at coordinator admission. Producers split the eight-thread budget by registry
+size and retain one 4MiB scratch buffer each. Every pass reopens, reads and hashes
+the current file; cached bytes never stand in for identity verification. Grouped
+catalog tasks bound suspended nested parallel hashing to the thread count.
+All hash tasks/threads join and buffers release on success, cancellation or error.
+Task, exchange, hash scratch and process RSS remain distinct resource domains.
+
+Persistent control sessions retain the same ADETCP12 framing and full
+job/execution/epoch/digest/worker/lease fences on every request. A producer has
+one main socket and one lazily opened renewal socket, within the existing 2*N+1
+service cap. Acknowledged idle sessions have no partial-frame deadline; the first
+byte of each following request starts its 500ms deadline. EOF at an acknowledged
+frame boundary closes cleanly; truncation, pipelining, malformed input, deadlines
+and ambiguous responses cancel without retries. Acquire Wait uses bounded
+250us–5ms exponential backoff instead of a fixed 5ms sleep, retaining stage and
+control-operation caps. Leased worker preparation runs at most N scoped threads;
+source admission precedes it and every topology/prepare ACK precedes task launch.
+All preparation threads join before cancellation. Static preparation is unchanged.
+
+The isolated hash matrix confirms that extra producer hash threads remain useful
+on this host, while 4MiB chunks regress the four-worker path; retain that failed
+experiment and return to a 1MiB reusable chunk (8MiB catalog / 1MiB producer
+scratch). Continued profiles also identify file-local setup that does no useful
+work: opening the first Parquet footer twice, creating/removing an unused spill
+directory, and sorting a hash table immediately before its unordered raw partial
+drain. The leased raw-partial entry point may reuse its first validated reader,
+create its spill directory only on the first real spill, and bypass the unused
+sort. It must retain the existing bounded spill codec/merge, checked i128/count
+contributions, deterministic traversal, cancellation/error cleanup, and complete
+per-file ACKs. Normal aggregate output sorting and eager spill setup remain
+unchanged. No cross-file coalescer or contribution-count change is introduced.
+
+A further bounded contribution optimization reuses the existing row-preserving
+FramePacker in the leased producer's provisional sender session. This performs
+no keyed coalescing: every exact per-file contribution and count survives, in
+per-destination order. Before each ACK, cumulative successfully sent rows plus
+owned pending rows must advance by exactly that file's output_rows, and the full
+post-read content check must pass. Pending storage is at most N*1024 rows (N*24KiB)
+plus one transient frame, separate from the task ledger and receiver buffers.
+Drain flushes all pending rows before N terminal hashes and Closed. Ambiguity,
+source drift, sender failure or producer loss still cancels the entire job; an
+ACK remains provisional. Actual wire bytes, terminal hashes and contribution
+counters keep their existing meaning, so no protocol/sidecar version changes.
+The actual-frame death hook explicitly flushes a pending frame before exiting,
+retaining its mid-lease/pre-ACK failure point even on a small fixture.
+
+Vectored writes may join the existing length/sequence/payload buffers into a
+single socket operation, without an extra frame copy or altered wire bytes.
+Partial writes, interruptions, zero writes and the original total I/O deadline
+must be handled. This shared mechanism applies fairly to static and leased arms.
+Catalog hashing uses at most eight serial-per-file jobs concurrently, with
+256KiB reusable scratch per job (2MiB total) and at most 1024 bounded queued jobs;
+single-file producer passes keep their scoped parallel 1MiB chunks. Control polls
+use a bounded 10us sleep; control/stage/frame caps and cancellation remain.
+
+The packed diagnostic retains all exact rows but still misses uniform4. The next
+source reassessment compacts the shared fixed-capacity table: count=0 is an empty
+slot, since source and partial counts must be positive. A `(u64,i128,u64)` slot
+avoids the Option discriminant/padding; zero sums and key=0 remain ordinary rows.
+Keep the original slot-count/load/spill-capacity rule, hash/probe order, checked
+updates and sorted normal output. Charge actual compact storage to the existing
+reservation; reject zero-count insertion before mutation. This shared allocation
+improvement applies to both static and leased execution and retains the same
+spill codec. Test sentinel/zero/overflow/conservation cases. Restore the 100us
+service sleep: lower control latency is not sufficient justification for extra
+poll CPU competing with mandatory hashes. Preserve both negative experiments.

@@ -213,3 +213,29 @@ reads with both content checks intact. Phase 11 bounded v1 remains COMPLETE;
 original “No Phase11” wording above records historical scope. Physical process
 elasticity, leased failover and Phase 12 remain deferred. Failed guards prohibit
 promotion; static scheduling remains the supported default.
+
+
+## Continued remediation authorization (2026-10-26)
+
+After the source-bound fcc325e candidate failed all six guards, the user explicitly
+requested reassessment and continued implementation until the failures are
+addressed. This supersedes the handoff's two-candidate time box and initial
+stopping decision; it does not relax any gate or correctness invariant. Preserve
+every candidate/attempt and freeze clean source identities before measurement.
+The reassessment targets measured source verification, unnecessary decode,
+control/reporting overhead and bounded contribution handling. Full pre/post
+content identity, file-sized leases, exclusive owner/ACK truth, independent oracle,
+2–4 fixed processes and static defaults remain. Physical membership, leased
+recovery and Phase 12 remain out of scope. Dependency/public API decisions and
+bounds must be recorded in ADR-0017 before source changes.
+
+The continued bounded slice retains one manifest file per lease and every full
+content pass. Its mechanism work comprises explicit projected decoding; owned
+scoped content hashing; persistent fenced control sessions; bounded exact frame
+packing in provisional sender state; and file-local setup/table storage savings.
+Each file ACK requires exact sent+pending contribution conservation and successful
+post-read verification; every pending row flushes before terminal validation and
+gather commit. No keyed coalescer, source-identity shortcut, new scheduled unit,
+recovery envelope or default change is admitted. ADR-0017 specifies resources
+and implementation invariants. Native diagnostic 7 passes six comparisons but
+is not release acceptance; a clean, source-bound 13-arm release remains required.

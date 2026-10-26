@@ -188,9 +188,17 @@ fn task_metrics(
 }
 fn producer_plan(job: &Job, files: &[PathBuf]) -> LocalPlan {
     let input = Box::new(LocalPlan::Project {
-        input: Box::new(LocalPlan::ParquetScan {
-            files: files.to_vec(),
-            batch_size: job.spec.config.batch_size,
+        input: Box::new(if job.spec.schedule.is_some() {
+            LocalPlan::ProjectedParquetScan {
+                files: files.to_vec(),
+                batch_size: job.spec.config.batch_size,
+                columns: vec!["key".into(), "value_i64".into()],
+            }
+        } else {
+            LocalPlan::ParquetScan {
+                files: files.to_vec(),
+                batch_size: job.spec.config.batch_size,
+            }
         }),
         columns: vec!["key".into(), "value_i64".into()],
     });
@@ -393,6 +401,31 @@ fn producer(
     reason = "One persistent producer session owns lease completion and terminal closure."
 )]
 fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
+    crate::scheduler::with_verifier(
+        crate::scheduler::producer_threads(job.spec.workers.len()),
+        |verifier| leased_producer_with(job, task, verifier),
+    )
+}
+fn leased_provisional_rows(
+    senders: &[Option<Sender>],
+    packer: &partition::FramePacker,
+) -> Result<u64> {
+    senders
+        .iter()
+        .try_fold(packer.pending_rows() as u64, |rows, sender| {
+            rows.checked_add(sender.as_ref().map_or(0, |sender| sender.metrics.rows))
+                .ok_or_else(|| Error::Invalid("provisional row count overflow".into()))
+        })
+}
+#[allow(
+    clippy::too_many_lines,
+    reason = "Persistent sender set and scoped source verifier share one lease lifecycle."
+)]
+fn leased_producer_with(
+    job: &Job,
+    task: TaskId,
+    verifier: &crate::scheduler::source::Verifier<'_>,
+) -> Result<TaskMetrics> {
     let start = Instant::now();
     let token = job.store.cancellation.clone();
     let schedule = job.spec.schedule.as_ref().expect("leased spec");
@@ -412,7 +445,11 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
         )
     };
     let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
-    let mut metrics = TaskMetrics::default();
+    let mut packer = partition::FramePacker::new(job.spec.workers.len());
+    let mut metrics = TaskMetrics {
+        source_hash_threads: verifier.threads(),
+        ..TaskMetrics::default()
+    };
     loop {
         let wait_started = Instant::now();
         let next = client.next()?;
@@ -431,7 +468,7 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
             "lease source differs from frozen catalog",
         )?;
         let verify_started = Instant::now();
-        crate::scheduler::verify_sources(
+        verifier.verify(
             std::slice::from_ref(&lease.morsel),
             &token,
             start + crate::TASK_TIMEOUT,
@@ -447,50 +484,63 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
                 thread::sleep(Duration::from_millis(5));
             }
         }
+        let accepted_before = leased_provisional_rows(&senders, &packer)?;
         let file_start = Instant::now();
         let output = ade_exec::execute_hash_partials_to_sink(
             producer_plan(job, std::slice::from_ref(&lease.morsel.path)),
             job.spec.config.execution(),
             token.clone(),
             |batch| {
-                for p in 0..senders.len() {
-                    let route_start = Instant::now();
-                    let selected =
-                        partition::select(&batch, p, senders.len()).map_err(local_sink_error)?;
-                    metrics.routing_ns += crate::materialization::ns(route_start);
-                    if selected.num_rows() > 0 {
-                        let send_start = Instant::now();
-                        if senders[p].is_none() {
-                            senders[p] = Some(open(p).map_err(local_sink_error)?);
+                let route_started = Instant::now();
+                let sent_before = metrics.sending_ns;
+                let mut emit = |p: usize, selected: arrow::record_batch::RecordBatch| {
+                    let send_start = Instant::now();
+                    if senders[p].is_none() {
+                        senders[p] = Some(open(p)?);
+                    }
+                    senders[p].as_mut().expect("opened").batch(&selected)?;
+                    #[cfg(feature = "research-hooks")]
+                    if job.spec.config.scheduler.research_exit_after_emit_worker == Some(task.0) {
+                        eprintln!(
+                            "ADE_SCHEDULER_FAULT {}",
+                            serde_json::json!({
+                                "schema_version": 1, "stage": "exit_after_frame",
+                                "fence": schedule.fence, "lease": lease,
+                                "process_id": std::process::id(),
+                                "granted_ms": granted_ms, "at_ms": start.elapsed().as_millis(),
+                                "emitted_rows": selected.num_rows(), "emitted_frames": 1,
+                            })
+                        );
+                        std::process::exit(87);
+                    }
+                    metrics.sending_ns += crate::materialization::ns(send_start);
+                    Ok(())
+                };
+                packer
+                    .route(&batch, None, None, &mut emit)
+                    .map_err(local_sink_error)?;
+                // A small file may not fill a packed frame. The death hook must
+                // still reach a real nonempty socket write within this lease.
+                #[cfg(feature = "research-hooks")]
+                if job.spec.config.scheduler.research_exit_after_emit_worker == Some(task.0) {
+                    for p in 0..job.spec.workers.len() {
+                        if let Some(batch) = packer.finish(p).map_err(local_sink_error)? {
+                            emit(p, batch).map_err(local_sink_error)?;
                         }
-                        senders[p]
-                            .as_mut()
-                            .expect("opened")
-                            .batch(&selected)
-                            .map_err(local_sink_error)?;
-                        #[cfg(feature = "research-hooks")]
-                        if job.spec.config.scheduler.research_exit_after_emit_worker == Some(task.0)
-                        {
-                            eprintln!(
-                                "ADE_SCHEDULER_FAULT {}",
-                                serde_json::json!({
-                                    "schema_version": 1, "stage": "exit_after_frame",
-                                    "fence": schedule.fence, "lease": lease,
-                                    "process_id": std::process::id(),
-                                    "granted_ms": granted_ms, "at_ms": start.elapsed().as_millis(),
-                                    "emitted_rows": selected.num_rows(), "emitted_frames": 1,
-                                })
-                            );
-                            std::process::exit(87);
-                        }
-                        metrics.sending_ns += crate::materialization::ns(send_start);
                     }
                 }
+                metrics.routing_ns += crate::materialization::ns(route_started)
+                    .saturating_sub(metrics.sending_ns - sent_before);
                 Ok(())
             },
         )?;
+        require(
+            leased_provisional_rows(&senders, &packer)?.checked_sub(accepted_before)
+                == Some(output.output_rows as u64),
+            "file output not accepted into bounded provisional session",
+        )?;
         let verify_started = Instant::now();
-        crate::scheduler::verify_sources(
+        verifier.verify(
             std::slice::from_ref(&lease.morsel),
             &token,
             start + crate::TASK_TIMEOUT,
@@ -528,6 +578,24 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
             .checked_add(lease.morsel.bytes)
             .ok_or_else(|| Error::Invalid("leased bytes overflow".into()))?;
     }
+    metrics.routing_buffer_peak_rows = packer.peak_rows;
+    metrics.routing_buffer_capacity_rows = job.spec.workers.len() * crate::exchange::MAX_BATCH_ROWS;
+    for (p, sender) in senders.iter_mut().enumerate() {
+        if let Some(batch) = packer.finish(p)? {
+            let send_started = Instant::now();
+            if sender.is_none() {
+                *sender = Some(open(p)?);
+            }
+            sender.as_mut().expect("opened").batch(&batch)?;
+            metrics.sending_ns += crate::materialization::ns(send_started);
+        }
+    }
+    require(
+        packer.pending_rows() == 0
+            && leased_provisional_rows(&senders, &packer)? == metrics.output_rows as u64,
+        "packed lease output conservation",
+    )?;
+    metrics.source_hash_scratch_peak_bytes = verifier.scratch_peak();
     metrics.production.operator_work_ns = metrics.operator_work_ns;
     metrics.production.wall_elapsed_ns = crate::materialization::ns(start);
     metrics.production.source_requests = metrics.source_files as u64;

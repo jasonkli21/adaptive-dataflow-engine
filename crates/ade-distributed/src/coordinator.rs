@@ -250,6 +250,8 @@ fn execute_inner(
     let unique: BTreeSet<_> = job.files.iter().collect();
     require(unique.len() == job.files.len(), "duplicate source path")?;
     let admission_start = Instant::now();
+    let mut admission_hash_threads = 0;
+    let mut admission_hash_scratch_peak_bytes = 0;
     if let Some(snapshot) = &job.snapshot {
         snapshot.validate(&job.files)?;
         if job.config.scheduler.leased() {
@@ -261,11 +263,16 @@ fn execute_inner(
                 bytes <= job.config.scheduler.max_source_bytes,
                 "scheduler source byte cap",
             )?;
-            crate::scheduler::verify_sources(
-                &snapshot.morsels,
-                &ade_exec::CancellationToken::default(),
-                started + job.task_timeout.min(crate::TASK_TIMEOUT),
-            )?;
+            let resources = crate::scheduler::with_catalog_verifier(|verifier| {
+                verifier.verify(
+                    &snapshot.morsels,
+                    &ade_exec::CancellationToken::default(),
+                    started + job.task_timeout.min(crate::TASK_TIMEOUT),
+                )?;
+                Ok((verifier.threads(), verifier.scratch_peak()))
+            })?;
+            admission_hash_threads = resources.0;
+            admission_hash_scratch_peak_bytes = resources.1;
             require(
                 started.elapsed() < job.task_timeout,
                 "scheduler admission deadline",
@@ -293,33 +300,69 @@ fn execute_inner(
     let mut state = JobState::Prepared;
     let result = (|| {
         let prepare_start = Instant::now();
-        for worker in &job.workers {
+        let ping = |worker: &WorkerEndpoint| -> Result<()> {
             match control(job, worker, Request::Ping, "ping")? {
                 Reply::Pong(actual) => require(
                     actual.id == worker.id
                         && actual.control == worker.control
                         && actual.exchange == worker.exchange,
                     "Ping topology mismatch",
-                )?,
-                _ => return Err(Error::Invalid("unexpected Ping response".into())),
+                ),
+                _ => Err(Error::Invalid("unexpected Ping response".into())),
             }
-        }
-        for worker in &job.workers {
-            let spec = JobSpec {
-                schedule: scheduler.as_ref().map(|s| s.spec.clone()),
-                job: job.id,
-                execution_namespace: execution_namespace.clone(),
-                workers: job.workers.clone(),
-                config: job.config.clone(),
-                snapshot: job.snapshot.clone(),
-            };
+        };
+        let spec = JobSpec {
+            schedule: scheduler.as_ref().map(|s| s.spec.clone()),
+            job: job.id,
+            execution_namespace: execution_namespace.clone(),
+            workers: job.workers.clone(),
+            config: job.config.clone(),
+            snapshot: job.snapshot.clone(),
+        };
+        let prepare = |worker: &WorkerEndpoint| -> Result<()> {
             require(
                 matches!(
-                    control(job, worker, Request::PrepareJob(spec), "prepare")?,
+                    control(job, worker, Request::PrepareJob(spec.clone()), "prepare")?,
                     Reply::Ready
                 ),
                 "unexpected prepare response",
-            )?;
+            )
+        };
+        if scheduler.is_some() {
+            // At most one preparation thread per fixed registry member. Full
+            // source admission has already passed; no task starts until ALL
+            // acknowledgments arrive. Join every thread before cancellation.
+            thread::scope(|scope| {
+                let handles: Vec<_> = job
+                    .workers
+                    .iter()
+                    .map(|worker| {
+                        let ping = &ping;
+                        let prepare = &prepare;
+                        scope.spawn(move || {
+                            ping(worker)?;
+                            prepare(worker)
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| {
+                        handle
+                            .join()
+                            .map_err(|_| Error::Invalid("prepare thread panic".into()))?
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()
+            })?;
+        } else {
+            for worker in &job.workers {
+                ping(worker)?;
+            }
+            for worker in &job.workers {
+                prepare(worker)?;
+            }
         }
         let prepare_ns = crate::materialization::ns(prepare_start);
         let parent = tempfile::tempdir()?;
@@ -750,6 +793,8 @@ fn execute_inner(
             .filter_map(|p| finals.remove(&p).map(|m| (p, m)))
             .collect();
         let metrics = DistributedMetrics {
+            admission_hash_threads,
+            admission_hash_scratch_peak_bytes,
             source_admission_ns,
             prepare_ns,
             gather_collect_ns,

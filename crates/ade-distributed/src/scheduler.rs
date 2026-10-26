@@ -504,8 +504,12 @@ mod ledger;
 use ledger::Ledger;
 mod connection;
 mod control;
-pub(crate) use control::{Client, Service, verify_sources};
+pub(crate) use control::{Client, Service};
+pub(crate) mod source;
 use control::{Op, Response, Rpc};
+#[cfg(test)]
+use source::verify_sources;
+pub(crate) use source::{producer_threads, with_catalog_verifier, with_verifier};
 mod evidence;
 pub use evidence::verify_metrics;
 #[cfg(test)]

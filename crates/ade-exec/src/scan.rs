@@ -3,7 +3,10 @@ use crate::{
     memory::{MemoryManager, Reservation},
 };
 use arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
-use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
+use parquet::arrow::{
+    ProjectionMask,
+    arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder},
+};
 use std::{
     collections::VecDeque,
     fs::File,
@@ -17,14 +20,24 @@ pub(crate) struct SyncScan {
     reader: Option<ParquetRecordBatchReader>,
     schema: SchemaRef,
     batch_size: usize,
+    projection: Option<Vec<usize>>,
+    first: Option<Box<ParquetRecordBatchReaderBuilder<File>>>,
 }
 impl SyncScan {
-    pub fn new(files: Vec<PathBuf>, schema: SchemaRef, batch_size: usize) -> Self {
+    pub fn new(
+        files: Vec<PathBuf>,
+        schema: SchemaRef,
+        batch_size: usize,
+        projection: Option<Vec<usize>>,
+        first: Option<Box<ParquetRecordBatchReaderBuilder<File>>>,
+    ) -> Self {
         Self {
             files: files.into_iter(),
             reader: None,
             schema,
             batch_size,
+            projection,
+            first,
         }
     }
     pub fn next(&mut self, token: &CancellationToken) -> Result<Option<RecordBatch>> {
@@ -38,16 +51,26 @@ impl SyncScan {
             let Some(file) = self.files.next() else {
                 return Ok(None);
             };
-            let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(file)?)?;
+            let builder = match self.first.take() {
+                Some(builder) => *builder,
+                None => ParquetRecordBatchReaderBuilder::try_new(File::open(file)?)?,
+            };
             if builder.schema().as_ref() != self.schema.as_ref() {
                 return Err(Error::Invalid("scan file schemas differ".into()));
             }
+            let builder = if let Some(indices) = &self.projection {
+                let mask = ProjectionMask::roots(builder.parquet_schema(), indices.iter().copied());
+                builder.with_projection(mask)
+            } else {
+                builder
+            };
             self.reader = Some(builder.with_batch_size(self.batch_size).build()?);
         }
     }
 
     pub fn shutdown(&mut self) {
         self.reader.take();
+        self.first.take();
         self.files = Vec::new().into_iter();
     }
 }

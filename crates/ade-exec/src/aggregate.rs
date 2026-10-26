@@ -22,59 +22,65 @@ fn hash(key: u64) -> u64 {
     x ^ (x >> 31)
 }
 struct Table {
-    slots: Vec<Option<Partial>>,
+    // Positive counts make zero a safe empty sentinel, including key=0/sum=0.
+    slots: Vec<Partial>,
     len: usize,
     _reservation: Reservation,
 }
 impl Table {
     fn new(id: OperatorId, cx: &ExecContext) -> Result<Self> {
+        // Keep the established bucket-count/half-full spill threshold while
+        // reserving only actual compact storage, without Option padding.
         let count = (cx.config.memory_limit_bytes / 4 / std::mem::size_of::<Option<Partial>>())
             .clamp(2, 65536);
         let count = 1usize << count.ilog2();
         let mut reservation = cx.memory.reservation(id);
-        reservation.grow(count * std::mem::size_of::<Option<Partial>>())?;
+        reservation.grow(count * std::mem::size_of::<Partial>())?;
         Ok(Self {
-            slots: vec![None; count],
+            slots: vec![(0, 0, 0); count],
             len: 0,
             _reservation: reservation,
         })
     }
     fn add(&mut self, row: Partial) -> Result<bool> {
+        if row.2 == 0 {
+            return Err(Error::CorruptSpill("zero partial count"));
+        }
         let mask = self.slots.len() - 1;
         let mut index =
             usize::try_from(hash(row.0) & u64::try_from(mask).expect("mask")).expect("masked");
         loop {
-            match &mut self.slots[index] {
-                Some((key, sum, count)) if *key == row.0 => {
-                    let s = sum
-                        .checked_add(row.1)
-                        .ok_or(Error::Overflow("aggregate sum"))?;
-                    let n = count
-                        .checked_add(row.2)
-                        .ok_or(Error::Overflow("aggregate count"))?;
-                    *sum = s;
-                    *count = n;
-                    return Ok(true);
+            let slot = &mut self.slots[index];
+            if slot.2 == 0 {
+                if self.len >= self.slots.len() / 2 {
+                    return Ok(false);
                 }
-                None => {
-                    if self.len >= self.slots.len() / 2 {
-                        return Ok(false);
-                    }
-                    self.slots[index] = Some(row);
-                    self.len += 1;
-                    return Ok(true);
-                }
-                _ => index = (index + 1) & mask,
+                self.slots[index] = row;
+                self.len += 1;
+                return Ok(true);
             }
+            if slot.0 == row.0 {
+                let sum = slot
+                    .1
+                    .checked_add(row.1)
+                    .ok_or(Error::Overflow("aggregate sum"))?;
+                let count = slot
+                    .2
+                    .checked_add(row.2)
+                    .ok_or(Error::Overflow("aggregate count"))?;
+                *slot = (row.0, sum, count);
+                return Ok(true);
+            }
+            index = (index + 1) & mask;
         }
     }
     fn clear(&mut self) {
-        self.slots.fill(None);
+        self.slots.fill((0, 0, 0));
         self.len = 0;
     }
     fn sort(&mut self) {
         self.slots
-            .sort_unstable_by_key(|row| row.as_ref().map(|r| r.0));
+            .sort_unstable_by_key(|row| (row.2 != 0).then_some(row.0));
     }
 }
 pub(crate) struct Aggregate {
@@ -182,6 +188,25 @@ impl Aggregate {
         cx: &mut ExecContext,
         initial: Option<Self>,
     ) -> Result<Self> {
+        Self::build_ordered(input, columns, count, id, cx, initial, true)
+    }
+    pub(crate) fn build_partials(
+        input: &mut Node,
+        columns: [usize; 2],
+        id: OperatorId,
+        cx: &mut ExecContext,
+    ) -> Result<RawPartials> {
+        Self::build_ordered(input, columns, None, id, cx, None, false).map(Self::into_raw)
+    }
+    fn build_ordered(
+        input: &mut Node,
+        columns: [usize; 2],
+        count: Option<usize>,
+        id: OperatorId,
+        cx: &mut ExecContext,
+        initial: Option<Self>,
+        sorted: bool,
+    ) -> Result<Self> {
         let mut state = match initial {
             Some(state) => state,
             None => Self::new(id, cx)?,
@@ -194,7 +219,7 @@ impl Aggregate {
         if state.spilled {
             state.flush(id, cx)?;
             state.table.take();
-        } else {
+        } else if sorted {
             state.table.as_mut().expect("table").sort();
         }
         cx.work(id, start);
@@ -229,7 +254,7 @@ impl Aggregate {
             if !table
                 .slots
                 .iter()
-                .flatten()
+                .filter(|row| row.2 != 0)
                 .any(|r| hash(r.0) & 15 == p as u64)
             {
                 continue;
@@ -249,7 +274,7 @@ impl Aggregate {
             for &(key, sum, count) in table
                 .slots
                 .iter()
-                .flatten()
+                .filter(|row| row.2 != 0)
                 .filter(|r| hash(r.0) & 15 == p as u64)
             {
                 writer.write_all(&key.to_le_bytes())?;
@@ -324,7 +349,7 @@ impl Aggregate {
             let no_more_partitions = self.paths[self.partition..].iter().all(Option::is_none);
             let (result, exhausted) = {
                 let table = self.table.as_mut().expect("loaded");
-                while self.cursor < table.slots.len() && table.slots[self.cursor].is_none() {
+                while self.cursor < table.slots.len() && table.slots[self.cursor].2 == 0 {
                     self.cursor += 1;
                 }
                 if self.cursor == table.slots.len() {
@@ -345,7 +370,10 @@ impl Aggregate {
                 let mut sums = Vec::with_capacity(rows);
                 let mut counts = Vec::with_capacity(rows);
                 for slot in &table.slots[self.cursor..self.cursor + rows] {
-                    let (key, sum, count) = slot.expect("sorted suffix");
+                    let (key, sum, count) = *slot;
+                    if count == 0 {
+                        return Err(Error::CorruptSpill("sorted aggregate suffix"));
+                    }
                     keys.push(key);
                     sums.push(
                         i64::try_from(sum)
@@ -388,8 +416,8 @@ impl RawPartials {
             while self.slot < table.slots.len() {
                 let row = table.slots[self.slot];
                 self.slot += 1;
-                if row.is_some() {
-                    return Ok(row);
+                if row.2 != 0 {
+                    return Ok(Some(row));
                 }
             }
             self.state.table.take();
@@ -481,6 +509,33 @@ impl RawPartials {
 mod tests {
     use super::*;
     #[test]
+    fn compact_sentinel_keeps_zero_keys_zero_sums_and_failed_updates_atomic() {
+        let cx = ExecContext::new(
+            crate::ExecutionConfig::default(),
+            crate::CancellationToken::default(),
+            None,
+        )
+        .unwrap();
+        let mut table = Table::new(OperatorId(0), &cx).unwrap();
+        assert!(std::mem::size_of::<Partial>() < std::mem::size_of::<Option<Partial>>());
+        assert!(table.add((0, 0, 1)).unwrap());
+        assert!(table.add((0, 0, 2)).unwrap());
+        assert_eq!(table.len, 1);
+        assert!(table.add((1, i128::MAX, u64::MAX)).unwrap());
+        assert!(table.add((1, 1, 1)).is_err());
+        assert!(table.add((1, 0, 1)).is_err());
+        assert!(table.add((2, 0, 0)).is_err());
+        assert_eq!(table.len, 2);
+        table.sort();
+        assert_eq!(
+            &table.slots[table.slots.len() - 2..],
+            &[(0, 0, 3), (1, i128::MAX, u64::MAX)]
+        );
+        table.clear();
+        assert_eq!(table.len, 0);
+        assert!(table.slots.iter().all(|row| row.2 == 0));
+    }
+    #[test]
     fn partial_codec_and_checked_merge_reject_corruption() {
         let mut cx = ExecContext::new(
             crate::ExecutionConfig::default(),
@@ -511,7 +566,7 @@ mod tests {
         let mut table = Table::new(id, &cx).unwrap();
         assert!(table.add((1, i128::MAX, u64::MAX)).unwrap());
         assert!(matches!(
-            table.add((1, 1, 0)),
+            table.add((1, 1, 1)),
             Err(Error::Overflow("aggregate sum"))
         ));
         assert!(matches!(

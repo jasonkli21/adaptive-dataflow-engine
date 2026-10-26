@@ -38,13 +38,15 @@ B/C confirmations and all-nine pooled original gates pass; this is local evidenc
 Phase 9 bounded v1 remains accepted with review fixes at 3e89edf. Its frozen
 measurements belong to 9b0330a/runtime fab08a0, not this revision. The user has
 explicitly authorized Phase 10 implementation in this session. Phase10 implementation is partial: correctness passes but all6 release timing
-guards failed, and physical membership stays fixed. Phase 10 remains the
-active boundary under docs/plans/phase-10-implementation-plan.md and ADR-0017:
+guards failed, and physical membership stays fixed. Phase 10 remains PARTIAL under docs/plans/phase-10-implementation-plan.md and ADR-0017:
 file-morsel leasing, stealing and elastic producer participation in a fixed
 2–4-process registry. Preserve static defaults and accepted Phase6–9 contracts.
-Do not begin Phase11.
+The user explicitly authorized Phase 11 bounded v1 on 2026-10-25 despite Phase 10 debt.
+Phase 11 is the active scope under docs/plans/phase-11-implementation-plan.md
+and ADR-0018. Do not begin Phase 12.
 
-- Keep `ade-bench -> ade-distributed -> ade-exec`; core execution has no frontend dependency.
+- Keep `ade-bench -> ade-distributed -> ade-exec` and `ade-frontend -> ade-physical`;
+  native runtimes may depend on ade-physical, never on the frontend/DataFusion.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.
 - Reuse the local spillable aggregate through partial merge, IPC scan/live source and streaming sink.
 - Only the documented single final-worker loss can recover. Producer/multiple
@@ -52,11 +54,13 @@ Do not begin Phase11.
   Preserve one episode, original logical IDs and attempt-safe gather commit.
 - Exchange buffers are separately bounded; producer/final task budgets may overlap.
   The local ledger is not a process RSS cap.
-- Preserve the pure policy/mechanism boundary and static defaults. Scheduling is limited to Phase10 leased fixed-hash aggregation; no SQL frontend or streaming/state. Joins are limited to the explicit Phase9 bounded inner-equijoin contract.
-- Run focused tests during development, one final workspace gate/smoke and focused
-  five-mode static regression and focused adaptive 2-worker/limited 4-worker release
-  acceptance evidence, plus Phase 6 normal/recovered/unrecoverable, Phase 7 empirical economic acceptance
-  and Phase 8 split/coalesce, pinned recovery and fixed release skew/uniform gates.
+- Preserve the pure policy/mechanism boundary and static defaults. Scheduling is limited to Phase10 leased fixed-hash aggregation; no streaming/state; the bounded Phase 11 frontend uses native adapters. Joins are limited to the explicit Phase9 bounded inner-equijoin contract.
+- For Phase11, run focused new tests, one final workspace gate/smoke and selected
+  Phase6–10 correctness regressions. Existing five-mode static, adaptive2/4-worker,
+  normal/recovered/unrecoverable, economic, split/coalesce, pinned recovery and
+  skew/uniform release gates retain their original criteria and source identities.
+  Their historical local timing evidence is separate from Phase11 correctness;
+  do not claim an unrun campaign passed or reclassify failed Phase10 guards.
   Keep CI correctness-only; timing guards remain local release evidence.
 
 A small coherent implementation is preferred to speculative architecture.
@@ -135,7 +139,8 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. The active Phase10 report is
+Each phase ends with an implementation report. The active Phase11 report is
+`docs/reports/phase-11-implementation-report.md`. The Phase10 debt report is
 `docs/reports/phase-10-implementation-report.md`; Phase8 prerequisite closure remains recorded in:
 
 `docs/reports/phase-8-implementation-report.md`
@@ -145,4 +150,4 @@ file morsel truthfulness, lost ranges/closure, terminal fingerprint validation,
 attempt-safe gather, bounded metadata, cancellation/poisoning, protocol version,
 commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 9
 boundary. Preserve failed experiments. Preserve Phase 7 decision provenance, complete-copy identity, explicit cleanup and
-predeclared empirical criteria. Do not broaden recovery or begin Phase11 as cleanup. Phase10 is explicitly user-authorized after the recorded Phase9 closure.
+predeclared empirical criteria. Do not broaden recovery or tune Phase10 as Phase11 cleanup. Phase10 is explicitly user-authorized after the recorded Phase9 closure.

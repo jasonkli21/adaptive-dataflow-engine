@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/ade-physical",
+    "crates/ade-frontend",
     "crates/ade-bench",
     "crates/ade-exec",
     "crates/ade-distributed",

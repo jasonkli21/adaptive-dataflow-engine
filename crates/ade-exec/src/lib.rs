@@ -4,6 +4,7 @@ mod ipc_scan;
 pub mod join;
 pub mod memory;
 pub mod partial;
+pub mod physical;
 pub mod row_source;
 mod scan;
 mod sort;
@@ -275,6 +276,12 @@ pub enum LocalPlan {
         input: Box<Self>,
         columns: Vec<String>,
     },
+    /// Exact projection/rename and checked UInt64-to-Int64 SQL count adaptation.
+    ProjectSchema {
+        input: Box<Self>,
+        columns: Vec<String>,
+        schema: SchemaRef,
+    },
     PartialAggregate {
         input: Box<Self>,
         key: String,
@@ -315,6 +322,10 @@ enum Kind {
         threshold: u64,
     },
     Project {
+        input: Box<Node>,
+        columns: Vec<usize>,
+    },
+    ProjectSchema {
         input: Box<Node>,
         columns: Vec<usize>,
     },
@@ -451,6 +462,33 @@ impl Node {
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 let schema = Arc::new(input.schema.project(&columns)?);
                 (schema, Kind::Project { input, columns }, "project")
+            }
+            LocalPlan::ProjectSchema {
+                input,
+                columns,
+                schema,
+            } => {
+                let input = Box::new(Self::build(*input, cx)?);
+                let columns = columns
+                    .iter()
+                    .map(|n| input.schema.index_of(n))
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                if columns.len() != schema.fields().len()
+                    || columns.iter().zip(schema.fields()).any(|(i, f)| {
+                        let original = input.schema.field(*i);
+                        (original.data_type() != f.data_type()
+                            && !(original.data_type() == &DataType::UInt64
+                                && f.data_type() == &DataType::Int64))
+                            || (original.is_nullable() && !f.is_nullable())
+                    })
+                {
+                    return Err(Error::Invalid("invalid schema adapter".into()));
+                }
+                (
+                    schema,
+                    Kind::ProjectSchema { input, columns },
+                    "schema-adapter",
+                )
             }
             LocalPlan::PartialAggregate {
                 input,
@@ -613,6 +651,37 @@ impl Node {
                 cx.work(self.id, start);
                 Some(result)
             }
+            Kind::ProjectSchema { input, columns } => {
+                let Some(batch) = input.next_batch(cx)? else {
+                    input.shutdown(cx)?;
+                    return Ok(None);
+                };
+                cx.input(self.id, &batch);
+                let start = Instant::now();
+                let arrays = columns
+                    .iter()
+                    .zip(self.schema.fields())
+                    .map(|(i, f)| {
+                        let a = batch.column(*i);
+                        if a.data_type() == f.data_type() {
+                            Ok(a.clone())
+                        } else {
+                            // The only admitted cast is native UInt64 count to SQL Int64.
+                            arrow::compute::cast_with_options(
+                                a,
+                                f.data_type(),
+                                &arrow::compute::CastOptions {
+                                    safe: false,
+                                    ..Default::default()
+                                },
+                            )
+                        }
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                let result = RecordBatch::try_new(self.schema.clone(), arrays)?;
+                cx.work(self.id, start);
+                Some(result)
+            }
             Kind::Limit { input, remaining } => {
                 if *remaining == 0 {
                     input.shutdown(cx)?;
@@ -723,6 +792,7 @@ impl Node {
             Kind::IpcScan(scan) => scan.shutdown(),
             Kind::Filter { input, .. }
             | Kind::Project { input, .. }
+            | Kind::ProjectSchema { input, .. }
             | Kind::Limit { input, .. } => input.shutdown(cx)?,
             Kind::Partial { input, state, .. } => {
                 state.take();
@@ -772,10 +842,31 @@ fn execute_in(
     cancellation: CancellationToken,
     parent: Option<&std::path::Path>,
 ) -> Result<ExecutionOutput> {
+    execute_in_bounded(plan, config, cancellation, parent, None)
+}
+fn execute_in_bounded(
+    plan: LocalPlan,
+    config: ExecutionConfig,
+    cancellation: CancellationToken,
+    parent: Option<&std::path::Path>,
+    bounds: Option<(u64, u64)>,
+) -> Result<ExecutionOutput> {
     let mut cx = ExecContext::new(config, cancellation, parent)?;
+    let (mut rows, mut bytes) = (0u64, 0u64);
     let mut batches = Vec::new();
     let mut retained = cx.memory.reservation(OperatorId(u32::MAX));
     drive(plan, &mut cx, |batch, cx| {
+        rows = rows
+            .checked_add(batch.num_rows() as u64)
+            .ok_or(Error::Overflow("output rows"))?;
+        bytes = bytes
+            .checked_add(batch.get_array_memory_size() as u64 + 128)
+            .ok_or(Error::Overflow("output bytes"))?;
+        if bounds.is_some_and(|(r, b)| rows > r || bytes > b) {
+            return Err(Error::Invalid(
+                "physical output cap exceeded; no committed output".into(),
+            ));
+        }
         retained.grow(
             batch
                 .get_array_memory_size()

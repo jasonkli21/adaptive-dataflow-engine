@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+ade-physical = { path = "../ade-physical" }
 arrow = { workspace = true, features = ["ipc"] }
 parquet.workspace = true
 thiserror = "2"

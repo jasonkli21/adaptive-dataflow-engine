@@ -49,3 +49,5 @@ What work or future validation does this decision require?
 An ADR should not duplicate a large plan. Keep it focused on the decision and rationale.
 
 - [ADR-0017: Bounded file-morsel scheduler v1](0017-morsel-scheduler-v1.md)
+
+- [ADR-0018: Physical IR and bounded frontend v1](0018-physical-ir-and-frontend-v1.md)

@@ -18,6 +18,8 @@ benchmark substrate
 
 ## Current status
 
+**Phase 11 bounded v1 adds SQL and a typed Rust DataFrame API that compile to ADE-owned physical IR and execute through ADE operators.** It is explicitly authorized despite the separate Phase 10 debt below. Supported targets are local unary queries, static unfiltered sum/count aggregation, and bounded two-source inner joins. See the [query guide](docs/phase-11-query-guide.md), [ADR-0018](docs/adr/0018-physical-ir-and-frontend-v1.md), and [Phase 11 report](docs/reports/phase-11-implementation-report.md). This is a bounded frontend, with explicit refusals for general SQL; no DataFusion execution fallback exists.
+
 **Phase 10 is partial: the opt-in file-morsel scheduler implements real pending-work stealing and producer activation/drain within 2–4 pre-registered processes, but all frozen performance guards failed.** The review follow-up fixes scheduled-activation closure, minimum-steal queue liveness, and source-bound participation admission. The original62 release children passed oracle/lease/terminal correctness; this follow-up has not been re-timed. Physical process membership remains fixed. See the [Phase10 report](docs/reports/phase-10-implementation-report.md) for the failed experiment and remaining PRD gaps. Static scheduling remains the default.
 
 **Phase 9 bounded v1 is complete with review fixes: observed broadcast/repartition joins, real hash-to-grace conversion and opt-in adaptive partial aggregation preserve the declared result contract.** Phase8 is closed with immutable public evidence. The published Phase9 timing gates remain historical measurements of the frozen source and are not freshly measured for the review-fix commit. `ade-distributed` runs scan → partial aggregate → network hash exchange → final merge aggregate → gather across 2–4 static worker processes. One final-worker loss after all original producers complete can recover the missing partition through verified full-copy restore or lineage replay on a survivor. Other failures cancel the job.
@@ -33,7 +35,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-10-implementation-plan.md`](docs/plans/phase-10-implementation-plan.md) — active Phase10 contract; Phase8/9 closures retain their original evidence.
+4. [`docs/plans/phase-11-implementation-plan.md`](docs/plans/phase-11-implementation-plan.md) — active bounded frontend contract; Phase10 stays PARTIAL and Phase8/9 retain their original evidence.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -44,6 +46,8 @@ Implementation work should use this order:
 ├── AGENTS.md
 ├── Cargo.toml
 ├── crates/
+│   ├── ade-physical/           # strict versioned ADE graph contract
+│   ├── ade-frontend/           # SQL binder, Rust DataFrame, ade-query CLI
 │   ├── ade-distributed/        # static coordinator, workers, TCP/IPC exchange
 │   ├── ade-exec/               # Phase 2 local runtime
 │   └── ade-bench/              # Phase 0 benchmark harness

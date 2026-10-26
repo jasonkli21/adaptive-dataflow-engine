@@ -31,6 +31,7 @@ name = "ade-distributed"
 version = "0.1.0"
 dependencies = [
  "ade-exec",
+ "ade-physical",
  "arrow",
  "async-trait",
  "blake3",
@@ -50,12 +51,42 @@ dependencies = [
 name = "ade-exec"
 version = "0.1.0"
 dependencies = [
+ "ade-physical",
  "arrow",
  "blake3",
  "bytes",
  "parquet",
  "serde",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "ade-frontend"
+version = "0.1.0"
+dependencies = [
+ "ade-bench",
+ "ade-distributed",
+ "ade-exec",
+ "ade-physical",
+ "arrow",
+ "clap",
+ "datafusion",
+ "parquet",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "ade-physical"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

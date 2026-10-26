@@ -10,6 +10,7 @@ research-hooks = []
 [lints]
 workspace = true
 [dependencies]
+ade-physical = { path = "../ade-physical" }
 bytes = "1"
 parquet.workspace = true
 blake3 = "1"

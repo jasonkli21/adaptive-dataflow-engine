@@ -106,6 +106,72 @@ fn malformed_control_aborts_service_and_dead_service_refuses_clients() {
     );
 }
 #[test]
+fn stalled_control_does_not_monopolize_minimum_lease_renewals() {
+    use std::io::Write;
+    let fixture = ledger(2, 2);
+    let mut task = TaskConfig {
+        scheduler: Config {
+            lease_ms: 80,
+            heartbeat_ms: 20,
+            ..fixture.metrics.config.clone()
+        },
+        ..TaskConfig::default()
+    };
+    task.exchange.mode = crate::ExchangeMode::Spill;
+    let workers = (0..2)
+        .map(|w| WorkerEndpoint {
+            id: WorkerId(w),
+            control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
+            exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let service = Service::start(
+        JobId(1),
+        "scope",
+        &workers,
+        &task,
+        fixture.metrics.source.clone(),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let first = Client::start(
+        service.spec.clone(),
+        WorkerId(0),
+        &task.scheduler,
+        CancellationToken::default(),
+    )
+    .unwrap();
+    let _second = Client::start(
+        service.spec.clone(),
+        WorkerId(1),
+        &task.scheduler,
+        CancellationToken::default(),
+    )
+    .unwrap();
+    let lease = first.next().unwrap().unwrap();
+    let mut stalled = protocol::connect(service.spec.address, Duration::from_secs(1)).unwrap();
+    stalled.write_all(b"A").unwrap();
+    // Longer than an entire minimum lease, shorter than the bounded peer timeout.
+    thread::sleep(Duration::from_millis(180));
+    {
+        let state = service.ledger.lock().unwrap();
+        assert!(state.failed.is_none(), "{:?}", state.failed);
+        assert!(
+            state.metrics.renewals >= 3,
+            "healthy renewals blocked by partial peer"
+        );
+    }
+    first.complete(ack(lease)).unwrap();
+    drop(stalled);
+    let until = Instant::now() + Duration::from_secs(1);
+    while service.ledger.lock().unwrap().failed.is_none() && Instant::now() < until {
+        thread::sleep(Duration::from_millis(2));
+    }
+    // A truncated peer still poisons the job; isolation never weakens safety.
+    assert!(service.finish().is_err());
+    assert!(first.next().is_err());
+}
+#[test]
 fn coverage_steal_duplicate_ack_and_bounded_log() {
     let mut l = ledger(16, 2);
     let first = next(&mut l, 0, 1);
@@ -535,4 +601,99 @@ fn source_verification_checks_deadline_cancellation_and_drift() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn source_replacement_and_symlink_drift_are_rechecked_after_a_verified_pass() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("source");
+    let replacement = root.path().join("replacement");
+    let original = vec![42u8; 1024 * 1024 + 7];
+    std::fs::write(&path, &original).unwrap();
+    std::fs::write(&replacement, vec![43u8; original.len()]).unwrap();
+    let morsel = SourceMorsel {
+        id: MorselId(0),
+        path: path.clone(),
+        fingerprint: crate::lineage::fingerprint(&path).unwrap(),
+        bytes: original.len() as u64,
+    };
+    let verify = || {
+        verify_sources(
+            std::slice::from_ref(&morsel),
+            &CancellationToken::default(),
+            Instant::now() + Duration::from_secs(1),
+        )
+    };
+    verify().unwrap();
+    // Same size and same path, different bytes: metadata cannot authorize an ACK.
+    std::fs::rename(&replacement, &path).unwrap();
+    assert!(verify().is_err());
+    #[cfg(unix)]
+    {
+        std::fs::write(&replacement, &original).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&replacement, &path).unwrap();
+        verify().unwrap();
+        std::fs::write(&replacement, vec![44u8; original.len()]).unwrap();
+        assert!(verify().is_err());
+    }
+}
+
+#[test]
+fn control_admission_saturation_aborts_and_closes_bounded_peer_set() {
+    use std::io::{Read, Write};
+    let fixture = ledger(2, 2);
+    let task = TaskConfig {
+        scheduler: fixture.metrics.config.clone(),
+        ..TaskConfig::default()
+    };
+    let workers = (0..2)
+        .map(|w| WorkerEndpoint {
+            id: WorkerId(w),
+            control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
+            exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let service = Service::start(
+        JobId(1),
+        "scope",
+        &workers,
+        &task,
+        fixture.metrics.source.clone(),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let mut peers = Vec::new();
+    for _ in 0..6 {
+        let mut socket = protocol::connect(service.spec.address, Duration::from_secs(1)).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        socket.write_all(b"A").unwrap();
+        peers.push(socket);
+    }
+    let until = Instant::now() + Duration::from_millis(400);
+    while service.ledger.lock().unwrap().failed.is_none() && Instant::now() < until {
+        thread::sleep(Duration::from_millis(2));
+    }
+    let failure = service.ledger.lock().unwrap().failed.clone().unwrap();
+    assert!(failure.contains("control admission cap"), "{failure}");
+    assert!(service.finish().is_err());
+    drop(service);
+    for mut peer in peers {
+        // Closing with unread input may yield reset rather than EOF.
+        match peer.read(&mut [0]) {
+            Ok(n) => assert_eq!(n, 0),
+            Err(e) => assert!(
+                matches!(
+                    e.kind(),
+                    std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::BrokenPipe
+                        | std::io::ErrorKind::NotConnected
+                ),
+                "{e}"
+            ),
+        }
+    }
 }

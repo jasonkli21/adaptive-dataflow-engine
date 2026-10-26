@@ -23,6 +23,11 @@ impl NetworkMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskMetrics {
+    /// Subsets of `operator_work_ns`, exclusive of upstream pulls and send calls.
+    #[serde(default)]
+    pub scan_decode_ns: u64,
+    #[serde(default)]
+    pub aggregate_ns: u64,
     #[serde(default)]
     pub source_verify_ns: u64,
     #[serde(default)]
@@ -62,6 +67,12 @@ pub struct TaskMetrics {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DistributedMetrics {
+    #[serde(default)]
+    pub source_admission_ns: u64,
+    #[serde(default)]
+    pub prepare_ns: u64,
+    #[serde(default)]
+    pub gather_collect_ns: u64,
     #[serde(default)]
     pub scheduler: Option<crate::scheduler::Metrics>,
     pub topology: Option<crate::topology::Decision>,

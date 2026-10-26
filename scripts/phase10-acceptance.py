@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Phase10 v1; exact source, paired controls, every child and failure preserved."""
-import hashlib, json, os, pathlib, re, subprocess, sys, time
+import hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
+import phase10_evidence as evidence
 
 class VerificationError(RuntimeError):
     pass
@@ -24,27 +25,30 @@ subprocess.run(['git', 'bundle', 'create', str(root / 'source.bundle'), 'HEAD'],
 (root / 'binary-sha256.json').write_text(json.dumps({p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [bin, bin.with_name('ade-worker')]}, indent=2) + '\n')
 (root / 'declaration.md').write_bytes(pathlib.Path('docs/research/phase-10-experiment.md').read_bytes())
 
+session = str(uuid.uuid4())
+commands = {}
+
 def command(args, stem, env=None):
     cmd = [str(bin), *map(str, args)]
     (root / f'{stem}-command.json').write_text(json.dumps(cmd, indent=2) + '\n')
     with (root / f'{stem}-stdout.log').open('w') as out, (root / f'{stem}-stderr.log').open('w') as err:
-        return subprocess.run(cmd, stdout=out, stderr=err, env=env, timeout=900).returncode
+        start = time.monotonic_ns()
+        status = subprocess.run(cmd, stdout=out, stderr=err, env=env, timeout=900).returncode
+        commands[stem] = dict(argv=cmd, start_ns=start, end_ns=time.monotonic_ns(), status=status)
+        return status
 environment_status = command(['env', '--format', 'json'], 'environment')
 require(environment_status == 0, 'environment capture failed')
+time.sleep(10)  # Settle source/archive/binary hashing before the frozen readings.
 readiness = []
 for i in range(3):
-    r = {k: subprocess.check_output(v, text=True) for (k, v) in {'top': ['top', '-l', '1', '-n', '0'], 'vm': ['vm_stat'], 'uptime': ['uptime'], 'processes': ['ps', '-A', '-o', 'pid=,comm=']}.items()}
-    r['time_ns'] = time.time_ns()
-    readiness.append(r)
-    (root / 'readiness.json').write_text(json.dumps(readiness, indent=2) + '\n')
+    readiness.append(evidence.capture(session))
+    evidence.write(root, 'readiness.json', readiness)
     if i < 2:
         time.sleep(10)
-idle = [float(re.search('([\\d.]+)% idle', r['top'])[1]) for r in readiness]
-load = [float(re.search('load averages?:\\s*([\\d.]+)', r['uptime'])[1]) for r in readiness]
-swap = [int(re.search('Swapouts:\\s*(\\d+)', r['vm'])[1]) for r in readiness]
-others = [line for r in readiness for line in r['processes'].splitlines() if re.search('/(cargo|rustc|ade-bench|ade-worker)$', line)]
-if not (min(idle) >= 70 and max(load) <= 8 and (swap[-1] - swap[0] <= 1000) and (not others)):
-    raise SystemExit('readiness failed; ZERO measurements; preserve attempt')
+try:
+    evidence.check_readiness(readiness, session, readiness[0]['host'])
+except evidence.VerificationError as error:
+    raise SystemExit(f'{error}; ZERO measurements; preserve attempt') from error
 spec = 'benchmarks/specs/aggregate-low-cardinality.toml'
 for regime in ['imbalanced', 'uniform']:
     args = ['data', 'generate', 'synthetic', '--dataset-id', f'phase10-{regime}-v1', '--rows', 4000000, '--files', 32, '--row-group-rows', 8192, '--key-cardinality', 1024, '--seed', 42, '--output', data / regime]
@@ -84,6 +88,6 @@ for (name, extra) in negatives.items():
     opts = ['workers=2', 'exchange_mode=spill', 'recovery_enabled=false', 'scheduler_policy=leased_v1', *extra]
     statuses['negative-' + name] = command(['validate', '--engine', 'ade-distributed', *sum((['--engine-option', s] for s in opts), []), '--spec', spec, '--dataset', data / 'uniform'], 'negative-' + name)
 (root / 'statuses.json').write_text(json.dumps(statuses, indent=2) + '\n')
-for (name, cmd) in [('post-vm', ['vm_stat']), ('post-top', ['top', '-l', '1', '-n', '0'])]:
-    (root / f'{name}.txt').write_bytes(subprocess.check_output(cmd))
+evidence.write(root, 'postflight.json', evidence.capture(session))
+evidence.seal(root, session, commands)
 subprocess.run([sys.executable, 'scripts/phase10-verify.py', str(root)], check=True)

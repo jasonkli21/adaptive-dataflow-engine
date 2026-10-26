@@ -502,6 +502,7 @@ pub struct Metrics {
 }
 mod ledger;
 use ledger::Ledger;
+mod connection;
 mod control;
 pub(crate) use control::{Client, Service, verify_sources};
 use control::{Op, Response, Rpc};

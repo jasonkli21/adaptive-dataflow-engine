@@ -111,6 +111,15 @@ impl Ledger {
             self.failed.as_deref().unwrap_or("scheduler aborted"),
         )?;
         require(now < self.duration_ms, "scheduler stage deadline")?;
+        #[cfg(feature = "research-hooks")]
+        if let Some(e) = self.metrics.entries.iter().find(|e| {
+            e.lease.as_ref().is_some_and(|l| {
+                self.metrics.config.research_no_heartbeat_worker == Some(l.worker.0)
+            }) && e.completion.is_none()
+                && now >= e.expires_ms
+        }) {
+            fault_evidence(self, "expired_live_lease", e, now, None);
+        }
         require(
             self.metrics
                 .entries
@@ -118,6 +127,20 @@ impl Ledger {
                 .all(|e| e.lease.is_none() || e.completion.is_some() || now < e.expires_ms),
             "ambiguous expired source lease; abort, never reassign",
         )?;
+        #[cfg(feature = "research-hooks")]
+        if self.metrics.config.research_delay_worker.is_some() {
+            for (w, deadline) in self.spot_deadlines.iter().enumerate() {
+                if deadline.is_some_and(|d| now >= d)
+                    && !self.closed[w]
+                    && let Some(e) = self.metrics.entries.iter().find(|e| {
+                        e.lease.as_ref().is_some_and(|l| l.worker.0 == w as u64)
+                            && e.completion.is_none()
+                    })
+                {
+                    fault_evidence(self, "spot_deadline", e, now, *deadline);
+                }
+            }
+        }
         require(
             self.spot_deadlines
                 .iter()
@@ -427,4 +450,23 @@ impl Ledger {
         )?;
         Ok(self.metrics.clone())
     }
+}
+
+#[cfg(feature = "research-hooks")]
+fn fault_evidence(l: &Ledger, stage: &str, entry: &Entry, now: u64, deadline: Option<u64>) {
+    let notice = l.metrics.events.iter().find(|event| {
+        Some(event.worker) == entry.lease.as_ref().map(|lease| lease.worker)
+            && matches!(event.action, Action::SpotNotice { .. })
+    });
+    eprintln!(
+        "ADE_SCHEDULER_FAULT {}",
+        serde_json::json!({
+            "schema_version": 1, "stage": stage, "fence": l.metrics.fence,
+            "lease": entry.lease, "process_id": std::process::id(),
+            "at_ms": now, "granted_ms": entry.granted_ms,
+            "expires_ms": entry.expires_ms, "renewals": entry.renewals,
+            "notice_ms": notice.map(|e| e.at_ms), "deadline_ms": deadline,
+            "completed": l.completed(),
+        })
+    );
 }

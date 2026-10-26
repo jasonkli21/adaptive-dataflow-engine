@@ -36,14 +36,19 @@ public evidence in its implementation report. Historical failed experiments and
 fixed48-shard/aggregate-spill-domain limitations remain explicit. Source-bound
 B/C confirmations and all-nine pooled original gates pass; this is local evidence.
 Phase 9 bounded v1 remains accepted with review fixes at 3e89edf. Its frozen
-measurements belong to 9b0330a/runtime fab08a0, not this revision. The user has
-explicitly authorized Phase 10 implementation in this session. Phase10 implementation is partial: correctness passes but all6 release timing
+measurements belong to 9b0330a/runtime fab08a0, not this revision. Phase 10 was
+explicitly authorized on 2026-10-24. Phase10 implementation is partial: correctness passes but all6 release timing
 guards failed, and physical membership stays fixed. Phase 10 remains PARTIAL under docs/plans/phase-10-implementation-plan.md and ADR-0017:
 file-morsel leasing, stealing and elastic producer participation in a fixed
 2–4-process registry. Preserve static defaults and accepted Phase6–9 contracts.
 The user explicitly authorized Phase 11 bounded v1 on 2026-10-25 despite Phase 10 debt.
-Phase 11 is the active scope under docs/plans/phase-11-implementation-plan.md
-and ADR-0018. Do not begin Phase 12.
+Phase 11 bounded v1 is COMPLETE under docs/plans/phase-11-implementation-plan.md
+and ADR-0018. On 2026-10-26 the user authorized repo-wide readiness and bounded
+Phase 10 remediation, with at most two measured performance candidates and no
+subagents. This stabilization is the current scope; it does not widen recovery,
+frontend admission or physical membership. Preserve historical source identities
+and failed gates. Static remains the supported default; leased scheduling remains
+experimental and unpromoted until all unchanged gates pass. Do not begin Phase 12.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec` and `ade-frontend -> ade-physical`;
   native runtimes may depend on ade-physical, never on the frontend/DataFusion.
@@ -150,4 +155,6 @@ file morsel truthfulness, lost ranges/closure, terminal fingerprint validation,
 attempt-safe gather, bounded metadata, cancellation/poisoning, protocol version,
 commands/tests, raw acceptance evidence, negative evidence, deviations and Phase 9
 boundary. Preserve failed experiments. Preserve Phase 7 decision provenance, complete-copy identity, explicit cleanup and
-predeclared empirical criteria. Do not broaden recovery or tune Phase10 as Phase11 cleanup. Phase10 is explicitly user-authorized after the recorded Phase9 closure.
+predeclared empirical criteria. Do not broaden recovery or hide Phase10 tuning in Phase11 cleanup. The current
+Phase10 remediation is separately authorized; its dated readiness report must
+distinguish new-source evidence from historical phase acceptance.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Identity/lease/terminal correctness first; frozen local timing guards second."""
+import phase10_evidence as evidence
 import hashlib, json, os, pathlib, statistics, subprocess, sys, tempfile, uuid
 
 class VerificationError(RuntimeError):
@@ -8,6 +9,13 @@ class VerificationError(RuntimeError):
 def require(condition, context):
     if not condition:
         raise VerificationError(str(context))
+
+def check_repetitions(run, workers):
+    count = 5 if workers == 2 else 3
+    require(run['run_config']['warmups'] == 1 and run['run_config']['iterations'] == count
+            and run['run_config']['dataset_verification'] == 'full', 'frozen repetition inventory')
+    require(len(run['warmups']) == 1 and len(run['iterations']) == count, 'removed/best-only sample')
+    return count
 
 def check_source_identity(root, commit, runtime):
     identity = json.loads((root / 'source-identity.json').read_text())
@@ -128,6 +136,7 @@ def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_
 def verify(root):
     root = pathlib.Path(root)
     load = lambda f: json.loads((root / f).read_text())
+    host_evidence = evidence.check_release(root)
     identity = load('source-identity.json')
     check_source_identity(root, identity['source_commit'], identity['runtime_tree'])
     binary = pathlib.Path(os.environ.get('ADE_BENCH_BIN', 'target/release/ade-bench')).resolve()
@@ -159,6 +168,9 @@ def verify(root):
         expected_weights = [15, 1, 1, 1] * 8 if item['regime'] == 'imbalanced' else []
         require(manifest['synthetic'].get('file_row_weights', []) == expected_weights, 'assertion failed at line 81')
         require(manifest['row_count'] == 4000000 and manifest['synthetic']['files'] == 32 and (manifest['synthetic']['seed'] == 42) and (manifest['synthetic']['key_cardinality'] == 1024) and (manifest['synthetic']['distribution'] == 'uniform'), 'assertion failed at line 82')
+        require(manifest['synthetic']['row_group_rows'] == 8192
+                and manifest['synthetic']['compression'] == 'snappy'
+                and manifest['synthetic']['payload_size'] == 16, 'frozen physical fixture')
         previous = datasets.setdefault(item['regime'], run['dataset_manifest_fingerprint'])
         require(previous == run['dataset_manifest_fingerprint'], 'assertion failed at line 83')
         oracle = load(item['regime'] + '-oracle-stdout.log')
@@ -175,9 +187,7 @@ def verify(root):
                 require(json.loads(c[key]) == json.loads(value), 'assertion failed at line 92')
             else:
                 require(c[key] == value, 'assertion failed at line 93')
-        count = 5 if item['workers'] == 2 else 3
-        require(run['run_config']['warmups'] == 1 and run['run_config']['iterations'] == count and (run['run_config']['dataset_verification'] == 'full'), 'assertion failed at line 95')
-        require(len(run['warmups']) == 1 and len(run['iterations']) == count, 'assertion failed at line 96')
+        count = check_repetitions(run, item['workers'])
         records = [json.loads(l) for l in (root / (stem + '-metrics.jsonl')).read_text().splitlines()]
         iters = run['warmups'] + run['iterations']
         require(len(records) == len(iters) == count + 1, 'assertion failed at line 97')
@@ -202,27 +212,22 @@ def verify(root):
             if index:
                 samples.append(dict(query_ns=out['query_time_ns'], max_producer_completion_ns=max((t['coordinator_finished_ns'] for t in m['producers'].values())), producer_files=[m['producers'][str(w)]['source_files'] for w in range(item['workers'])], producer_bytes=[m['producers'][str(w)]['production']['source_bytes'] for w in range(item['workers'])], sent_rows=sum((t['sent']['rows'] for t in m['producers'].values())), sent_bytes=sum((t['sent']['payload_bytes'] for t in m['producers'].values())), control_messages=s['control_messages'] if s else 0, control_bytes=s['control_bytes'] if s else 0, renewals=s['renewals'] if s else 0, rss_bytes=it['peak_rss_bytes']))
         summaries[stem] = dict(samples=samples, median_query_ns=statistics.median((s['query_ns'] for s in samples)), median_max_producer_completion_ns=statistics.median((s['max_producer_completion_ns'] for s in samples)), query_range_ns=[min((s['query_ns'] for s in samples)), max((s['query_ns'] for s in samples))])
-    for stem in ['negative-exit', 'negative-expiry', 'negative-notice']:
-        require(statuses[stem] != 0 and (root / (stem + '-stderr.log')).read_text().strip(), 'assertion failed at line 115')
-        stdout = (root / (stem + '-stdout.log')).read_text().strip()
-        if stdout:
-            try:
-                require(not json.loads(stdout).get('validated', False), 'assertion failed at line 118')
-            except json.JSONDecodeError:
-                pass
+    negative_stages = {stem: evidence.check_negative(root, stem, statuses[stem])
+                       for stem in ['negative-exit', 'negative-expiry', 'negative-notice']}
     require(len(pids) == 62, 'assertion failed at line 120')
     gates = {}
     for n in [2, 4]:
         for (label, regime, key, limit) in [('imbalanced_job', 'imbalanced', 'median_query_ns', 0.9), ('imbalanced_tail', 'imbalanced', 'median_max_producer_completion_ns', 0.9), ('uniform_job', 'uniform', 'median_query_ns', 1.15)]:
             ratio = summaries[f'{regime}-{n}-leased_v1'][key] / summaries[f'{regime}-{n}-static'][key]
             gates[f'{label}-{n}'] = dict(ratio=ratio, limit=limit, passed=ratio <= limit)
-    return dict(correctness_passed=True, passed=all((g['passed'] for g in gates.values())), children=62, measured=49, gates=gates, summaries=summaries, source=identity)
+    passed = all(g['passed'] for g in gates.values())
+    return dict(status='PASSED' if passed else 'FAILED', host_evidence=host_evidence, negative_stages=negative_stages, correctness_passed=True, passed=passed, children=62, measured=49, gates=gates, summaries=summaries, source=identity)
 if __name__ == '__main__':
     root = pathlib.Path(sys.argv[1])
     try:
         result = verify(root)
     except Exception as error:
-        result = dict(correctness_passed=False, passed=False, error=f'{type(error).__name__}: {error}')
+        result = dict(status='UNVERIFIED', correctness_passed=False, passed=False, error=f'{type(error).__name__}: {error}')
     (root / 'verification.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({k: v for (k, v) in result.items() if k != 'summaries'}, indent=2))
     sys.exit(0 if result['passed'] else 1)

@@ -1027,6 +1027,10 @@ ingress limits are explicit; memory ledgers remain separate from process RSS.
 Physical process add/remove and state migration are still unmet PRD Phase10
 goals; elastic producer participation must not be described as full elasticity.
 This refines §§6.2,9,13,17,22,27–31 without weakening INV1–10.
+The 2026-10-26 stabilization isolates partial control peers with a single-thread,
+nonblocking set capped at 2*N+1 sockets and 500ms per frame; saturation or malformed
+traffic still aborts. Full pre/post content hashes remain, using 256KiB bounded
+scratch per verification call. See ADR-0017 for evidence-v2 and liveness limits.
 
 ---
 

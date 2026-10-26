@@ -201,3 +201,15 @@ the best pending morsel for progress. If a pending preferred owner remains
 active, the requester waits. The no-steal control keeps its refusal contract.
 See ADR-0017 and the implementation report for the review fixes and evidence;
 Phase10 acceptance remains gated on a new passing release.
+
+
+## Stabilization scope (2026-10-26)
+
+The separately authorized readiness handoff permits up to two cohesive measured
+remediation candidates, versioned release-evidence hardening and focused legacy
+correctness checks. The original declaration, 13 arms, repetitions and six numeric
+guards remain frozen. ADR-0017 records bounded control isolation and larger hash
+reads with both content checks intact. Phase 11 bounded v1 remains COMPLETE;
+original “No Phase11” wording above records historical scope. Physical process
+elasticity, leased failover and Phase 12 remain deferred. Failed guards prohibit
+promotion; static scheduling remains the supported default.

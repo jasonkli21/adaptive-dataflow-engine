@@ -249,6 +249,7 @@ fn execute_inner(
     require(!job.files.is_empty(), "job requires manifest files")?;
     let unique: BTreeSet<_> = job.files.iter().collect();
     require(unique.len() == job.files.len(), "duplicate source path")?;
+    let admission_start = Instant::now();
     if let Some(snapshot) = &job.snapshot {
         snapshot.validate(&job.files)?;
         if job.config.scheduler.leased() {
@@ -271,6 +272,7 @@ fn execute_inner(
             )?;
         }
     }
+    let source_admission_ns = crate::materialization::ns(admission_start);
     // JobId is intentionally cluster-local and remains part of logical transfer
     // identity. Shared object stores also need a globally unique execution scope.
     let execution_namespace = uuid::Uuid::new_v4().to_string();
@@ -290,6 +292,7 @@ fn execute_inner(
     };
     let mut state = JobState::Prepared;
     let result = (|| {
+        let prepare_start = Instant::now();
         for worker in &job.workers {
             match control(job, worker, Request::Ping, "ping")? {
                 Reply::Pong(actual) => require(
@@ -318,6 +321,7 @@ fn execute_inner(
                 "unexpected prepare response",
             )?;
         }
+        let prepare_ns = crate::materialization::ns(prepare_start);
         let parent = tempfile::tempdir()?;
         let mut assignments = vec![Vec::new(); job.workers.len()];
         for (i, file) in job.files.iter().enumerate() {
@@ -705,6 +709,7 @@ fn execute_inner(
                 && accepted.rows == finals.values().map(|m| m.input_rows as u64).sum::<u64>(),
             "exchange conservation failure",
         )?;
+        let gather_start = Instant::now();
         let (batches, gather_metrics) = if let Some(limits) = output_limits {
             let adapt = adapt.take().ok_or_else(|| {
                 Error::Invalid("bounded gather requires an output adapter".into())
@@ -713,6 +718,7 @@ fn execute_inner(
         } else {
             gather.collect()?
         };
+        let gather_collect_ns = crate::materialization::ns(gather_start);
         state = JobState::GatherComplete;
         let mut adaptive = crate::adaptive::AdaptiveSummary::default();
         if job.config.exchange.mode == crate::ExchangeMode::Adaptive {
@@ -744,6 +750,9 @@ fn execute_inner(
             .filter_map(|p| finals.remove(&p).map(|m| (p, m)))
             .collect();
         let metrics = DistributedMetrics {
+            source_admission_ns,
+            prepare_ns,
+            gather_collect_ns,
             scheduler: schedule_metrics,
             topology,
             topology_commit_ns,

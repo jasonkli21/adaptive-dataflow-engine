@@ -119,3 +119,39 @@ close an empty producer. A drain of the last active producer while catalog work
 remains is rejected before worker preparation. These changes refine the §13
 control lifecycle and preserve INV-3/5/9; they do not change lease, exchange,
 result, or sample-gate schemas.
+
+
+## Stabilization amendment (2026-10-26)
+
+The earlier authorization and “No Phase11 work” statements describe the original
+2026-10-24 session. Phase 11 bounded v1 is now COMPLETE under ADR-0018. The user
+separately authorized readiness and Phase 10 remediation; Phase 12 is excluded.
+This amendment refines architecture §13.4 and INV-4/5 without widening v1.
+
+A reproduced partial-control stall blocked healthy 20ms heartbeats beyond an
+80ms lease. The service now polls at most 2*N+1 nonblocking connections on its
+single ledger thread, one bounded read/write per peer per turn. The extra slot
+isolates one stalled peer from normal main/renewal requests. Each peer retains a
+500ms absolute deadline and at most a 1MiB frame (plus framing/allocation overhead).
+Admission saturation, malformed/truncated frames and ambiguous replies still
+abort; this is bounded liveness isolation, not malicious-peer availability or HA.
+No handler threads, unbounded admission queue or in-flight reassignment is added.
+
+Content verification still hashes the full admission catalog and each lease both
+before and after execution. A reusable 256KiB scratch buffer amortizes reads;
+cancellation/deadline checks run between every chunk. Scratch is separate from
+task and exchange reservations, at most one buffer per concurrent verification
+call. OS calls and change-and-restore remain outside snapshot guarantees.
+Coalescing partials or skipping a content pass is not authorized by this change.
+
+Release evidence v2 binds three macOS arm64 readiness samples, exact capture
+commands, kernel/host, session UUID, monotonic and wall times, postflight capture,
+commands/statuses and result run IDs through a SHA256 inventory. Offline checks
+apply the original idle/load/swap/process thresholds. These are referenced
+observations, not signed host attestation. Research-hook stderr v1 proves an
+actual lease and output frame/expiry/spot deadline before a negative can count.
+There is no result-v1, child, manifest or ADETCP12/wire2/hash1 change. Legacy v1
+bundles use their archived verifier; new verification refuses to promote them.
+New optional diagnostic fields subdivide existing exclusive operator wall time;
+parallel producer/final sums are never job CPU or critical-path wall time.
+The dated readiness report records empirical outcomes and the promotion decision.

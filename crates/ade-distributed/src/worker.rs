@@ -155,6 +155,18 @@ fn task_metrics(
     source_files: usize,
 ) -> TaskMetrics {
     TaskMetrics {
+        scan_decode_ns: output
+            .operators
+            .values()
+            .filter(|m| m.name == "parquet-scan")
+            .map(|m| u64::try_from(m.work_time.as_nanos()).unwrap_or(u64::MAX))
+            .sum(),
+        aggregate_ns: output
+            .operators
+            .values()
+            .filter(|m| m.name == "hash-aggregate" || m.name == "merge-aggregate")
+            .map(|m| u64::try_from(m.work_time.as_nanos()).unwrap_or(u64::MAX))
+            .sum(),
         partial: output.partial.clone(),
         source_files,
         operator_work_ns: output
@@ -408,6 +420,8 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
         let Some(lease) = next else {
             break;
         };
+        #[cfg(feature = "research-hooks")]
+        let granted_ms = start.elapsed().as_millis();
         let source = job.spec.snapshot.as_ref().expect("leased source");
         require(
             source.morsels.get(
@@ -457,6 +471,16 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
                         #[cfg(feature = "research-hooks")]
                         if job.spec.config.scheduler.research_exit_after_emit_worker == Some(task.0)
                         {
+                            eprintln!(
+                                "ADE_SCHEDULER_FAULT {}",
+                                serde_json::json!({
+                                    "schema_version": 1, "stage": "exit_after_frame",
+                                    "fence": schedule.fence, "lease": lease,
+                                    "process_id": std::process::id(),
+                                    "granted_ms": granted_ms, "at_ms": start.elapsed().as_millis(),
+                                    "emitted_rows": selected.num_rows(), "emitted_frames": 1,
+                                })
+                            );
                             std::process::exit(87);
                         }
                         metrics.sending_ns += crate::materialization::ns(send_start);
@@ -494,6 +518,8 @@ fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
             .operator_work_ns
             .checked_add(m.operator_work_ns)
             .ok_or_else(|| Error::Invalid("leased work overflow".into()))?;
+        metrics.scan_decode_ns += m.scan_decode_ns;
+        metrics.aggregate_ns += m.aggregate_ns;
         metrics.spill_bytes += m.spill_bytes;
         metrics.managed_peak = metrics.managed_peak.max(m.managed_peak);
         metrics.production.source_bytes = metrics

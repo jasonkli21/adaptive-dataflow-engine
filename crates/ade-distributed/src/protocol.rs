@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"ADETCP12";
+pub(crate) const MAGIC: &[u8; 8] = b"ADETCP12";
 /// Wake a blocking accept during shutdown, including wildcard-bound listeners.
 pub(crate) fn wake_listener(mut address: SocketAddr) {
     if address.ip().is_unspecified() {

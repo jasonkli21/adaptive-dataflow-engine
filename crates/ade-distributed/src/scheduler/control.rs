@@ -31,7 +31,7 @@ pub(super) enum Response {
 fn elapsed(start: Instant) -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
-/// The service owns a single serialized ledger and one bounded socket handler.
+/// The service owns a single serialized ledger and a bounded nonblocking socket set.
 pub(crate) struct Service {
     pub spec: Spec,
     pub(super) ledger: Arc<Mutex<Ledger>>,
@@ -84,55 +84,55 @@ impl Service {
         let stopping = stop.clone();
         let state = ledger.clone();
         let start = Instant::now();
+        // Main and renewal RPC per producer plus one partial/untrusted peer.
+        // One thread, at most 2*N+1 sockets/frames; saturation aborts, never queues.
+        let capacity = workers.len() * 2 + 1;
         let handle = thread::spawn(move || {
+            let mut peers: Vec<super::connection::Connection> = Vec::with_capacity(capacity);
             while !stopping.load(Ordering::Acquire) {
-                match listener.accept() {
-                    Ok((mut socket, _)) => {
-                        let result = (|| {
-                            socket.set_nonblocking(false)?;
-                            let mut socket = protocol::DeadlineStream::new(
-                                &mut socket,
-                                Duration::from_millis(500),
-                            );
-                            let r: Rpc = protocol::read_message(&mut socket)?;
-                            let size = serde_json::to_vec(&r)?.len() as u64;
-                            let response = {
-                                let mut l = state.lock().expect("lease ledger");
-                                l.metrics.control_bytes += size;
-                                match l.handle(r, elapsed(start)) {
-                                    Ok(r) => r,
-                                    Err(e) => {
-                                        l.failed = Some(e.to_string());
-                                        Response::Failed(e.to_string())
-                                    }
+                let result = (|| {
+                    // Admit at most one peer per turn so accept floods cannot starve renewals.
+                    match listener.accept() {
+                        Ok((socket, _)) => {
+                            require(peers.len() < capacity, "scheduler control admission cap")?;
+                            peers.push(super::connection::Connection::new(socket)?);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    let mut index = 0;
+                    while index < peers.len() {
+                        let done = peers[index].poll(|r| {
+                            let mut l = state.lock().expect("lease ledger");
+                            l.metrics.control_bytes += serde_json::to_vec(&r)?.len() as u64;
+                            let response = match l.handle(r, elapsed(start)) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    l.failed = Some(e.to_string());
+                                    Response::Failed(e.to_string())
                                 }
                             };
-                            state
-                                .lock()
-                                .map_err(|_| Error::Invalid("lease ledger poisoned".into()))?
-                                .metrics
-                                .control_bytes += serde_json::to_vec(&response)?.len() as u64;
-                            protocol::write_message(&mut socket, &response)?;
-                            Ok::<_, Error>(())
-                        })();
-                        if let Err(e) = result {
-                            state.lock().expect("lease ledger").failed =
-                                Some(format!("ambiguous lease control: {e}"));
+                            l.metrics.control_bytes += serde_json::to_vec(&response)?.len() as u64;
+                            Ok(response)
+                        })?;
+                        if done {
+                            peers.remove(index);
+                        } else {
+                            index += 1;
                         }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        let mut l = state.lock().expect("lease ledger");
-                        if let Err(e) = l.check(elapsed(start)) {
-                            l.failed = Some(e.to_string());
-                        }
-                        drop(l);
-                        thread::sleep(Duration::from_millis(1));
+                    let mut l = state.lock().expect("lease ledger");
+                    if let Err(e) = l.check(elapsed(start)) {
+                        l.failed = Some(e.to_string());
                     }
-                    Err(e) => {
-                        state.lock().expect("lease ledger").failed = Some(e.to_string());
-                        break;
-                    }
+                    Ok::<_, Error>(())
+                })();
+                if let Err(e) = result {
+                    state.lock().expect("lease ledger").failed =
+                        Some(format!("ambiguous lease control: {e}"));
+                    break;
                 }
+                thread::sleep(Duration::from_micros(100));
             }
         });
         Ok(Self {
@@ -284,7 +284,8 @@ pub(crate) fn verify_sources(
     token: &CancellationToken,
     deadline: Instant,
 ) -> Result<()> {
-    use std::io::Read;
+    // One bounded scratch allocation for the whole catalog/pass.
+    let mut bytes = vec![0u8; 256 * 1024];
     for morsel in morsels {
         token.check()?;
         require(
@@ -296,29 +297,87 @@ pub(crate) fn verify_sources(
             file.metadata()?.len() == morsel.bytes,
             "source snapshot size mismatch",
         )?;
-        let mut digest = blake3::Hasher::new();
-        let mut bytes = [0u8; 8192];
-        let mut read = 0u64;
-        loop {
-            token.check()?;
-            require(
-                Instant::now() < deadline,
-                "scheduler source verification deadline",
-            )?;
-            let n = file.read(&mut bytes)?;
-            if n == 0 {
-                break;
-            }
-            read = read
-                .checked_add(n as u64)
-                .ok_or_else(|| Error::Invalid("source verification byte overflow".into()))?;
-            require(read <= morsel.bytes, "source grew during verification")?;
-            digest.update(&bytes[..n]);
-        }
-        require(
-            read == morsel.bytes && digest.finalize().to_hex().as_str() == morsel.fingerprint,
-            "source snapshot fingerprint mismatch",
-        )?;
+        verify_reader(&mut file, morsel, token, deadline, &mut bytes)?;
     }
     Ok(())
+}
+
+fn verify_reader(
+    file: &mut impl std::io::Read,
+    morsel: &super::SourceMorsel,
+    token: &CancellationToken,
+    deadline: Instant,
+    bytes: &mut [u8],
+) -> Result<()> {
+    let mut digest = blake3::Hasher::new();
+    let mut read = 0u64;
+    loop {
+        token.check()?;
+        require(
+            Instant::now() < deadline,
+            "scheduler source verification deadline",
+        )?;
+        let n = file.read(bytes)?;
+        if n == 0 {
+            break;
+        }
+        read = read
+            .checked_add(n as u64)
+            .ok_or_else(|| Error::Invalid("source verification byte overflow".into()))?;
+        require(read <= morsel.bytes, "source grew during verification")?;
+        digest.update(&bytes[..n]);
+    }
+    require(
+        read == morsel.bytes && digest.finalize().to_hex().as_str() == morsel.fingerprint,
+        "source snapshot fingerprint mismatch",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct InterruptRead {
+        token: CancellationToken,
+        expire: bool,
+    }
+    impl std::io::Read for InterruptRead {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            bytes.fill(42);
+            if self.expire {
+                thread::sleep(Duration::from_millis(3));
+            } else {
+                self.token.cancel();
+            }
+            Ok(bytes.len())
+        }
+    }
+    #[test]
+    fn source_pass_checks_cancellation_and_deadline_between_chunks() {
+        for expire in [false, true] {
+            let token = CancellationToken::default();
+            let mut reader = InterruptRead {
+                token: token.clone(),
+                expire,
+            };
+            let morsel = super::super::SourceMorsel {
+                id: crate::ids::MorselId(0),
+                path: "/unused".into(),
+                bytes: 1024 * 1024,
+                fingerprint: "a".repeat(64),
+            };
+            let error = verify_reader(
+                &mut reader,
+                &morsel,
+                &token,
+                Instant::now() + Duration::from_millis(if expire { 1 } else { 1000 }),
+                &mut vec![0; 256 * 1024],
+            )
+            .unwrap_err();
+            if expire {
+                assert!(error.to_string().contains("verification deadline"));
+            } else {
+                assert!(token.check().is_err());
+            }
+        }
+    }
 }

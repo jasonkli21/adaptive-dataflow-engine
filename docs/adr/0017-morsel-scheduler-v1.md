@@ -1,12 +1,12 @@
 # ADR-0017 — Bounded file-morsel scheduler v1
 
-Status: Implemented, PARTIAL — correctness verified; all Phase10 empirical guards failed. See the Phase10 implementation report.
-Date: 2026-10-24. Baseline: 3e89edfd0230674f0e06437cccb58fa99e369422.
+Status: Implemented, PARTIAL — bounded correctness and all six unchanged local release guards pass at ee9f8da; physical membership stays fixed. Original failed sources remain recorded below. See the Phase10 implementation/readiness reports.
+Original decision date: 2026-10-24. Baseline: 3e89edfd0230674f0e06437cccb58fa99e369422.
 
 Refines architecture §§6.2,9,13,17,22,27–31; preserves INV1–10 and
 ade-bench → ade-distributed → ade-exec. The user's implementation request
 supersedes the stale Phase9-only AGENTS boundary. Phase8/9 historical timing
-identities and failed experiments are unchanged. No Phase11 work is authorized.
+identities and failed experiments are unchanged. The original decision did not authorize Phase11; it was subsequently authorized and completed under ADR-0018.
 
 One immutable manifest file is one MorselId. A finite coordinator ledger owns
 Pending → Leased → Completed, one outstanding lease per worker, no retries or
@@ -251,3 +251,12 @@ improvement applies to both static and leased execution and retains the same
 spill codec. Test sentinel/zero/overflow/conservation cases. Restore the 100us
 service sleep: lower control latency is not sufficient justification for extra
 poll CPU competing with mandatory hashes. Preserve both negative experiments.
+
+Continued acceptance: clean source ee9f8da (crates4b780320) passes 192 Rust/18
+Python tests and the unchanged 13-arm release: 62 successful children/49 measured
+samples, three reached fault stages, all six timing guards. The closest guard is
+uniform4=1.143644 against1.15, a narrow local margin. Full source/pre/post checks,
+file-level provisional ACKs, exact rows and terminal validation remain. Both
+failed sources and seven native diagnostics are preserved in the dated readiness
+report. The bounded opt-in research path has local acceptance; static stays the
+default and physical process membership/migration/recovery remain deferred.

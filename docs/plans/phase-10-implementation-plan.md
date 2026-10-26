@@ -4,7 +4,7 @@
 **Prepared:** 2026-10-24 (America/Los_Angeles)
 **Repository:** https://github.com/jasonkli21/adaptive-dataflow-engine
 **Inspected `main`:** [`3e89edfd0230674f0e06437cccb58fa99e369422`](https://github.com/jasonkli21/adaptive-dataflow-engine/commit/3e89edfd0230674f0e06437cccb58fa99e369422) — Phase 9 review fixes
-**Status:** Implementation explicitly authorized by the user on 2026-10-24; acceptance remains evidence-gated.
+**Status:** PARTIAL: bounded correctness and all six unchanged local release guards pass at ee9f8da after continued remediation; physical membership remains deferred. The original failed sources remain recorded below.
 
 ## 0. Authority, gate, and honest outcome
 
@@ -239,3 +239,11 @@ gather commit. No keyed coalescer, source-identity shortcut, new scheduled unit,
 recovery envelope or default change is admitted. ADR-0017 specifies resources
 and implementation invariants. Native diagnostic 7 passes six comparisons but
 is not release acceptance; a clean, source-bound 13-arm release remains required.
+
+Continued release outcome (2026-10-26): ee9f8da/crates4b780320 passes the original
+13-arm acceptance with all 62 children/49 measured samples, three reached negative
+stages and all six guards. The sequential workspace gate passes 192 Rust/18 Python
+tests and smoke. Uniform4=1.143644 against1.15 is a narrow machine-local result.
+Earlier failed sources, native probes and zero-measurement readiness attempts
+stay recorded. This closes bounded empirical timing debt, not physical membership
+or the full Phase10 PRD. Static remains default; no Phase12 authorization follows.

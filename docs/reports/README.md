@@ -25,3 +25,7 @@ Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke 
 ## Separate partial outcomes
 
 - [Phase 10](phase-10-implementation-report.md) — bounded scheduler; fixed process membership remains a PRD gap.
+
+## Readiness and stabilization
+
+- [2026-10-26 repository readiness / Phase 10 remediation](repo-wide-readiness-2026-10-26.md) — continued source ee9f8da passes correctness and all six unchanged local scheduler guards; failed sources preserved; physical membership stays fixed.

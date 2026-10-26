@@ -37,8 +37,9 @@ fixed48-shard/aggregate-spill-domain limitations remain explicit. Source-bound
 B/C confirmations and all-nine pooled original gates pass; this is local evidence.
 Phase 9 bounded v1 remains accepted with review fixes at 3e89edf. Its frozen
 measurements belong to 9b0330a/runtime fab08a0, not this revision. Phase 10 was
-explicitly authorized on 2026-10-24. Phase10 implementation is partial: correctness passes but all6 release timing
-guards failed, and physical membership stays fixed. Phase 10 remains PARTIAL under docs/plans/phase-10-implementation-plan.md and ADR-0017:
+explicitly authorized on 2026-10-24. Phase10 remains partial: the original and
+fcc325e sources failed all six timing guards; ee9f8da now passes all six unchanged
+local release guards and correctness. Physical membership stays fixed. Phase 10 remains PARTIAL under docs/plans/phase-10-implementation-plan.md and ADR-0017:
 file-morsel leasing, stealing and elastic producer participation in a fixed
 2–4-process registry. Preserve static defaults and accepted Phase6–9 contracts.
 The user explicitly authorized Phase 11 bounded v1 on 2026-10-25 despite Phase 10 debt.
@@ -49,11 +50,12 @@ failed, the user explicitly instructed continued reassessment and remediation
 until the failures are addressed, superseding the earlier two-candidate time box. This stabilization is the current scope; it does not widen recovery,
 frontend admission or physical membership. Preserve historical source identities
 and failed gates. Static remains the supported default; leased scheduling remains
-experimental and unpromoted until all unchanged gates pass. Do not begin Phase 12.
+an opt-in bounded research path with local acceptance at ee9f8da. Do not begin Phase 12.
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
-one measured candidate at fcc325e passes correctness but fails all six timing
-guards. The user subsequently authorized further source/scan and contribution work
-within the same bounded Phase 10 contract. Preserve every failed candidate and
+fcc325e passes correctness but fails all six timing guards. Continued source/scan
+and contribution remediation at ee9f8da passes all 62 children/49 measured samples,
+three reached negative stages, and all six unchanged gates. The uniform4 ratio
+is 1.1436 against 1.15, a narrow local margin. Preserve every failed candidate and
 all six original gates; do not infer physical elasticity or Phase 12 authorization.
 
 - Keep `ade-bench -> ade-distributed -> ade-exec` and `ade-frontend -> ade-physical`;

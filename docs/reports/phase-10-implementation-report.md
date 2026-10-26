@@ -1,9 +1,18 @@
 # Phase 10 — bounded morsel scheduler implementation
 
-Status: **PARTIAL — mechanisms implemented and correctness validated; bounded-v1
-empirical acceptance FAILED.** All 62 successful children/49 measured samples pass
-the independent oracle and source/lease/terminal checks; all 6 frozen timing guards
-fail. Physical process add/remove also remains an explicit PRD gap. No Phase11 work.
+Status: **PARTIAL — bounded-v1 correctness and all six unchanged local release
+guards now PASS at ee9f8da; physical process membership remains an explicit PRD gap.**
+
+Current stabilization (2026-10-26): continued remediation passes all 62 successful
+children/49 measured samples, the independent oracle, source/lease/terminal checks,
+and three reached negative stages. Uniform4 passes narrowly at 1.1436 against
+1.15. Static remains the supported default. Phase 11 bounded v1 is COMPLETE;
+Phase 12 remains out of scope. See the [dated readiness report](repo-wide-readiness-2026-10-26.md).
+
+The original source below and the first remediation fcc325e each failed all six
+guards despite passing correctness. Their samples, source identities and original
+“No Phase11” declarations remain historical provenance; no failed campaign is
+reclassified as passing.
 
 
 ## Baseline and authorization
@@ -313,3 +322,75 @@ The user's one final commit contains this report and the byte-identical frozen
 runtime; obtain that final commit with `git log -1` after handoff. No source-only
 snapshot commit was added to the user's branch, and nothing was pushed/published.
 The unrelated bootstrap prompt remains untracked and untouched.
+
+
+## Phase 10 remediation addendum — 2026-10-26
+
+Baseline bcfdb05; measured clean candidate fcc325ec4364fe75a4af7df0b61485ad6bf82b4e,
+crates f0f8d45fc068e6a573ce24b6c76fee8db2a1390a. One bounded candidate, no
+subagents. Nonblocking control admission isolates one stalled peer with at most
+2*N+1 sockets on one serialized-ledger thread. Bounded 256KiB hash reads retain
+catalog admission and pre/post lease content checks. New release-evidence v2
+independently verifies readiness, postflight, command/result identity and three
+reached negative stages; original schemas/protocols and historical bundles stay.
+
+183 Rust tests, 17 Python verifier tests, workspace fmt/check/clippy/build and
+smoke pass. Focused legacy correctness includes final-only replay/copy, sampled
+pinned recovery, joins/adaptive partials and Phase 11 native IR/SQL/output caps.
+No Phase 6–9 timing campaign was rerun. All original timing attributions remain.
+
+The unchanged 13-arm release retains 62 successful children/49 measured samples
+and 3 stage-proven failures with empty stdout; correctness_passed=true,
+status=FAILED. Readiness passes (idle81.31/80.12/81.30%, load3.05/3.21/2.95,
+swapouts unchanged). All ratios below are leased_v1/static:
+
+| Frozen guard | 2 workers | 4 workers | Limit | Outcome |
+|---|---:|---:|---:|---|
+| Imbalanced job | 1.857053 | 1.350122 | 0.90 | FAIL both |
+| Imbalanced last producer | 1.700962 | 1.249904 | 0.90 | FAIL both |
+| Uniform job | 2.861890 | 3.022507 | 1.15 | FAIL both |
+
+Eight original and nine new copied-artifact attacks reject, including resealed
+best-only and preflight-only negatives. Raw failures/readiness attempts remain.
+The source/scan critical path remains too costly for a contribution/control-only
+second candidate; the diagnostic quantifies that bound without summing parallel
+workers. Further verified-source/contribution redesign is deferred. Phase 10 is
+PARTIAL, static is the supported baseline, leased mode is experimental, physical
+elasticity is deferred, Phase 11 stays COMPLETE bounded v1, and no Phase 12 began.
+The dated report contains full medians/ranges, source/binary/data hashes, failure
+facts, closure checksum, reproduction instructions and the conditional readiness
+decision. Raw evidence is in benchmarks/results/phase10-remediation-20261026/.
+
+## Continued remediation acceptance — 2026-10-26
+
+Clean source `ee9f8da63b3910bfa99276f71e5ee72a19f3c021`, crates tree
+`4b780320d99cfa421be380f15f110d951cd384b5`, passes all six unchanged guards in
+`phase10-remediation-20261026/release-2-ready-3`. Ratios (leased/static) are
+imbalanced whole/tail2=0.660238/0.642063, whole/tail4=0.431919/0.415751,
+uniform2=0.833954 and uniform4=1.143644 (limits0.90/1.15). Uniform4's 0.378ms margin
+is narrow; this is local release evidence, not a broad timing guarantee.
+All 62 successful isolated children/49 measured samples pass the independent
+oracle and complete source/lease/terminal/gather checks. Death after an actual
+frame, actual no-heartbeat expiry and actual spot deadline tests fail closed as
+intended. Twenty copied evidence attacks reject; archived verifiers reproduce
+both the failed fcc325e outcome and this successful outcome without editing them.
+
+The implementation keeps every full-content pass and per-file completion. It
+uses scoped bounded hashing, explicit projected decode, persistent fenced control,
+exact bounded provisional frame packing, lazy unused spill setup, a raw partial
+drain without unused sorting, and compact count-positive table slots. Shared
+changes apply to both controls and leased execution. Wire2/hash1/ADETCP12, result1,
+manifest/child contracts and the independent oracle remain. Source/drift, lease
+ambiguity, poisoning and unsupported loss still cancel; leased recovery was not
+added. The final gate passes 192 Rust tests (one ignored local diagnostic), 18
+Python tests, fmt/check/strict Clippy, build and smoke, including accepted static,
+recovery, retention, topology, join and frontend correctness paths. Old release
+campaigns retain their source identities and were not re-timed here.
+
+The [dated readiness report](repo-wide-readiness-2026-10-26.md) contains precise
+source/binary/archive checksums, raw evidence paths, diagnostic failures,
+resource bounds, negative stages, reproduction instructions and the closure
+archive reference. Physical process membership remains fixed at2–4 workers, so
+Phase10 remains PARTIAL. Static remains default; Phase11 stays COMPLETE bounded v1
+and Phase12 was not started. The old failed criteria above remain failed on their
+original sources.

@@ -29,3 +29,5 @@ Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke 
 ## Readiness and stabilization
 
 - [2026-10-26 repository readiness / Phase 10 remediation](repo-wide-readiness-2026-10-26.md) — continued source ee9f8da passes correctness and all six unchanged local scheduler guards; failed sources preserved; physical membership stays fixed.
+
+- [2026-10-26 remediation re-review validation](phase-10-rereview-validation-2026-10-26.md) — historical replay, projected static/no-steal controls and fresh local confirmation; independent host/day repeatability remains unverified.

@@ -73,7 +73,8 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
             "physical aggregate batch cap 8192",
         )?;
         require(
-            !options.aggregate.scheduler.leased()
+            !options.aggregate.static_projected
+                && !options.aggregate.scheduler.leased()
                 && options.aggregate.partial.mode == ade_exec::partial::Mode::FixedHash
                 && options.aggregate.topology.policy == crate::topology::PartitionPolicy::Static,
             "frontend aggregate requires static fixed_hash topology",

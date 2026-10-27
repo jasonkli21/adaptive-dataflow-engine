@@ -30,6 +30,10 @@ impl AdeDistributedConfig {
             execution: self.task.execution(),
         };
         let mut info = local.info();
+        if self.task.static_projected {
+            info.configuration
+                .insert("producer_pipeline".into(), "static_projected".into());
+        }
         add_partial_info(&mut info, &self.task.partial);
         add_scheduler_info(&mut info, &self.task.scheduler);
         add_topology_info(&mut info, &self.task.topology);
@@ -226,6 +230,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut scheduler_values = serde_json::Map::new();
         let mut topology_values = serde_json::Map::new();
         let mut partial_values = serde_json::Map::new();
+        let mut producer_pipeline = None;
         let mut workers = None;
         let mut exchange_mode = None;
         let mut exchange_buffer = None;
@@ -234,6 +239,14 @@ impl BenchmarkEngine for AdeDistributedEngine {
         let mut exit_final = None;
         let mut recovery_enabled = true;
         for option in options {
+            if let Some(value) = option.strip_prefix("producer_pipeline=") {
+                require(
+                    producer_pipeline.is_none() && value == "static_projected",
+                    "producer_pipeline must be a unique static_projected diagnostic",
+                )?;
+                producer_pipeline = Some(value);
+                continue;
+            }
             if let Some(option) = option.strip_prefix("scheduler_") {
                 let (field, value) = option
                     .split_once('=')
@@ -506,6 +519,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
             "scheduler tuning requires leased policy",
         )?;
         let task = TaskConfig {
+            static_projected: producer_pipeline.is_some(),
             scheduler,
             partial,
             topology,
@@ -561,7 +575,7 @@ impl BenchmarkEngine for AdeDistributedEngine {
                 .to_string(),
             schema_fingerprint: manifest.schema_fingerprint.clone(),
             logical_fingerprint: manifest.logical_fingerprint.clone(),
-            replayable: !config.task.scheduler.leased(),
+            replayable: !config.task.scheduler.leased() && !config.task.static_projected,
             morsels: manifest
                 .files
                 .iter()
@@ -606,7 +620,9 @@ impl BenchmarkEngine for AdeDistributedEngine {
             workers: self.cluster.workers.clone(),
             config: self.config.task.clone(),
             task_timeout: ade_distributed::TASK_TIMEOUT,
-            snapshot: (self.config.recovery_enabled || self.config.task.scheduler.leased())
+            snapshot: (self.config.recovery_enabled
+                || self.config.task.scheduler.leased()
+                || self.config.task.static_projected)
                 .then(|| self.snapshot.clone()),
         };
         let output = ade_distributed::coordinator::execute(&job)?;
@@ -668,6 +684,59 @@ impl BenchmarkEngine for AdeDistributedEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn static_projected_diagnostic_is_explicit_and_bounded() {
+        let parse = |options: &[&str]| {
+            AdeDistributedEngine::parse_config(
+                &options.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+            )
+        };
+        let base = [
+            "producer_pipeline=static_projected",
+            "exchange_mode=spill",
+            "recovery_enabled=false",
+        ];
+        let config = parse(&base).unwrap();
+        assert!(config.task.static_projected);
+        assert!(!config.task.scheduler.leased());
+        assert_eq!(
+            config.info().configuration["producer_pipeline"],
+            "static_projected"
+        );
+        let default = parse(&[]).unwrap();
+        assert!(!default.task.static_projected);
+        assert!(
+            !default
+                .info()
+                .configuration
+                .contains_key("producer_pipeline")
+        );
+        assert!(
+            serde_json::to_value(default.task)
+                .unwrap()
+                .get("static_projected")
+                .is_none()
+        );
+        for extra in [
+            "producer_pipeline=static_projected",
+            "scheduler_policy=leased_v1",
+            "scheduler_research_delay_worker=0",
+            "aggregate_policy=raw_partial",
+            "partition_policy=static_packed",
+            "research_exit_final_partition=0",
+        ] {
+            let mut options = base.to_vec();
+            options.push(extra);
+            assert!(parse(&options).is_err(), "{extra}");
+        }
+        for options in [
+            vec!["producer_pipeline=static_projected"],
+            vec!["producer_pipeline=static_projected", "exchange_mode=spill"],
+            vec!["producer_pipeline=unknown"],
+        ] {
+            assert!(parse(&options).is_err());
+        }
+    }
     #[test]
     fn scheduler_options_are_explicit_and_strict() {
         let base = [

@@ -1041,6 +1041,14 @@ post-read verification precedes ACK and pending rows flush before terminal hashe
 The fixed table uses positive counts as occupancy, preserving bucket and spill
 thresholds while reserving compact storage. See ADR-0017 for failed candidates,
 source/ACK invariants, evidence-v2 and liveness limits.
+The re-review adds a separately named static_projected diagnostic sharing the
+projected per-file operator/hash/packing path with fixed modulo ownership, no
+lease service and no recovery. Leased_no_steal retains lease/control/ACK framing
+for policy attribution. Static defaults and frontend admission stay unchanged.
+The trusted-host operating envelope requires timely renewal scheduling; minimum
+lease admission is not availability under CPU starvation or hostile-peer load.
+See ADR-0017 and the dated re-review validation for matched/local confirmation
+and independent host/day limitations.
 
 ---
 

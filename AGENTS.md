@@ -58,6 +58,15 @@ three reached negative stages, and all six unchanged gates. The uniform4 ratio
 is 1.1436 against 1.15, a narrow local margin. Preserve every failed candidate and
 all six original gates; do not infer physical elasticity or Phase 12 authorization.
 
+The remediation re-review follow-up is recorded in
+`docs/reports/phase-10-rereview-validation-2026-10-26.md`: immutable historical
+archive replay passes; clean snapshot b4a2a70 passes all six supplementary
+static_projected comparisons and all six original confirmation guards. The new
+static_projected pipeline is a diagnostic only; static defaults remain unchanged.
+Only local imbalanced scheduler-policy benefit is credited; uniform runs had no
+steals and independent host/day repeatability is unverified. Preserve all samples,
+refused readiness attempts, source identities and fixed membership boundaries.
+
 - Keep `ade-bench -> ade-distributed -> ade-exec` and `ade-frontend -> ade-physical`;
   native runtimes may depend on ade-physical, never on the frontend/DataFusion.
 - Preserve the independent oracle, child protocol, manifest inputs and result schema v1.

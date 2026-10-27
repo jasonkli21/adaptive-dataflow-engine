@@ -425,6 +425,13 @@ its measurements were not rewritten. Standalone `validate` diagnostics retain
 sidecar v1 because they have no result run/iteration identity. `phase9-bundle.py`
 retains source-bound raw evidence.
 
+The [2026-10-26 re-review validation](docs/reports/phase-10-rereview-validation-2026-10-26.md)
+replays the historical archive unchanged and adds clean-source matched controls
+and a fresh confirmation. All six matched comparisons and all six original
+confirmation guards pass locally at `b4a2a70`. This supports an imbalanced
+scheduler-policy gain; uniform runs recorded no steals. Independent host/day
+repeatability remains unverified, and physical membership remains fixed.
+
 ## Opt-in leased aggregation
 
 ```bash
@@ -438,7 +445,13 @@ ADE_DISTRIBUTED_METRICS_FILE=/tmp/ade-leases.jsonl target/debug/ade-bench run \
 ```
 
 `static` is unchanged modulo assignment; `leased_no_steal` is the diagnostic
-control. Leased execution requires fixed_hash, static hash ownership, spill
+control. For matched per-file static ownership, add
+`--engine-option producer_pipeline=static_projected` with `scheduler_policy=static`,
+`exchange_mode=spill` and `recovery_enabled=false`. This uses the same projected
+scan, content hashes, per-file contributions and frame packing as leased
+production. It has no lease service/ACK; no-steal retains those mechanisms for
+policy attribution. The comparator rejects scheduler tuning/recovery and is not
+admitted through the bounded SQL frontend. Leased execution requires fixed_hash, static hash ownership, spill
 retention and a verified non-replayable manifest snapshot. Recovery, complete
 copies, sampled routing, adaptive/raw partials and joins are refused. Any leased
 producer/final loss or ambiguous lease cancels the entire job with no output.

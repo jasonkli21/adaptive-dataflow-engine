@@ -79,6 +79,9 @@ pub struct WorkerEndpoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskConfig {
+    /// Opt-in per-file projected static comparator; never a scheduler policy.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub static_projected: bool,
     #[serde(default)]
     pub scheduler: scheduler::Config,
     #[serde(default)]
@@ -95,6 +98,7 @@ pub struct TaskConfig {
 impl Default for TaskConfig {
     fn default() -> Self {
         Self {
+            static_projected: false,
             scheduler: scheduler::Config::default(),
             partial: ade_exec::partial::Config::default(),
             topology: topology::TopologyConfig::default(),
@@ -126,6 +130,28 @@ impl TaskConfig {
         self.exchange.validate()?;
         self.topology.validate()?;
         self.partial.validate()?;
+        if self.static_projected {
+            require(
+                !self.scheduler.leased()
+                    && !self.scheduler.recovery_enabled
+                    && self.partial.mode == ade_exec::partial::Mode::FixedHash
+                    && self.topology.policy == topology::PartitionPolicy::Static
+                    && self.exchange.mode == ExchangeMode::Spill
+                    && self.exchange.cost.is_none()
+                    && self.scheduler
+                        == scheduler::Config {
+                            recovery_enabled: false,
+                            ..scheduler::Config::default()
+                        },
+                "static_projected requires default static policy/fixed_hash/spill without recovery or hooks",
+            )?;
+            #[cfg(feature = "research-hooks")]
+            require(
+                self.research_exit_final_partition.is_none()
+                    && self.exchange.pressure.target_partition.is_none(),
+                "static_projected rejects legacy recovery/pressure hooks",
+            )?;
+        }
         if self.scheduler.leased() {
             require(
                 self.partial.mode == ade_exec::partial::Mode::FixedHash

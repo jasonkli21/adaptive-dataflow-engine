@@ -72,10 +72,17 @@ def check_source_identity(root, commit, runtime):
     if bundled_identity.is_file():
         require(json.loads(bundled_identity.read_text()) == identity, 'implementation identity mismatch')
 
+def check_pipeline(config, stem):
+    projected = config.get('producer_pipeline') == 'static_projected'
+    require(projected == stem.endswith('-static_projected'), 'comparator pipeline identity')
+    require(not projected or config['scheduler_policy'] == 'static', 'projected control ownership')
+
+
 def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_root):
     n = int(run['engine']['configuration']['workers'])
     config = run['engine']['configuration']
     leased = config['scheduler_policy'] != 'static'
+    projected = config.get('producer_pipeline') == 'static_projected'
     require(record['sidecar_version'] == (3 if leased else 2), 'assertion failed at line 7')
     require(record['run_id'] == run['run_id'] and record['iteration_index'] == slot and (record['warmup'] == warmup), 'assertion failed at line 8')
     require(record['effective_config'] == config, 'effective config binding')
@@ -83,7 +90,7 @@ def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_
     require(isinstance(pid, int) and pid > 0 and (pid not in pids), 'assertion failed at line 10')
     pids.add(pid)
     source = record['source']
-    require(source['version'] == 1 and source['replayable'] == (not leased), 'assertion failed at line 11')
+    require(source['version'] == 1 and source['replayable'] == (not leased and not projected), 'assertion failed at line 11')
     require(source['manifest_fingerprint'] == run['dataset_manifest_fingerprint'], 'assertion failed at line 12')
     require(source['schema_fingerprint'] == manifest['schema_fingerprint'] and source['logical_fingerprint'] == manifest['logical_fingerprint'], 'assertion failed at line 13')
     expected = [dict(id=i, path=str((dataset_root / f['relative_path']).resolve()), fingerprint=f['fingerprint'], bytes=f['bytes']) for (i, f) in enumerate(manifest['files'])]
@@ -112,10 +119,20 @@ def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_
             else:
                 require(task['executed_final'] and task['received']['transfers'] == n, 'assertion failed at line 33')
                 require(task['retention']['current_buffer_bytes'] == task['retention']['current_spill_backlog_bytes'] == 0, 'assertion failed at line 34')
+    if projected:
+        require(not leased, 'projected control has static ownership')
+        check_resources(m, n)
+        for p in m['producers'].values():
+            require(p['sent']['rows'] == p['output_rows'] and p['lease_wait_ns'] == p['lease_ack_ns'] == 0,
+                    'static projected contribution/control accounting')
     if not leased:
         require(m['scheduler'] is None, 'assertion failed at line 36')
         for (w, p) in m['producers'].items():
             require(p['source_files'] == len(expected[int(w)::n]), 'assertion failed at line 37')
+            if projected:
+                require(p['input_rows'] == sum(f['rows'] for f in manifest['files'][int(w)::n])
+                        and p['production']['source_bytes'] == sum(f['bytes'] for f in expected[int(w)::n]),
+                        'projected modulo row/byte coverage')
         return
     s = m['scheduler']
     check_resources(m, n)
@@ -147,7 +164,7 @@ def check_record(record, run, manifest, slot, warmup, pids, worker_bin, dataset_
         require(all((e['preferred'] == e['lease']['worker'] for e in s['entries'])), 'assertion failed at line 57')
     require(sum((e['completion']['input_rows'] for e in s['entries'])) == manifest['row_count'], 'assertion failed at line 58')
 
-def verify(root):
+def verify(root, matched=False):
     root = pathlib.Path(root)
     load = lambda f: json.loads((root / f).read_text())
     host_evidence = evidence.check_release(root)
@@ -163,7 +180,10 @@ def verify(root):
     environment = None
     datasets = {}
     expected = {f'{r}-{n}-{m}' for n in [2, 4] for (r, m) in [('imbalanced', 'static'), ('imbalanced', 'leased_no_steal'), ('imbalanced', 'leased_v1'), ('uniform', 'static'), ('uniform', 'leased_v1')]} | {'capacity-unweighted', 'capacity-weighted', 'participation'}
-    require({i['stem'] for i in inventory} == expected and len(inventory) == 13, 'assertion failed at line 68')
+    if matched:
+        expected = {f'{r}-{n}-{p}' for r in ['imbalanced', 'uniform'] for n in [2, 4]
+                    for p in ['static', 'static_projected', 'leased_no_steal', 'leased_v1']}
+    require({i['stem'] for i in inventory} == expected and len(inventory) == (16 if matched else 13), 'exact arm inventory')
     require(set(statuses) == expected | {'negative-exit', 'negative-expiry', 'negative-notice'}, 'assertion failed at line 69')
     for item in inventory:
         stem = item['stem']
@@ -201,6 +221,7 @@ def verify(root):
                 require(json.loads(c[key]) == json.loads(value), 'assertion failed at line 92')
             else:
                 require(c[key] == value, 'assertion failed at line 93')
+        check_pipeline(c, stem)
         count = check_repetitions(run, item['workers'])
         records = [json.loads(l) for l in (root / (stem + '-metrics.jsonl')).read_text().splitlines()]
         iters = run['warmups'] + run['iterations']
@@ -225,21 +246,54 @@ def verify(root):
                 require(all((e['lease']['worker'] != 0 or e['granted_sequence'] <= notice['sequence'] for e in s['entries'])), 'assertion failed at line 110')
             if index:
                 samples.append(dict(query_ns=out['query_time_ns'], max_producer_completion_ns=max((t['coordinator_finished_ns'] for t in m['producers'].values())), producer_files=[m['producers'][str(w)]['source_files'] for w in range(item['workers'])], producer_bytes=[m['producers'][str(w)]['production']['source_bytes'] for w in range(item['workers'])], sent_rows=sum((t['sent']['rows'] for t in m['producers'].values())), sent_bytes=sum((t['sent']['payload_bytes'] for t in m['producers'].values())), control_messages=s['control_messages'] if s else 0, control_bytes=s['control_bytes'] if s else 0, renewals=s['renewals'] if s else 0, rss_bytes=it['peak_rss_bytes']))
+                if matched:
+                    samples[-1].update(stage_wall_ns=dict(
+                        coordinator={k: m[k] for k in ['source_admission_ns', 'prepare_ns', 'gather_collect_ns']},
+                        producers={w: {k: p[k] for k in ['scan_decode_ns', 'aggregate_ns', 'source_verify_ns',
+                            'operator_work_ns', 'routing_ns', 'sending_ns', 'lease_wait_ns', 'lease_ack_ns',
+                            'coordinator_finished_ns']} for w, p in m['producers'].items()},
+                        finals={w: {k: p[k] for k in ['operator_work_ns', 'aggregate_ns', 'source_pull_ns',
+                            'coordinator_finished_ns']} for w, p in m['finals'].items()}),
+                        sent_frames=sum(p['sent']['batches'] for p in m['producers'].values()),
+                        off_preference_grants=sum(e['preferred'] != e['lease']['worker'] for e in s['entries']) if s else 0)
         summaries[stem] = dict(samples=samples, median_query_ns=statistics.median((s['query_ns'] for s in samples)), median_max_producer_completion_ns=statistics.median((s['max_producer_completion_ns'] for s in samples)), query_range_ns=[min((s['query_ns'] for s in samples)), max((s['query_ns'] for s in samples))])
     negative_stages = {stem: evidence.check_negative(root, stem, statuses[stem])
                        for stem in ['negative-exit', 'negative-expiry', 'negative-notice']}
-    require(len(pids) == 62, 'assertion failed at line 120')
+    children, measured = (80, 64) if matched else (62, 49)
+    require(len(pids) == children and sum(len(s['samples']) for s in summaries.values()) == measured, 'complete child/sample count')
     gates = {}
     for n in [2, 4]:
         for (label, regime, key, limit) in [('imbalanced_job', 'imbalanced', 'median_query_ns', 0.9), ('imbalanced_tail', 'imbalanced', 'median_max_producer_completion_ns', 0.9), ('uniform_job', 'uniform', 'median_query_ns', 1.15)]:
             ratio = summaries[f'{regime}-{n}-leased_v1'][key] / summaries[f'{regime}-{n}-static'][key]
             gates[f'{label}-{n}'] = dict(ratio=ratio, limit=limit, passed=ratio <= limit)
     passed = all(g['passed'] for g in gates.values())
-    return dict(status='PASSED' if passed else 'FAILED', host_evidence=host_evidence, negative_stages=negative_stages, correctness_passed=True, passed=passed, children=62, measured=49, gates=gates, summaries=summaries, source=identity)
+    comparison = {}
+    if matched:
+        for n in [2, 4]:
+            for regime in ['imbalanced', 'uniform']:
+                controls = [summaries[f'{regime}-{n}-{p}']['samples']
+                            for p in ['static_projected', 'leased_no_steal']]
+                for a, b in zip(*controls):
+                    require(all(a[k] == b[k] for k in ['producer_files', 'producer_bytes', 'sent_rows', 'sent_frames']),
+                            'matched modulo pipeline contributions/packing differ')
+            for label, regime, key, limit in [('imbalanced_job', 'imbalanced', 'median_query_ns', .9),
+                    ('imbalanced_tail', 'imbalanced', 'median_max_producer_completion_ns', .9),
+                    ('uniform_job', 'uniform', 'median_query_ns', 1.15)]:
+                numerator = summaries[f'{regime}-{n}-leased_v1'][key]
+                ratio = numerator / summaries[f'{regime}-{n}-static_projected'][key]
+                comparison[f'{label}-{n}'] = dict(ratio=ratio, limit=limit, passed=ratio <= limit,
+                    leased_vs_no_steal=numerator / summaries[f'{regime}-{n}-leased_no_steal'][key])
+    result = dict(status='PASSED' if passed else 'FAILED', host_evidence=host_evidence, negative_stages=negative_stages, correctness_passed=True, passed=passed, children=children, measured=measured, gates=gates, summaries=summaries, source=identity)
+    if matched:
+        matched_passed = all(g["passed"] for g in comparison.values())
+        result.update(campaign="supplementary-matched-v1", matched_gates=comparison,
+                      original_gates_passed=passed, matched_passed=matched_passed,
+                      passed=matched_passed, status="PASSED" if matched_passed else "FAILED")
+    return result
 if __name__ == '__main__':
     root = pathlib.Path(sys.argv[1])
     try:
-        result = verify(root)
+        result = verify(root, matched="--matched" in sys.argv[2:])
     except Exception as error:
         result = dict(status='UNVERIFIED', correctness_passed=False, passed=False, error=f'{type(error).__name__}: {error}')
     (root / 'verification.json').write_text(json.dumps(result, indent=2) + '\n')

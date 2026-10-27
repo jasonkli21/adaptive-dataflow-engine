@@ -219,7 +219,7 @@ fn execute_inner(
     validate_topology(&job.workers)?;
     job.config.validate()?;
     job.config.scheduler.validate(job.workers.len())?;
-    if job.config.scheduler.leased() {
+    if job.config.scheduler.leased() || job.config.static_projected {
         require(
             job.workers
                 .iter()
@@ -254,7 +254,7 @@ fn execute_inner(
     let mut admission_hash_scratch_peak_bytes = 0;
     if let Some(snapshot) = &job.snapshot {
         snapshot.validate(&job.files)?;
-        if job.config.scheduler.leased() {
+        if job.config.scheduler.leased() || job.config.static_projected {
             let bytes = snapshot.morsels.iter().try_fold(0u64, |sum, m| {
                 sum.checked_add(m.bytes)
                     .ok_or_else(|| Error::Invalid("source size overflow".into()))
@@ -328,7 +328,7 @@ fn execute_inner(
                 "unexpected prepare response",
             )
         };
-        if scheduler.is_some() {
+        if scheduler.is_some() || job.config.static_projected {
             // At most one preparation thread per fixed registry member. Full
             // source admission has already passed; no task starts until ALL
             // acknowledgments arrive. Join every thread before cancellation.

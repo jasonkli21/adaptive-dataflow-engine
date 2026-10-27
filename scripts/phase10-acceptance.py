@@ -10,12 +10,15 @@ def require(condition, context):
     if not condition:
         raise VerificationError(str(context))
 
+matched = os.environ.get('ADE_PHASE10_CAMPAIGN', 'original') == 'matched'
+require(os.environ.get('ADE_PHASE10_CAMPAIGN', 'original') in {'original', 'matched'}, 'unknown campaign')
 root = pathlib.Path(os.environ.get('ADE_PHASE10_RESULTS', 'benchmarks/results/phase10-v1')).resolve()
 data = pathlib.Path(os.environ.get('ADE_PHASE10_DATA', 'benchmarks/datasets/phase10-v1')).resolve()
 bin = pathlib.Path(os.environ.get('ADE_BENCH_BIN', 'target/release/ade-bench')).resolve()
 require(not subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all']).strip(), 'clean source required')
 root.mkdir(parents=True, exist_ok=False)
-data.mkdir(parents=True, exist_ok=False)
+reuse_data = os.environ.get('ADE_PHASE10_REUSE_DATA') == '1'
+data.mkdir(parents=True, exist_ok=reuse_data)
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
 tree = subprocess.check_output(['git', 'rev-parse', 'HEAD:crates'], text=True).strip()
 archive = subprocess.check_output(['git', 'archive', '--format=tar', commit])
@@ -23,7 +26,7 @@ archive = subprocess.check_output(['git', 'archive', '--format=tar', commit])
 subprocess.run(['git', 'bundle', 'create', str(root / 'source.bundle'), 'HEAD'], check=True)
 (root / 'source-identity.json').write_text(json.dumps(dict(schema_version=1, source_commit=commit, runtime_tree=tree, source_archive_sha256=hashlib.sha256(archive).hexdigest()), indent=2) + '\n')
 (root / 'binary-sha256.json').write_text(json.dumps({p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [bin, bin.with_name('ade-worker')]}, indent=2) + '\n')
-(root / 'declaration.md').write_bytes(pathlib.Path('docs/research/phase-10-experiment.md').read_bytes())
+(root / 'declaration.md').write_bytes(pathlib.Path('docs/research/phase-10-rereview-experiment.md' if matched else 'docs/research/phase-10-experiment.md').read_bytes())
 
 session = str(uuid.uuid4())
 commands = {}
@@ -54,6 +57,8 @@ for regime in ['imbalanced', 'uniform']:
     args = ['data', 'generate', 'synthetic', '--dataset-id', f'phase10-{regime}-v1', '--rows', 4000000, '--files', 32, '--row-group-rows', 8192, '--key-cardinality', 1024, '--seed', 42, '--output', data / regime]
     if regime == 'imbalanced':
         args += ['--file-row-weights', ','.join(map(str, [15, 1, 1, 1] * 8))]
+    if reuse_data:
+        args = ['data', 'inspect', data / regime]
     manifest_status = command(args, f'{regime}-manifest')
     require(manifest_status == 0, f'{regime} manifest generation failed')
     oracle_status = command(['validate', '--engine', 'datafusion', '--spec', spec, '--dataset', data / regime], f'{regime}-oracle')
@@ -74,15 +79,23 @@ def run(regime, workers, policy, extra=(), label=None):
     (root / 'statuses.json').write_text(json.dumps(statuses, indent=2) + '\n')
     (root / 'inventory.json').write_text(json.dumps(inventory, indent=2) + '\n')
     print(stem, statuses[stem], flush=True)
-for n in [2, 4]:
-    for policy in ['static', 'leased_no_steal', 'leased_v1']:
-        run('imbalanced', n, policy)
-    for policy in ['static', 'leased_v1']:
-        run('uniform', n, policy)
-for (label, weights) in [('unweighted', '1,1,1,1'), ('weighted', '1,4,4,4')]:
-    run('uniform', 4, 'leased_v1', [f'scheduler_capacities={weights}', 'scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=100'], f'capacity-{label}')
-events = json.dumps([dict(after_completed=1, worker=2, action='activate'), dict(after_completed=2, worker=0, action=dict(spot_notice=dict(grace_ms=5000))), dict(after_completed=3, worker=0, action='drain')], separators=(',', ':'))
-run('uniform', 4, 'leased_v1', ['scheduler_initial_active=2', 'scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=1000', f'scheduler_participation={events}'], 'participation')
+if matched:
+    for n in [2, 4]:
+        for regime in ['imbalanced', 'uniform']:
+            run(regime, n, 'static')
+            run(regime, n, 'static', ['producer_pipeline=static_projected'], f'{regime}-{n}-static_projected')
+            run(regime, n, 'leased_no_steal')
+            run(regime, n, 'leased_v1')
+else:
+    for n in [2, 4]:
+        for policy in ['static', 'leased_no_steal', 'leased_v1']:
+            run('imbalanced', n, policy)
+        for policy in ['static', 'leased_v1']:
+            run('uniform', n, policy)
+    for (label, weights) in [('unweighted', '1,1,1,1'), ('weighted', '1,4,4,4')]:
+        run('uniform', 4, 'leased_v1', [f'scheduler_capacities={weights}', 'scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=100'], f'capacity-{label}')
+    events = json.dumps([dict(after_completed=1, worker=2, action='activate'), dict(after_completed=2, worker=0, action=dict(spot_notice=dict(grace_ms=5000))), dict(after_completed=3, worker=0, action='drain')], separators=(',', ':'))
+    run('uniform', 4, 'leased_v1', ['scheduler_initial_active=2', 'scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=1000', f'scheduler_participation={events}'], 'participation')
 negatives = {'exit': ['scheduler_research_exit_after_emit_worker=0'], 'expiry': ['scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=350', 'scheduler_research_no_heartbeat_worker=0', 'scheduler_lease_ms=80', 'scheduler_heartbeat_ms=20'], 'notice': ['scheduler_research_delay_worker=0', 'scheduler_research_delay_ms=1000', 'scheduler_participation=' + json.dumps([dict(after_completed=1, worker=0, action=dict(spot_notice=dict(grace_ms=1)))], separators=(',', ':'))]}
 for (name, extra) in negatives.items():
     opts = ['workers=2', 'exchange_mode=spill', 'recovery_enabled=false', 'scheduler_policy=leased_v1', *extra]
@@ -90,4 +103,4 @@ for (name, extra) in negatives.items():
 (root / 'statuses.json').write_text(json.dumps(statuses, indent=2) + '\n')
 evidence.write(root, 'postflight.json', evidence.capture(session))
 evidence.seal(root, session, commands)
-subprocess.run([sys.executable, 'scripts/phase10-verify.py', str(root)], check=True)
+subprocess.run([sys.executable, 'scripts/phase10-verify.py', str(root), *(['--matched'] if matched else [])], check=True)

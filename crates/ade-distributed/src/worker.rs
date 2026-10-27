@@ -188,18 +188,20 @@ fn task_metrics(
 }
 fn producer_plan(job: &Job, files: &[PathBuf]) -> LocalPlan {
     let input = Box::new(LocalPlan::Project {
-        input: Box::new(if job.spec.schedule.is_some() {
-            LocalPlan::ProjectedParquetScan {
-                files: files.to_vec(),
-                batch_size: job.spec.config.batch_size,
-                columns: vec!["key".into(), "value_i64".into()],
-            }
-        } else {
-            LocalPlan::ParquetScan {
-                files: files.to_vec(),
-                batch_size: job.spec.config.batch_size,
-            }
-        }),
+        input: Box::new(
+            if job.spec.schedule.is_some() || job.spec.config.static_projected {
+                LocalPlan::ProjectedParquetScan {
+                    files: files.to_vec(),
+                    batch_size: job.spec.config.batch_size,
+                    columns: vec!["key".into(), "value_i64".into()],
+                }
+            } else {
+                LocalPlan::ParquetScan {
+                    files: files.to_vec(),
+                    batch_size: job.spec.config.batch_size,
+                }
+            },
+        ),
         columns: vec!["key".into(), "value_i64".into()],
     });
     if job.spec.config.partial.mode == ade_exec::partial::Mode::FixedHash {
@@ -233,7 +235,26 @@ fn producer(
             target.is_none() && attempt == AttemptId(0) && files.is_empty(),
             "leased producer cannot replay or accept assigned files",
         )?;
-        return leased_producer(job, task);
+        return file_producer(job, task);
+    }
+    if job.spec.config.static_projected {
+        require(
+            target.is_none() && attempt == AttemptId(0),
+            "static_projected cannot replay",
+        )?;
+        let source = job
+            .spec
+            .snapshot
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("static_projected source missing".into()))?;
+        let expected: Vec<_> = source
+            .morsels
+            .iter()
+            .filter(|m| m.id.0 % job.spec.workers.len() as u64 == task.0)
+            .map(|m| m.path.clone())
+            .collect();
+        require(expected == files, "static_projected assigned file mismatch")?;
+        return file_producer(job, task);
     }
     let start = Instant::now();
     let token = job.store.cancellation.clone();
@@ -394,16 +415,16 @@ fn producer(
     metrics.layout_digest = layout.as_ref().map(|l| l.digest.clone());
     Ok(metrics)
 }
-// A lease is not an exchange attempt. Append every file's contributions to
-// this ONE sender set, and emit exactly one terminal per destination at the end.
+// Shared file pipeline for leased production and the static_projected control.
+// Append contributions to ONE sender set, closing one terminal per destination.
 #[allow(
     clippy::too_many_lines,
     reason = "One persistent producer session owns lease completion and terminal closure."
 )]
-fn leased_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
+fn file_producer(job: &Job, task: TaskId) -> Result<TaskMetrics> {
     crate::scheduler::with_verifier(
         crate::scheduler::producer_threads(job.spec.workers.len()),
-        |verifier| leased_producer_with(job, task, verifier),
+        |verifier| file_producer_with(job, task, verifier),
     )
 }
 fn leased_provisional_rows(
@@ -421,28 +442,54 @@ fn leased_provisional_rows(
     clippy::too_many_lines,
     reason = "Persistent sender set and scoped source verifier share one lease lifecycle."
 )]
-fn leased_producer_with(
+fn file_producer_with(
     job: &Job,
     task: TaskId,
     verifier: &crate::scheduler::source::Verifier<'_>,
 ) -> Result<TaskMetrics> {
     let start = Instant::now();
     let token = job.store.cancellation.clone();
-    let schedule = job.spec.schedule.as_ref().expect("leased spec");
-    let client = crate::scheduler::Client::start(
-        schedule.clone(),
-        crate::ids::WorkerId(task.0),
-        &job.spec.config.scheduler,
-        token.clone(),
-    )?;
+    let schedule = job.spec.schedule.as_ref();
+    let client = schedule
+        .map(|schedule| {
+            crate::scheduler::Client::start(
+                schedule.clone(),
+                crate::ids::WorkerId(task.0),
+                &job.spec.config.scheduler,
+                token.clone(),
+            )
+        })
+        .transpose()?;
+    let source = job.spec.snapshot.as_ref().expect("verified file source");
+    // Match no-steal's local queue order without a lease service. The finite
+    // catalog, full content passes and per-file contribution path are shared.
+    let mut assigned: Vec<_> = if job.spec.config.static_projected {
+        source
+            .morsels
+            .iter()
+            .filter(|m| m.id.0 % job.spec.workers.len() as u64 == task.0)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    assigned.sort_by_key(|m| (std::cmp::Reverse(m.bytes.max(1)), m.id));
+    let mut assigned = assigned.into_iter();
     let open = |p: usize| {
-        Sender::typed(
-            job.spec.workers[p].exchange,
-            transfer(job.spec.job, 0, p as u64, task.0),
-            token.clone(),
-            crate::exchange::Payload::LeasedAggregate,
-            Some(schedule.fence.digest.clone()),
-        )
+        if let Some(schedule) = schedule {
+            Sender::typed(
+                job.spec.workers[p].exchange,
+                transfer(job.spec.job, 0, p as u64, task.0),
+                token.clone(),
+                crate::exchange::Payload::LeasedAggregate,
+                Some(schedule.fence.digest.clone()),
+            )
+        } else {
+            Sender::new(
+                job.spec.workers[p].exchange,
+                transfer(job.spec.job, 0, p as u64, task.0),
+                token.clone(),
+            )
+        }
     };
     let mut senders: Vec<Option<Sender>> = (0..job.spec.workers.len()).map(|_| None).collect();
     let mut packer = partition::FramePacker::new(job.spec.workers.len());
@@ -452,24 +499,34 @@ fn leased_producer_with(
     };
     loop {
         let wait_started = Instant::now();
-        let next = client.next()?;
-        metrics.lease_wait_ns += crate::materialization::ns(wait_started);
-        let Some(lease) = next else {
+        let lease = client
+            .as_ref()
+            .map(crate::scheduler::Client::next)
+            .transpose()?
+            .flatten();
+        let morsel = if client.is_some() {
+            lease.as_ref().map(|lease| &lease.morsel)
+        } else {
+            assigned.next()
+        };
+        if client.is_some() {
+            metrics.lease_wait_ns += crate::materialization::ns(wait_started);
+        }
+        let Some(morsel) = morsel else {
             break;
         };
         #[cfg(feature = "research-hooks")]
         let granted_ms = start.elapsed().as_millis();
-        let source = job.spec.snapshot.as_ref().expect("leased source");
         require(
             source.morsels.get(
-                usize::try_from(lease.morsel.id.0)
+                usize::try_from(morsel.id.0)
                     .map_err(|_| Error::Invalid("morsel index overflow".into()))?,
-            ) == Some(&lease.morsel),
+            ) == Some(morsel),
             "lease source differs from frozen catalog",
         )?;
         let verify_started = Instant::now();
         verifier.verify(
-            std::slice::from_ref(&lease.morsel),
+            std::slice::from_ref(morsel),
             &token,
             start + crate::TASK_TIMEOUT,
         )?;
@@ -487,7 +544,7 @@ fn leased_producer_with(
         let accepted_before = leased_provisional_rows(&senders, &packer)?;
         let file_start = Instant::now();
         let output = ade_exec::execute_hash_partials_to_sink(
-            producer_plan(job, std::slice::from_ref(&lease.morsel.path)),
+            producer_plan(job, std::slice::from_ref(&morsel.path)),
             job.spec.config.execution(),
             token.clone(),
             |batch| {
@@ -505,7 +562,7 @@ fn leased_producer_with(
                             "ADE_SCHEDULER_FAULT {}",
                             serde_json::json!({
                                 "schema_version": 1, "stage": "exit_after_frame",
-                                "fence": schedule.fence, "lease": lease,
+                                "fence": schedule.expect("leased fault hook").fence, "lease": lease,
                                 "process_id": std::process::id(),
                                 "granted_ms": granted_ms, "at_ms": start.elapsed().as_millis(),
                                 "emitted_rows": selected.num_rows(), "emitted_frames": 1,
@@ -541,20 +598,24 @@ fn leased_producer_with(
         )?;
         let verify_started = Instant::now();
         verifier.verify(
-            std::slice::from_ref(&lease.morsel),
+            std::slice::from_ref(morsel),
             &token,
             start + crate::TASK_TIMEOUT,
         )?;
         metrics.source_verify_ns += crate::materialization::ns(verify_started);
         let m = task_metrics(file_start, &output, 1);
         let ack_started = Instant::now();
-        client.complete(crate::scheduler::Completion {
-            lease: lease.clone(),
-            input_rows: m.input_rows as u64,
-            output_rows: m.output_rows as u64,
-            work_ns: m.operator_work_ns,
-        })?;
-        metrics.lease_ack_ns += crate::materialization::ns(ack_started);
+        if let Some(client) = &client {
+            client.complete(crate::scheduler::Completion {
+                lease: lease.as_ref().expect("acquired lease").clone(),
+                input_rows: m.input_rows as u64,
+                output_rows: m.output_rows as u64,
+                work_ns: m.operator_work_ns,
+            })?;
+        }
+        if client.is_some() {
+            metrics.lease_ack_ns += crate::materialization::ns(ack_started);
+        }
         metrics.source_files += 1;
         metrics.input_rows = metrics
             .input_rows
@@ -575,7 +636,7 @@ fn leased_producer_with(
         metrics.production.source_bytes = metrics
             .production
             .source_bytes
-            .checked_add(lease.morsel.bytes)
+            .checked_add(morsel.bytes)
             .ok_or_else(|| Error::Invalid("leased bytes overflow".into()))?;
     }
     metrics.routing_buffer_peak_rows = packer.peak_rows;
@@ -610,7 +671,9 @@ fn leased_producer_with(
         metrics.destinations.insert(p as u64, sent);
         metrics.manifests.insert(p as u64, manifest);
     }
-    client.closed()?;
+    if let Some(client) = client {
+        client.closed()?;
+    }
     metrics.production.output_bytes = metrics.sent.payload_bytes;
     metrics.production.output_segments = metrics.sent.batches;
     metrics.elapsed_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -1374,6 +1437,7 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                     )?;
                     if let Some(snapshot) = &job.spec.snapshot
                         && job.spec.schedule.is_none()
+                        && !job.spec.config.static_projected
                     {
                         let morsels = snapshot.producer_morsels(task_id, job.spec.workers.len());
                         require(

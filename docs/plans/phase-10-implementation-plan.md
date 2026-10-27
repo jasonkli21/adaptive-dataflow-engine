@@ -247,3 +247,22 @@ tests and smoke. Uniform4=1.143644 against1.15 is a narrow machine-local result.
 Earlier failed sources, native probes and zero-measurement readiness attempts
 stay recorded. This closes bounded empirical timing debt, not physical membership
 or the full Phase10 PRD. Static remains default; no Phase12 authorization follows.
+
+## Re-review validation (2026-10-26)
+
+The follow-up addresses F1–F4 with read-only replay of the immutable historical
+bundle, the separately named static_projected per-file diagnostic in ADR-0017,
+matched leased_no_steal controls, and one predeclared fresh confirmation. Preserve
+all unsuccessful readiness/measurement attempts and the original six criteria.
+This validation can disprove attribution or repeatability; it cannot retroactively
+change ee9f8da's literal end-to-end PASS. Static remains default; the research
+operating envelope excludes guaranteed progress under CPU starvation, hostile
+multi-peer load, spot survival and physical worker replacement.
+
+
+Re-review outcome: the immutable archive replays unchanged. Clean snapshot
+b4a2a70 passes the supplementary16-arm matched campaign(80/64) and separate
+original13-arm confirmation(62/49), all six comparisons in each. Imbalanced
+policy benefit is locally supported; uniform steals and independent host/day
+repeatability are not established. See the dated re-review validation note.
+No historical gate, default, physical membership or phase boundary changed.

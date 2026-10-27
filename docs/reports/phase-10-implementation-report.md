@@ -394,3 +394,18 @@ archive reference. Physical process membership remains fixed at2–4 workers, so
 Phase10 remains PARTIAL. Static remains default; Phase11 stays COMPLETE bounded v1
 and Phase12 was not started. The old failed criteria above remain failed on their
 original sources.
+
+
+## Remediation re-review follow-up (2026-10-26)
+
+The [separate validation note](phase-10-rereview-validation-2026-10-26.md) records
+read-only replay of all733 historical archive entries using each release's own
+verifier/binaries, preserving fcc325e FAIL and ee9f8da PASS exactly. Clean snapshot
+b4a2a70 adds a static_projected per-file diagnostic, a matched16-arm campaign
+(80 children/64 measured) and a separate original13-arm confirmation(62/49).
+All six matched and all six original confirmation comparisons pass locally.
+The narrow credited scheduler-policy benefit is imbalanced work: uniform samples
+record no steals. Independent host/day repeatability remains UNVERIFIED.
+These are supplementary new-source observations, not rewritten historical gates.
+Static stays default, physical membership stays fixed, Phase10 remains PARTIAL,
+Phase11 bounded v1 stays COMPLETE, and Phase12 is not authorized.

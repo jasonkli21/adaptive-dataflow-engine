@@ -218,3 +218,29 @@ class ResourceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ComparatorTests(unittest.TestCase):
+    def test_pipeline_labels_cannot_promote_legacy_or_leased_as_projected_static(self):
+        spec = importlib.util.spec_from_file_location('p10verify_comparator', pathlib.Path(__file__).resolve().parents[1] / 'phase10-verify.py')
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        legacy = dict(scheduler_policy='static')
+        projected = dict(legacy, producer_pipeline='static_projected')
+        verifier.check_pipeline(legacy, 'uniform-4-static')
+        verifier.check_pipeline(projected, 'uniform-4-static_projected')
+        for config, stem in [(legacy, 'uniform-4-static_projected'),
+                (projected, 'uniform-4-static'),
+                (dict(projected, scheduler_policy='leased_v1'), 'uniform-4-static_projected')]:
+            with self.assertRaises(verifier.VerificationError): verifier.check_pipeline(config, stem)
+
+    def test_frozen_repetition_count_rejects_best_only_and_short_confirmation(self):
+        spec = importlib.util.spec_from_file_location('p10verify_repetitions', pathlib.Path(__file__).resolve().parents[1] / 'phase10-verify.py')
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        for workers, count in [(2, 5), (4, 3)]:
+            run = dict(run_config=dict(warmups=1, iterations=count, dataset_verification='full'),
+                       warmups=[{}], iterations=[{} for _ in range(count)])
+            verifier.check_repetitions(run, workers)
+            run['iterations'].pop()
+            with self.assertRaises(verifier.VerificationError): verifier.check_repetitions(run, workers)

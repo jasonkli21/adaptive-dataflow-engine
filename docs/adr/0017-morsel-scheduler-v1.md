@@ -260,3 +260,38 @@ file-level provisional ACKs, exact rows and terminal validation remain. Both
 failed sources and seven native diagnostics are preserved in the dated readiness
 report. The bounded opt-in research path has local acceptance; static stays the
 default and physical process membership/migration/recovery remain deferred.
+
+## Re-review comparator amendment (2026-10-26)
+
+The remediation re-review authorizes supplementary attribution, historical bundle
+replay and a separately declared confirmation; the original 13-arm release is
+immutable. Refines architecture §§9/13/22 and INV-3/4/5: the diagnostic
+`producer_pipeline=static_projected` uses static modulo file ownership, ordered
+by descending physical bytes then MorselId within each owner, and the SAME
+projected scan/first-footer reuse, per-file fixed-hash contribution drain, lazy
+spill, full admission/pre/post content hashes, scoped hash budget and exact
+row-preserving FramePacker as leased production. Preparation is parallel in both.
+It requires fixed_hash/static topology/spill, verified non-replayable source,
+recovery disabled, and no scheduler participation or fault hooks. It has no lease
+service or ACK; ordinary static transfer framing remains. It is a diagnostic,
+not a replacement default or frontend feature. Missing/changed sources and
+provisional-row mismatches fail without successful output.
+
+The existing `leased_no_steal` is the stricter mechanism-matched static-ownership
+control: same lease/control/ACK and typed terminal path as leased_v1, differing
+only in policy. Report both controls, actual off-preference grants and per-worker
+stage wall times; do not add overlapping task timers into job latency. Attribute
+any gain over legacy static separately from scheduler policy benefit. Confirmation
+uses the original limits/repetitions without selecting the best attempt. Hash
+integrity and local host readings remain neither signed attestation nor an
+independent-host replication. No physical membership, recovery, protocol version,
+result schema, historical source identity or Phase12 boundary changes.
+
+
+Re-review validation at clean snapshot b4a2a70: historical archived-verifier
+replays preserve the earlier FAIL/PASS results; all six supplementary matched
+comparisons and all six fresh original confirmation guards pass. Actual steals
+occur in imbalanced samples only. Credit a narrow local imbalanced policy gain,
+not universal or independently replicated performance. The dated validation
+report retains all samples, the zero-measurement post-build readiness refusal,
+and the independent host/day limitation. Physical membership remains deferred.

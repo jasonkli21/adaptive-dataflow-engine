@@ -428,3 +428,98 @@ fn leased_file_partials_preserve_wide_sums_and_reject_final_overflow() {
     job.snapshot.as_mut().unwrap().morsels.truncate(2);
     assert!(coordinator::execute(&job).is_err());
 }
+
+#[test]
+fn static_projected_matches_file_partials_with_modulo_ownership_and_cleanup() {
+    let data = tempfile::tempdir().unwrap();
+    let (files, snapshot, expected) = fixture(data.path(), 7, false);
+    for workers in [2, 4] {
+        let cluster =
+            LocalCluster::spawn(Path::new(env!("CARGO_BIN_EXE_ade-worker")), workers).unwrap();
+        let root = cluster.temp_root().to_path_buf();
+        let mut c = config();
+        c.scheduler.policy = Policy::Static;
+        c.static_projected = true;
+        let mut job = StaticAggregateJob {
+            id: JobId(1),
+            files: files.clone(),
+            snapshot: Some(snapshot.clone()),
+            workers: cluster.workers.clone(),
+            config: c,
+            task_timeout: Duration::from_secs(20),
+        };
+        let static_output = coordinator::execute(&job).unwrap();
+        assert!(static_output.metrics.scheduler.is_none());
+        let static_rows: Vec<_> = static_output
+            .batches
+            .iter()
+            .flat_map(|batch| {
+                let keys = batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                let sums = batch
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                let counts = batch
+                    .column(2)
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                (0..batch.num_rows())
+                    .map(|r| (keys.value(r), (sums.value(r), counts.value(r))))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            static_rows.iter().copied().collect::<BTreeMap<_, _>>(),
+            expected
+        );
+        assert_eq!(static_rows.len(), expected.len());
+        job.id = JobId(2);
+        job.config.static_projected = false;
+        job.config.scheduler.policy = Policy::LeasedNoSteal;
+        let matched = coordinator::execute(&job).unwrap();
+        check(&matched, &expected, files.len(), workers);
+        for w in 0..workers as u64 {
+            let a = &static_output.metrics.producers[&w];
+            let b = &matched.metrics.producers[&w];
+            assert_eq!(
+                a.source_files,
+                files
+                    .iter()
+                    .skip(usize::try_from(w).unwrap())
+                    .step_by(workers)
+                    .count()
+            );
+            assert_eq!(a.source_hash_threads, b.source_hash_threads);
+            assert_eq!(
+                a.source_hash_scratch_peak_bytes,
+                b.source_hash_scratch_peak_bytes
+            );
+            assert_eq!(
+                a.routing_buffer_capacity_rows,
+                b.routing_buffer_capacity_rows
+            );
+            assert_eq!(a.input_rows, b.input_rows);
+            assert_eq!(a.output_rows, b.output_rows);
+            assert_eq!(a.sent.rows, b.sent.rows);
+            assert_eq!(a.sent.batches, b.sent.batches);
+            assert_eq!(a.lease_ack_ns, 0);
+            assert_eq!(a.lease_wait_ns, 0);
+        }
+        job.id = JobId(3);
+        job.config.static_projected = true;
+        job.config.scheduler.policy = Policy::Static;
+        job.snapshot.as_mut().unwrap().morsels[0].fingerprint = "b".repeat(64);
+        assert!(coordinator::execute(&job).is_err());
+        job.id = JobId(4);
+        job.snapshot = None;
+        assert!(coordinator::execute(&job).is_err());
+        drop(cluster);
+        assert!(!root.exists());
+    }
+}

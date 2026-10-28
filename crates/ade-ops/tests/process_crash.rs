@@ -61,7 +61,7 @@ fn real_owner_kill_at_durable_claim_never_replays_ambiguous_attempt() {
     drop(store);
     kill_at(&root, &["exercise-claim", &job.id.to_string()], "claimed");
     for first in [true, false, false] {
-        let mut store = Store::open(&root).unwrap();
+        let mut store = support::open_store(&root);
         let before = store.status(job.id).unwrap();
         if first {
             assert_eq!(before.state, JobState::Claimed);

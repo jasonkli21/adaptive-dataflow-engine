@@ -276,3 +276,58 @@ NEEDS_OPERATOR roots, markers, pinned registry and supervisor logs; there is no
 force-reset/adopt command. Terminal `gc` is dry-run unless `--apply`, protects
 committed output and refuses unsafe namespaces. See evidence JSON for exact
 commands/source digest and local raw artifact paths.
+
+## Independent review follow-up (2026-10-28)
+
+The review handoff identified three gaps in the bounded implementation. This
+follow-up keeps the accepted Phase 12 boundary and historical measurements
+unchanged. The review findings are evidence for these fixes, not new phase
+authorization.
+
+- **F12-01, owner-lock contention during hashing:** registration now starts the
+  original job expiry before freezing sources, releases `owner.lock` during
+  source I/O, then reacquires it and reloads the committed snapshot before
+  rechecking idempotency and capacity. `verify-sources` uses the same release,
+  reload and validation pattern. The monitor treats `OWNER_BUSY` as a retryable
+  observation; its own deadline remains active, and other metadata or drain
+  errors fail closed. The real-process regression holds job A at the native
+  `prepared` stage while a second process hashes sources for both `submit` and
+  `verify-sources`. Each case asserts a reached hash witness and at least five
+  seconds in the hashing operation, observes A still `RUNNING` and not cancelled,
+  then verifies A succeeds with its canonical output and no cancel request.
+- **F12-02, coordinator semantic drift:** every new job pins the build-time
+  compatibility digest for `ade-ops` and `ade-frontend`, their manifests, the
+  workspace manifest/lock and an explicit compatibility epoch. The native
+  runtime pin remains separate. The final source compatibility digest is
+  `90103c47b4c0be45332588f2003ff5667d711a9a43304a83eb72f7c1e0934592`.
+  Uncommitted jobs with a different or missing pin are not replayed and move to
+  `NEEDS_OPERATOR`; the regression also verifies that a valid committed marker
+  still reconciles across coordinator drift without changing marker bytes.
+- **F12-03, unverified success in list output:** list rows retain persisted
+  `state`, add `recorded_state`, and report `output_verification: NOT_CHECKED`.
+  Single-job `status` verifies a successful marker before reporting
+  `output_verification: VERIFIED`. CLI coverage checks valid, missing and
+  corrupt markers.
+
+Validation on the local workspace, based on parent
+`4a00192f0736bb77f7adf173a8950cec31563a18`:
+
+| Command | Result |
+|---|---|
+| `cargo fmt --all -- --check` | Passed. |
+| `cargo check --workspace --all-targets --locked --offline` | Passed. |
+| `cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings` | Passed. |
+| `cargo test -p ade-ops --all-features --locked --offline` | 43 passed, 0 failed. |
+| `cargo test --workspace --all-features --locked --offline` | 242 passed, 0 failed, 1 intentionally ignored local fixture diagnostic. The successful rerun includes all Phase 12 process tests. |
+| `cargo build --workspace --all-features --locked --offline` | Passed. The linker emitted its existing `__eh_frame` compact-unwind size warning. |
+| `bash scripts/smoke.sh` | Passed schema/integrity and child validation. Its one-iteration comparison reported a regression while also warning that run configuration/verification policy and engine version/configuration differed and the tree was dirty; this is not performance evidence. |
+| `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py'` | 20 passed. |
+
+The first full workspace attempt had one failure in
+`join_pressure_prefix_safety_refusals_and_cleanup`: its source-drift assertion
+received I/O EOF/cancellation diagnostics. The test passed alone immediately
+afterward and passed again in the complete workspace rerun without a source
+change. This transient failure is retained here rather than omitted. No CI run,
+independent-host repeatability, or timing acceptance is claimed. Existing Phase
+10 failures, Phase 12 foundation evidence, fixed worker membership, and the
+deferred HA/replacement/sink boundaries remain unchanged.

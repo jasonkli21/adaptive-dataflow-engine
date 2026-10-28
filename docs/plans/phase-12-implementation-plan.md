@@ -209,3 +209,26 @@ All links are pinned to the inspected `main` snapshot; recheck a changed checkou
 - [AGENTS](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/AGENTS.md), [ADR-0013](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/adr/0013-lineage-recovery-v1.md), [ADR-0017](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/adr/0017-morsel-scheduler-v1.md), [ADR-0018](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/adr/0018-physical-ir-and-frontend-v1.md).
 - [Phase 11 report](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/reports/phase-11-implementation-report.md), [Phase 10 readiness](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/reports/repo-wide-readiness-2026-10-26.md), [Phase 10 re-review](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/docs/reports/phase-10-rereview-validation-2026-10-26.md).
 - [Coordinator](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/crates/ade-distributed/src/coordinator.rs), [gather](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/crates/ade-distributed/src/gather.rs), [worker](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/crates/ade-distributed/src/worker.rs), [protocol](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/crates/ade-distributed/src/protocol.rs), [frontend execution](https://github.com/jasonkli21/adaptive-dataflow-engine/blob/fb82b9b454e918f11dcac0776139beb293056acf/crates/ade-frontend/src/execution.rs).
+
+## 7. Independent-review remediation reconciliation (2026-10-28)
+
+The bounded Phase 12 scope is unchanged. Review of the accepted source identified
+three follow-up requirements, now incorporated into the acceptance evidence:
+
+- `owner.lock` must not span bulk registration or `verify-sources` hashing. The
+  job-wide expiry starts before registration hashing; after hashing the coordinator
+  reacquires the lock, reloads committed state, and rechecks idempotency and queue
+  limits before writing. Monitor `OWNER_BUSY` is a retryable poll outcome. Deadline
+  expiry remains independent, and other metadata errors cancel native effects and
+  fail closed after drain.
+- Each job pins both the native worker runtime and a versioned coordinator/
+  frontend compatibility identity. Older v2 jobs without that identity remain
+  readable, but an uncommitted job is not replayed under unknown semantics. A
+  valid committed marker remains eligible for verification and reconciliation.
+- Paginated `list` remains a metadata-only view. Its rows expose `recorded_state`
+  and `output_verification: NOT_CHECKED`; single-job `status` marks success only
+  after output verification.
+
+The implementation report records the exact source identity, reached-stage
+regression evidence and validation status for these additions. Historical timing,
+foundation and Phase 10 evidence retain their original source identities.

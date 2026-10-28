@@ -64,9 +64,19 @@ enum Command {
     ExerciseOwner,
 }
 fn summary(job: &ade_ops::Job) -> serde_json::Value {
-    serde_json::json!({"job":job.id,"state":job.state,"owner":job.owner,"attempt":job.attempt,"instance":job.instance,"engine_job":job.engine_job,"attempt_history":job.attempts,"recipe_hash":job.recipe_hash,"expires_ms":job.expires_ms,"cancel_requested":job.cancel_requested,"sequence":job.sequence})
+    serde_json::json!({"job":job.id,"state":job.state,"owner":job.owner,"attempt":job.attempt,"instance":job.instance,"engine_job":job.engine_job,"attempt_history":job.attempts,"recipe_hash":job.recipe_hash,"coordinator_compat":job.coordinator_compat,"expires_ms":job.expires_ms,"cancel_requested":job.cancel_requested,"sequence":job.sequence})
 }
-#[allow(clippy::too_many_lines)] // CLI dispatch keeps JSON response/error routing in one place.
+fn list_summary(job: &ade_ops::Job) -> serde_json::Value {
+    let mut value = summary(job);
+    value["recorded_state"] = serde_json::json!(job.state);
+    value["output_verification"] = serde_json::json!("NOT_CHECKED");
+    value
+}
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "CLI dispatch owns parsed arguments and keeps JSON routing in one place."
+)]
 fn run(cli: Cli) -> ade_ops::Result<serde_json::Value> {
     if matches!(cli.command, Command::Capabilities) {
         return Ok(
@@ -76,6 +86,20 @@ fn run(cli: Cli) -> ade_ops::Result<serde_json::Value> {
     #[cfg(feature = "fault-injection")]
     if matches!(cli.command, Command::ExercisePublication) {
         return exercise_publication(&cli.state);
+    }
+    if let Command::Submit { key, recipe } = &cli.command {
+        let file = File::open(recipe)?;
+        if !file.metadata()?.is_file() || file.metadata()?.len() > 512 * 1024 {
+            return Err(Error::Quota("recipe regular file/512KiB"));
+        }
+        let mut bytes = vec![];
+        file.take(512 * 1024 + 1).read_to_end(&mut bytes)?;
+        if bytes.len() > 512 * 1024 {
+            return Err(Error::Quota("recipe 512KiB"));
+        }
+        let parsed = serde_json::from_slice::<Recipe>(&bytes)?;
+        let job = Store::open(&cli.state)?.submit(key, parsed)?;
+        return Ok(summary(&job));
     }
     match &cli.command {
         Command::Run { job } => {
@@ -118,29 +142,20 @@ fn run(cli: Cli) -> ade_ops::Result<serde_json::Value> {
         Command::Init => {
             Ok(serde_json::json!({"store":store.id(),"generation":store.generation()}))
         }
-        Command::Submit { key, recipe } => {
-            let file = File::open(recipe)?;
-            if !file.metadata()?.is_file() || file.metadata()?.len() > 512 * 1024 {
-                return Err(Error::Quota("recipe regular file/512KiB"));
-            }
-            let mut bytes = vec![];
-            file.take(512 * 1024 + 1).read_to_end(&mut bytes)?;
-            if bytes.len() > 512 * 1024 {
-                return Err(Error::Quota("recipe 512KiB"));
-            }
-            let job = store.submit(&key, serde_json::from_slice::<Recipe>(&bytes)?)?;
-            Ok(summary(&job))
-        }
+        Command::Submit { .. } => unreachable!(),
         Command::Status { job } => {
             let result = store.status(job)?;
             drop(store);
             if result.state == ade_ops::JobState::Succeeded {
                 ade_ops::runner::verify_output(&cli.state, job)?;
+                let mut value = summary(&result);
+                value["output_verification"] = serde_json::json!("VERIFIED");
+                return Ok(value);
             }
             Ok(summary(&result))
         }
         Command::List { after, limit } => Ok(serde_json::Value::Array(
-            store.list(after, limit)?.iter().map(summary).collect(),
+            store.list(after, limit)?.iter().map(list_summary).collect(),
         )),
         Command::History { job } => Ok(serde_json::to_value(store.status(job)?.events)?),
         Command::Cancel { .. }

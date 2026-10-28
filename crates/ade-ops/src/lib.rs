@@ -92,8 +92,18 @@ pub(crate) fn fault(stage: &str) {
         use std::io::Write;
         eprintln!("ADE_OPS_REACHED {stage}");
         let _ = std::io::stderr().flush();
-        loop {
-            std::thread::sleep(Duration::from_millis(10));
+        if let Some(pause_ms) = std::env::var("ADE_OPS_FAULT_PAUSE_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            let until = Instant::now() + Duration::from_millis(pause_ms.min(30_000));
+            while Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        } else {
+            loop {
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
     }
     let _ = stage;

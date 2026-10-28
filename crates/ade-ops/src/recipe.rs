@@ -240,9 +240,14 @@ impl FrozenFile {
             }
             hash.update(&buf[..n]);
             #[cfg(feature = "fault-injection")]
-            if token.is_some() && std::env::var("ADE_OPS_HASH_STAGE").as_deref() == Ok(stage) {
+            if std::env::var("ADE_OPS_HASH_STAGE").as_deref() == Ok(stage) {
                 eprintln!("ADE_OPS_HASH_WITNESS {stage}");
-                let pause = Instant::now() + std::time::Duration::from_secs(4);
+                let pause_ms = std::env::var("ADE_OPS_HASH_PAUSE_MS")
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(4_000)
+                    .min(30_000);
+                let pause = Instant::now() + std::time::Duration::from_millis(pause_ms);
                 while Instant::now() < pause {
                     check_time(until)?;
                     if let Some(token) = token {
@@ -287,8 +292,11 @@ impl FrozenFile {
         )
     }
     pub(crate) fn verify(&self, until: Instant) -> Result<()> {
+        self.verify_stage(until, "verify_sources")
+    }
+    pub(crate) fn verify_stage(&self, until: Instant, stage: &str) -> Result<()> {
         require(
-            Self::capture(&self.path, self.bytes, until)? == *self,
+            Self::capture_token(&self.path, self.bytes, until, None, stage)? == *self,
             "frozen source drift/replacement",
         )
     }

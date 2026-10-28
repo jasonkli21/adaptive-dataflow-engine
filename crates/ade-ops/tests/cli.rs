@@ -104,3 +104,47 @@ fn cli_roundtrip_structured_refusal_and_bounded_recipe_read() {
     assert!(error["error"].as_str().unwrap().len() <= 1024);
     assert!(!root.join("COMMITTED.json").exists());
 }
+
+#[test]
+fn cli_list_labels_success_as_recorded_and_unverified() {
+    let (dir, mut recipe) = support::fixture(false);
+    let root = support::state_path(&dir);
+    let mut store = ade_ops::Store::init(&root, ade_ops::Limits::default()).unwrap();
+    let (_workers, endpoints) =
+        support::managed_workers(&dir.path().canonicalize().unwrap(), store.id(), 2);
+    recipe.workers = endpoints;
+    let job = store.submit("list-verification", recipe).unwrap();
+    drop(store);
+
+    let succeeded = ade_ops::runner::run(&root, job.id).unwrap();
+    assert_eq!(succeeded.state, ade_ops::JobState::Succeeded);
+    let listed = result(&invoke(&root, &["list", "--limit", "1"]));
+    assert_eq!(listed[0]["state"], "SUCCEEDED");
+    assert_eq!(listed[0]["recorded_state"], "SUCCEEDED");
+    assert_eq!(listed[0]["output_verification"], "NOT_CHECKED");
+
+    let id = job.id.to_string();
+    let status = result(&invoke(&root, &["status", &id]));
+    assert_eq!(status["output_verification"], "VERIFIED");
+    assert!(invoke(&root, &["verify-output", &id]).status.success());
+
+    let marker = root
+        .join("jobs")
+        .join(job.id.to_string())
+        .join("COMMITTED.json");
+    let valid_marker = fs::read(&marker).unwrap();
+    fs::remove_file(&marker).unwrap();
+    let missing = result(&invoke(&root, &["list", "--limit", "1"]));
+    assert_eq!(missing[0]["recorded_state"], "SUCCEEDED");
+    assert_eq!(missing[0]["output_verification"], "NOT_CHECKED");
+    assert!(!invoke(&root, &["status", &id]).status.success());
+    assert!(!invoke(&root, &["verify-output", &id]).status.success());
+
+    fs::write(&marker, b"corrupt marker").unwrap();
+    let corrupt = result(&invoke(&root, &["list", "--limit", "1"]));
+    assert_eq!(corrupt[0]["recorded_state"], "SUCCEEDED");
+    assert_eq!(corrupt[0]["output_verification"], "NOT_CHECKED");
+    assert!(!invoke(&root, &["status", &id]).status.success());
+    assert!(!invoke(&root, &["verify-output", &id]).status.success());
+    fs::write(marker, valid_marker).unwrap();
+}

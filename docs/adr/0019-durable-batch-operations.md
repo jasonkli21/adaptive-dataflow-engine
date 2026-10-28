@@ -43,9 +43,15 @@ Legacy control stays ADETCP12. Opt-in managed workers exclusively accept
 ADEOPS01/version1, bounded1MiB frames and exact reply-fence echoes. Requests bind
 store, owner, engine job, UUID execution namespace, worker boot and canonical
 persistent scratch path. Hello verifies endpoint, feature and native runtime
-source/config identity. The runtime digest covers native sources/manifests and
-workspace lock; it is pinned in the immutable registered configuration. Different
-source/runtime, registry or boot refuses; existing jobs require matching binaries.
+source/config identity. The native runtime digest covers native sources/manifests
+and workspace lock. Each registered job also pins a separate versioned coordinator
+compatibility digest covering `ade-ops`, `ade-frontend`, their manifests, the
+workspace lock and an explicit compatibility epoch. A changed coordinator/frontend
+implementation refuses uncommitted jobs after safely draining any old attempt.
+A checksum-valid v2 job without this newer pin is readable and inspectable, but is
+not retried; valid committed output remains verifiable and reconcilable. Different
+native source/runtime, coordinator compatibility, registry or boot refuses;
+existing uncommitted jobs require matching binaries.
 Legacy/managed frames reject each other. Wire2/hash1/IR1/result1 remain unchanged.
 
 Drain closes the same gate used to admit/increment calls, repeatedly cancels the
@@ -90,7 +96,12 @@ Cancellation is durable/idempotent and polled through backoff, hashing, native
 execution and staging/publication; cancellation/deadline tokens also reach native
 tasks. A cancelled terminal requires proved drain. OS syscalls cannot be preempted.
 One wall-clock expiry plus monotonic budgets is retained; backward wall clocks
-refuse. No lock is held across native execution or bulk hashing. The short final
+refuse. Registration records its original deadline before source verification,
+releases `owner.lock` during bulk hashing, then reloads the committed snapshot and
+rechecks idempotency/capacity before persisting. `verify-sources` follows the same
+release/reload rule. The monitor treats `OWNER_BUSY` as a retryable observation,
+checks its independent monotonic and wall-clock expiry, and fails closed on other
+metadata errors. No lock is held across native execution or bulk hashing. The short final
 metadata transaction includes the bounded publication syscall, whose OS blocking
 behavior remains an explicit limitation.
 

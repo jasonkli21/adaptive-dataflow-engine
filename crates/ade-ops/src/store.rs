@@ -10,6 +10,8 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    thread,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -131,6 +133,9 @@ pub struct Job {
     pub output: Option<crate::publication::Manifest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_config: Option<String>,
+    /// Versioned operations/frontend compatibility identity. Missing in older v2 records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinator_compat: Option<String>,
 }
 impl Job {
     pub(crate) fn event(
@@ -278,6 +283,15 @@ impl Database {
                 }),
                 "native config identity",
             )?;
+            require(
+                job.coordinator_compat.as_ref().is_none_or(|hash| {
+                    hash.len() == 64
+                        && hash
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                }),
+                "coordinator compatibility identity",
+            )?;
             if let Some(output) = &job.output {
                 crate::publication::validate_record(output)?;
                 require(
@@ -355,7 +369,7 @@ impl Database {
 /// unlinked/replaced. No network or worker operations occur while holding it.
 pub struct Store {
     pub(crate) root: PathBuf,
-    _lock: File,
+    lock: File,
     pub(crate) data: Database,
     poisoned: bool,
 }
@@ -399,7 +413,7 @@ impl Store {
         };
         let mut store = Self {
             root,
-            _lock: lock,
+            lock,
             data,
             poisoned: false,
         };
@@ -441,7 +455,7 @@ impl Store {
         }
         let mut store = Self {
             root,
-            _lock: lock,
+            lock,
             data: envelope.data,
             poisoned: false,
         };
@@ -476,6 +490,31 @@ impl Store {
     }
     fn healthy(&self) -> Result<()> {
         require(!self.poisoned, "ambiguous write: close and reopen store")
+    }
+    /// Release the metadata lock while doing potentially long source I/O, then reopen
+    /// and reload the committed snapshot before allowing this handle to be reused.
+    /// Any reopen failure poisons this in-memory handle so stale state cannot be written.
+    fn with_released_lock<T>(&mut self, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+        self.healthy()?;
+        self.lock.unlock()?;
+        let result = operation();
+        let root = self.root.clone();
+        let until = Instant::now() + Duration::from_secs(5);
+        loop {
+            match Self::open(&root) {
+                Ok(reopened) => {
+                    *self = reopened;
+                    return result;
+                }
+                Err(Error::Owned) if Instant::now() < until => {
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(error) => {
+                    self.poisoned = true;
+                    return Err(error);
+                }
+            }
+        }
     }
     pub(crate) fn persist(&mut self, mut data: Database) -> Result<()> {
         self.healthy()?;
@@ -559,8 +598,34 @@ impl Store {
         let expires_ms = created_ms
             .checked_add(recipe.timeout_ms)
             .ok_or(Error::Deadline)?;
-        let files = recipe.freeze(deadline(expires_ms)?)?;
+        let files = self.with_released_lock(|| recipe.freeze(deadline(expires_ms)?))?;
+        // Another submit may have won the same idempotency key while files were
+        // being hashed. Re-read under the lock and honor its original record.
+        if let Some(old) = self.data.jobs.values().find(|j| j.request_key == key) {
+            require(
+                old.recipe_hash == hash && old.recipe == recipe,
+                "idempotency key recipe conflict",
+            )?;
+            return Ok(old.clone());
+        }
+        if now_ms()? >= expires_ms {
+            return Err(Error::Deadline);
+        }
+        if self.data.jobs.len() >= self.data.limits.jobs {
+            return Err(Error::Quota("retained jobs"));
+        }
+        if self
+            .data
+            .jobs
+            .values()
+            .filter(|j| j.state == JobState::Pending)
+            .count()
+            >= self.data.limits.queued
+        {
+            return Err(Error::Quota("queued jobs"));
+        }
         let native_config = Some(crate::runner::config_hash(&recipe)?);
+        let coordinator_compat = Some(crate::runner::coordinator_compat_hash());
         let mut job = Job {
             id: Uuid::new_v4(),
             request_key: key.into(),
@@ -581,6 +646,7 @@ impl Store {
             retry_at_ms: None,
             output: None,
             native_config,
+            coordinator_compat,
         };
         job.event(
             EventCode::Registered,
@@ -588,6 +654,9 @@ impl Store {
             now_ms()?,
             self.data.limits.events_per_job,
         )?;
+        if now_ms()? >= expires_ms {
+            return Err(Error::Deadline);
+        }
         let mut data = self.data.clone();
         require(!data.jobs.contains_key(&job.id), "UUID collision")?;
         data.jobs.insert(job.id, job.clone());
@@ -729,13 +798,15 @@ impl Store {
     /// Recheck pinned manifest/source file contents and filesystem identities.
     /// # Errors
     /// Refuses expired jobs, source mutation, replacement or path escape.
-    pub fn verify_sources(&self, id: Uuid) -> Result<()> {
+    pub fn verify_sources(&mut self, id: Uuid) -> Result<()> {
         let job = self.status(id)?;
         let until = deadline(job.expires_ms)?;
-        for f in job.files {
-            f.verify(until)?;
-        }
-        Ok(())
+        self.with_released_lock(|| {
+            for f in job.files {
+                f.verify_stage(until, "verify_sources")?;
+            }
+            Ok(())
+        })
     }
     /// Metadata-handle compatibility API: refuses execution while this lock is held.
     /// Use `crate::runner::run` for durable native execution.
@@ -919,6 +990,7 @@ mod tests {
             retry_at_ms: None,
             output: None,
             native_config: None,
+            coordinator_compat: None,
             files: vec![
                 FrozenFile {
                     path: "/input/manifest.json".into(),
@@ -1130,6 +1202,7 @@ mod tests {
             let root = dir.path().join("state");
             let mut store = Store::init(&root, Limits::default()).unwrap();
             let (mut data, mut job) = database();
+            job.coordinator_compat = Some(crate::runner::coordinator_compat_hash());
             if overflow {
                 data.next_engine_id = u64::MAX;
             } else {
@@ -1152,6 +1225,29 @@ mod tests {
             assert!(current.engine_job.is_none());
             assert!(!root.join("jobs").exists());
         }
+    }
+    #[test]
+    fn older_v2_job_without_coordinator_pin_is_not_replayed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap().join("state");
+        let mut store = Store::init(&root, Limits::default()).unwrap();
+        let (mut data, mut job) = database();
+        job.coordinator_compat = None;
+        data.jobs.insert(job.id, job.clone());
+        store.persist(data).unwrap();
+        drop(store);
+
+        let current = crate::runner::run(&root, job.id).unwrap();
+        assert_eq!(current.state, JobState::NeedsOperator);
+        assert_eq!(current.attempt, 0);
+        assert!(current.engine_job.is_none());
+        assert!(
+            current
+                .attempts
+                .last()
+                .is_none_or(|attempt| attempt.engine_job != 1)
+        );
+        assert!(!root.join("jobs").exists());
     }
     #[test]
     fn checksum_validated_v1_snapshot_migrates_without_reissuing_identity() {

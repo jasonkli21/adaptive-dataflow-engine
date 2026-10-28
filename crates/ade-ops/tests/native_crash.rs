@@ -24,6 +24,19 @@ fn coordinator(root: &Path, id: uuid::Uuid, fault: Option<&str>) -> Child {
     }
     command.spawn().unwrap()
 }
+fn paused_coordinator(root: &Path, id: uuid::Uuid, stage: &str, pause_ms: &str) -> Child {
+    Command::new(env!("CARGO_BIN_EXE_ade-batch"))
+        .arg("--state")
+        .arg(root)
+        .arg("run")
+        .arg(id.to_string())
+        .env("ADE_OPS_FAULT", stage)
+        .env("ADE_OPS_FAULT_PAUSE_MS", pause_ms)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+}
 fn killed_at(child: &mut Child, stage: &str) {
     let stderr = child.stderr.take().unwrap();
     let (tx, rx) = mpsc::sync_channel(1);
@@ -160,6 +173,175 @@ fn real_producer_prefix_kill_drains_original_tasks_before_fresh_instance() {
         );
     }
 }
+
+#[test]
+fn concurrent_source_hashing_does_not_cancel_running_native_job() {
+    for operation in ["submit", "verify-sources"] {
+        let (dir, mut recipe) = support::fixture(false);
+        let root = support::state_path(&dir);
+        let mut store = Store::init(&root, Limits::default()).unwrap();
+        let (_workers, endpoints) =
+            support::managed_workers(&dir.path().canonicalize().unwrap(), store.id(), 2);
+        recipe.workers = endpoints;
+        let running = store.submit("hashing-running", recipe.clone()).unwrap();
+        let verifying = if operation == "verify-sources" {
+            Some(store.submit("hashing-verify", recipe.clone()).unwrap())
+        } else {
+            None
+        };
+        drop(store);
+
+        let mut active = paused_coordinator(&root, running.id, "prepared", "8000");
+        let stderr = active.stderr.take().unwrap();
+        let (stage_tx, stage_rx) = mpsc::sync_channel(1);
+        let stage_reader = std::thread::spawn(move || {
+            let mut lines = Vec::new();
+            for line in BufReader::new(stderr).lines() {
+                let line = line.unwrap();
+                if line == "ADE_OPS_REACHED prepared" {
+                    let _ = stage_tx.send(());
+                }
+                lines.push(line);
+            }
+            lines
+        });
+        stage_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+        let before = support::open_store(&root).status(running.id).unwrap();
+        assert_eq!(before.state, JobState::Running);
+        assert!(!before.cancel_requested);
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ade-batch"));
+        command.arg("--state").arg(&root);
+        let hash_stage;
+        if let Some(job) = verifying {
+            hash_stage = "verify_sources";
+            command.arg("verify-sources").arg(job.id.to_string());
+        } else {
+            hash_stage = "registration";
+            let request = dir.path().join("concurrent-recipe.json");
+            fs::write(&request, serde_json::to_vec(&recipe).unwrap()).unwrap();
+            command
+                .arg("submit")
+                .arg("--key")
+                .arg("hashing-submit")
+                .arg("--recipe")
+                .arg(request);
+        }
+        let hash_started = std::time::Instant::now();
+        let output = command
+            .env("ADE_OPS_HASH_STAGE", hash_stage)
+            .env("ADE_OPS_HASH_PAUSE_MS", "6000")
+            .output()
+            .unwrap();
+        let hash_elapsed = hash_started.elapsed();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains(&format!("ADE_OPS_HASH_WITNESS {hash_stage}")),
+            "source hash did not reach its pause witness: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(hash_elapsed >= Duration::from_secs(5));
+        let active_status = active.wait().unwrap();
+        let stage_lines = stage_reader.join().unwrap();
+        let final_job = support::open_store(&root).status(running.id).unwrap();
+        assert!(
+            active_status.success(),
+            "{operation}: coordinator failed; stage={stage_lines:?}, hash={}",
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert_eq!(final_job.state, JobState::Succeeded, "{operation}");
+        assert!(!final_job.cancel_requested, "{operation}");
+        support::assert_recovered_fixture(&root, running.id, false, operation);
+        eprintln!(
+            "ADE_METADATA_HASH_CONTENTION operation={operation} hash_ms={} state={:?} cancel_requested={}",
+            hash_elapsed.as_millis(),
+            final_job.state,
+            final_job.cancel_requested
+        );
+    }
+}
+
+#[test]
+fn coordinator_semantic_drift_refuses_uncommitted_jobs_but_verifies_committed_output() {
+    let (dir, mut recipe) = support::fixture(false);
+    let root = support::state_path(&dir);
+    let mut store = Store::init(&root, Limits::default()).unwrap();
+    let (_workers, endpoints) =
+        support::managed_workers(&dir.path().canonicalize().unwrap(), store.id(), 2);
+    recipe.workers = endpoints;
+    let job = store.submit("compat-success", recipe.clone()).unwrap();
+    drop(store);
+
+    let succeeded = runner::run(&root, job.id).unwrap();
+    assert_eq!(succeeded.state, JobState::Succeeded);
+    let marker = root
+        .join("jobs")
+        .join(job.id.to_string())
+        .join("COMMITTED.json");
+    let marker_before = fs::read(&marker).unwrap();
+
+    let same_binary = Command::new(env!("CARGO_BIN_EXE_ade-batch"))
+        .arg("--state")
+        .arg(&root)
+        .arg("run")
+        .arg(job.id.to_string())
+        .output()
+        .unwrap();
+    assert!(
+        same_binary.status.success(),
+        "same-binary restart failed: {}",
+        String::from_utf8_lossy(&same_binary.stderr)
+    );
+    let changed_coordinator = Command::new(env!("CARGO_BIN_EXE_ade-batch"))
+        .arg("--state")
+        .arg(&root)
+        .arg("run")
+        .arg(job.id.to_string())
+        .env("ADE_OPS_COMPAT_OVERRIDE", "coordinator-semantic-upgrade")
+        .output()
+        .unwrap();
+    assert!(
+        changed_coordinator.status.success(),
+        "verified committed output should reconcile across coordinator drift: {}",
+        String::from_utf8_lossy(&changed_coordinator.stderr)
+    );
+    assert_eq!(fs::read(&marker).unwrap(), marker_before);
+    runner::verify_output(&root, job.id).unwrap();
+
+    let (pending_dir, pending_recipe) = support::fixture(false);
+    let pending_root = support::state_path(&pending_dir);
+    let mut pending_store = Store::init(&pending_root, Limits::default()).unwrap();
+    let pending = pending_store
+        .submit("compat-pending", pending_recipe)
+        .unwrap();
+    drop(pending_store);
+    let refused = Command::new(env!("CARGO_BIN_EXE_ade-batch"))
+        .arg("--state")
+        .arg(&pending_root)
+        .arg("run")
+        .arg(pending.id.to_string())
+        .env("ADE_OPS_COMPAT_OVERRIDE", "coordinator-semantic-upgrade")
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    let recorded = support::open_store(&pending_root)
+        .status(pending.id)
+        .unwrap();
+    assert_eq!(recorded.state, JobState::NeedsOperator);
+    assert!(
+        !pending_root
+            .join("jobs")
+            .join(pending.id.to_string())
+            .join("COMMITTED.json")
+            .exists()
+    );
+}
+
 #[test]
 fn durable_cancel_running_and_staged_never_publishes_and_late_cancel_preserves_success() {
     let (dir, mut recipe) = support::fixture(false);

@@ -44,9 +44,13 @@ Use the JSON PlanV1 portion of this output (omit the trailing plan_hash/executio
 hashes. The executable full examples/fixtures are in
 `crates/ade-ops/tests/support/mod.rs`, for aggregate and duplicate-key inner join.
 Registration verifies manifests/schema/rows/hashes and pins file inode/device/
-mtime/size. A recipe is immutable. Changed sources, runtime/configuration, worker
-boot or registry require a separately registered job; existing claims cannot be
-retargeted. Copying/restoring old metadata to reset counters is unsupported.
+mtime/size plus native-runtime and coordinator/frontend compatibility identities.
+The job expiry starts before source hashing. Registration releases `owner.lock`
+while hashing, then reloads state and rechecks idempotency and capacity before it
+persists. `verify-sources` also releases and reloads around file hashing. A recipe
+is immutable. Changed sources, runtime/configuration, coordinator compatibility,
+worker boot or registry require a separately registered job; existing claims
+cannot be retargeted. Copying/restoring old metadata to reset counters is unsupported.
 
 ## Commands and publication
 
@@ -67,7 +71,10 @@ target/debug/ade-batch --state ROOT cleanup              # abandoned metadata te
 Use absolute canonical ROOT paths. JSON responses have schema_version1. Errors
 exit1 with stable code and <=1024-byte message on stderr; Clap usage errors exit2.
 `run` exits successfully only for SUCCEEDED. `status` verifies committed output
-before reporting success. Status includes owner, engine job, namespace, attempts,
+before reporting success and labels it `output_verification: VERIFIED`. List rows
+retain the persisted `state` and expose the same value as `recorded_state`; every
+list row labels `output_verification: NOT_CHECKED`, including recorded successes.
+Status includes owner, engine job, namespace, attempts,
 expiry, cancel intent and resource reservations. Unknown failure counters are null,
 not invented zero. Listing uses ascending UUIDs, exclusive `--after`, limit1..32.
 History retains newest32 structured events; sequence gaps mean bounded eviction.
@@ -88,13 +95,17 @@ freeze the job and remain evidence; they are never overwritten or erased by GC.
 
 ## Restart, refusal and operator runbook
 
-`runner.lock` excludes a second active run/recover/GC. `owner.lock` is a short
-metadata lock, permitting concurrent status/cancel. Never unlink or replace either.
+`runner.lock` excludes a second active run/recover/GC. `owner.lock` serializes
+bounded metadata transactions; monitors retry `OWNER_BUSY` on their next poll and
+do not treat it as cancellation. Never unlink or replace either.
 A transaction syncs state.next, replaces state.json and syncs root. After an
 ambiguous transaction, close the handle and reopen; validate only state.json,
 discard only a safe abandoned temp. Checksum/unknown schema/missing state refuses.
 Version1 metadata migrates to2; a legacy ambiguous claim without native mapping
-becomes NEEDS_OPERATOR. No backup restore/rollback or history reclamation exists.
+becomes NEEDS_OPERATOR. Older v2 jobs without coordinator compatibility pins
+remain readable, but uncommitted jobs are not replayed; a valid committed marker
+can still be verified and reconciled. No backup restore/rollback or history
+reclamation exists.
 
 After a coordinator crash, retain workers, source files and durable root. Run
 `recover` to reconcile without launching new worker tasks, or `run JOB_UUID` to

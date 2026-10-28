@@ -55,6 +55,11 @@ fn owner(root: &Path) -> Result<File> {
 fn load(root: &Path, id: Uuid) -> Result<Job> {
     with_store(root, |s| s.status(id))
 }
+fn monitor_load(root: &Path, id: Uuid) -> Result<Job> {
+    // The monitor polls once per cadence. OWNER_BUSY is a retryable observation,
+    // not cancellation and not a reason to spend five seconds waiting here.
+    Store::open(root)?.status(id)
+}
 fn directory(path: &Path) -> Result<()> {
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => File::open(
@@ -183,6 +188,12 @@ pub(crate) fn config_hash(recipe: &crate::Recipe) -> Result<String> {
         recipe.runtime_bytes,
     ))?))
 }
+pub(crate) fn coordinator_compat_hash() -> String {
+    let identity = env!("ADE_OPS_COMPATIBILITY");
+    #[cfg(feature = "fault-injection")]
+    let identity = std::env::var("ADE_OPS_COMPAT_OVERRIDE").unwrap_or_else(|_| identity.into());
+    ade_physical::fingerprint(identity.as_bytes())
+}
 fn identity(store: Uuid, job: &Job) -> Result<Identity> {
     Ok(Identity {
         store,
@@ -269,6 +280,12 @@ fn claim(root: &Path, id: Uuid) -> Result<(Uuid, Job)> {
                 "native source/configuration differs from durable registration; use matching binaries",
             ));
         }
+        let current_compat = coordinator_compat_hash();
+        if original.coordinator_compat.as_deref() != Some(current_compat.as_str()) {
+            return Err(Error::Unsupported(
+                "operations/frontend compatibility differs from durable registration; use matching binaries",
+            ));
+        }
         require(
             data.jobs
                 .values()
@@ -333,9 +350,16 @@ fn claim(root: &Path, id: Uuid) -> Result<(Uuid, Job)> {
         Ok((store_id, result))
     })
 }
+#[derive(Debug)]
+enum MonitorStop {
+    CancelRequested,
+    Deadline,
+    Metadata(String),
+    Drain(String),
+}
 struct Monitor {
     stop: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    thread: Option<std::thread::JoinHandle<Option<MonitorStop>>>,
 }
 impl Monitor {
     fn start(
@@ -351,14 +375,33 @@ impl Monitor {
         let stopping = stop.clone();
         let until = deadline(expiry).unwrap_or_else(|_| Instant::now());
         let thread = std::thread::spawn(move || {
-            while !stopping.load(Ordering::Acquire) {
-                let cancel = load(&root, id).map_or(true, |job| {
-                    job.cancel_requested || job.state == JobState::Cancelling
-                });
-                if cancel || Instant::now() >= until || now_ms().is_ok_and(|now| now >= expiry) {
+            loop {
+                if stopping.load(Ordering::Acquire) {
+                    break None;
+                }
+                let reason = if Instant::now() >= until {
+                    Some(MonitorStop::Deadline)
+                } else {
+                    match now_ms() {
+                        Ok(now) if now >= expiry => Some(MonitorStop::Deadline),
+                        Err(error) => Some(MonitorStop::Metadata(error.to_string())),
+                        _ => match monitor_load(&root, id) {
+                            Ok(job)
+                                if job.cancel_requested || job.state == JobState::Cancelling =>
+                            {
+                                Some(MonitorStop::CancelRequested)
+                            }
+                            Ok(_) | Err(Error::Owned) => None,
+                            Err(error) => Some(MonitorStop::Metadata(error.to_string())),
+                        },
+                    }
+                };
+                if let Some(reason) = reason {
                     token.cancel();
-                    let _ = managed::drain(&workers, Instant::now() + Duration::from_secs(4));
-                    break;
+                    break match managed::drain(&workers, Instant::now() + Duration::from_secs(4)) {
+                        Ok(_) => Some(reason),
+                        Err(error) => Some(MonitorStop::Drain(error.to_string())),
+                    };
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -368,13 +411,17 @@ impl Monitor {
             thread: Some(thread),
         }
     }
+    fn stop_and_join(&mut self) -> Option<MonitorStop> {
+        self.stop.store(true, Ordering::Release);
+        self.thread
+            .take()
+            .and_then(|thread| thread.join().ok())
+            .flatten()
+    }
 }
 impl Drop for Monitor {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        let _ = self.stop_and_join();
     }
 }
 fn no_marker_cleanup(root: &Path, job: &Job) -> Result<()> {
@@ -528,6 +575,49 @@ fn retry(root: &Path, job: &Job, error: &str) -> Result<Job> {
         |j| j.retry_at_ms = Some(at),
     )
 }
+fn resume_staged(root: &Path, id: Uuid, job: &Job, workers: Vec<WorkerEndpoint>) -> Result<Job> {
+    let manifest = job
+        .output
+        .as_ref()
+        .ok_or_else(|| Error::Invalid("staged job has no output candidate".into()))?;
+    let token = CancellationToken::default();
+    let mut monitor = Monitor::start(root, job, workers, token.clone());
+    let until = deadline(job.expires_ms)?;
+    if let Err(error) = source_check(job, &token, until, "recovery") {
+        let monitor_stop = monitor.stop_and_join();
+        if let Some(MonitorStop::Metadata(message) | MonitorStop::Drain(message)) = monitor_stop {
+            return fail(root, job, &message, true);
+        }
+        return fail(root, job, &error.to_string(), false);
+    }
+    let prepared =
+        match publication::resume(&output_root(root, id), manifest, limits(job), token, until) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let _ = monitor.stop_and_join();
+                return fail(root, job, &error.to_string(), true);
+            }
+        };
+    let commit_result = commit(root, job, prepared);
+    let monitor_stop = monitor.stop_and_join();
+    match commit_result {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let current = load(root, id)?;
+            if let Some(committed) = reconcile_marker(root, &current)? {
+                return Ok(committed);
+            }
+            if current.state.terminal() {
+                return Ok(current);
+            }
+            if let Some(MonitorStop::Metadata(message) | MonitorStop::Drain(message)) = monitor_stop
+            {
+                return fail(root, &current, &message, true);
+            }
+            fail(root, &current, &error.to_string(), false)
+        }
+    }
+}
 fn recover_one(root: &Path, id: Uuid) -> Result<Job> {
     let job = load(root, id)?;
     if let Some(committed) = reconcile_marker(root, &job)? {
@@ -539,7 +629,25 @@ fn recover_one(root: &Path, id: Uuid) -> Result<Job> {
     if job.state == JobState::Pending && now_ms()? >= job.expires_ms {
         return fail(root, &job, "global deadline expired", false);
     }
-    if job.state.terminal() || matches!(job.state, JobState::Pending | JobState::NeedsOperator) {
+    let current_compat = coordinator_compat_hash();
+    let incompatible = job.coordinator_compat.as_deref() != Some(current_compat.as_str());
+    if job.state.terminal() || job.state == JobState::NeedsOperator {
+        return Ok(job);
+    }
+    if job.state == JobState::Pending {
+        if job.cancel_requested {
+            return cancelled(root, &job);
+        }
+        if incompatible {
+            return change(
+                root,
+                &job,
+                JobState::NeedsOperator,
+                EventCode::AmbiguousAttempt,
+                Some("registered operations/frontend compatibility is unavailable"),
+                |_| {},
+            );
+        }
         return Ok(job);
     }
     let Some(_) = job.engine_job else {
@@ -561,33 +669,21 @@ fn recover_one(root: &Path, id: Uuid) -> Result<Job> {
     if now_ms()? >= job.expires_ms {
         return fail(root, &job, "global deadline expired", false);
     }
+    if incompatible {
+        return change(
+            root,
+            &job,
+            JobState::NeedsOperator,
+            EventCode::AmbiguousAttempt,
+            Some("registered operations/frontend compatibility differs; refusing recovery"),
+            |_| {},
+        );
+    }
     if job.state == JobState::RetryWait {
         return Ok(job);
     }
-    if let Some(manifest) = &job.output {
-        let token = CancellationToken::default();
-        let _monitor = Monitor::start(root, &job, workers.clone(), token.clone());
-        let until = deadline(job.expires_ms)?;
-        if let Err(error) = source_check(&job, &token, until, "recovery") {
-            return fail(root, &job, &error.to_string(), false);
-        }
-        let prepared =
-            match publication::resume(&output_root(root, id), manifest, limits(&job), token, until)
-            {
-                Ok(prepared) => prepared,
-                Err(error) => return fail(root, &job, &error.to_string(), true),
-            };
-        return match commit(root, &job, prepared) {
-            Ok(result) => Ok(result),
-            Err(error) => {
-                let current = load(root, id)?;
-                if let Some(committed) = reconcile_marker(root, &current)? {
-                    Ok(committed)
-                } else {
-                    fail(root, &current, &error.to_string(), false)
-                }
-            }
-        };
+    if job.output.is_some() {
+        return resume_staged(root, id, &job, workers);
     }
     retry(
         root,
@@ -651,7 +747,7 @@ fn commit(root: &Path, expected: &Job, prepared: publication::Prepared) -> Resul
 fn attempt(root: &Path, store: Uuid, job: &Job) -> Result<Job> {
     let workers = endpoints(store, job)?;
     let token = CancellationToken::default();
-    let _monitor = Monitor::start(root, job, workers.clone(), token.clone());
+    let mut monitor = Monitor::start(root, job, workers.clone(), token.clone());
     let result = (|| {
         let until = deadline(job.expires_ms)?;
         let catalog = source_check(job, &token, until, "preflight")?;
@@ -753,6 +849,7 @@ fn attempt(root: &Path, store: Uuid, job: &Job) -> Result<Job> {
     })();
     // The monitor must be gone before any retry or new claim. It can only target
     // the original fenced instance, never a successor.
+    let monitor_stop = monitor.stop_and_join();
     if result.is_ok() {
         return result;
     }
@@ -774,6 +871,9 @@ fn attempt(root: &Path, store: Uuid, job: &Job) -> Result<Job> {
     }
     if now_ms()? >= current.expires_ms {
         return fail(root, &current, "global deadline expired", false);
+    }
+    if let Some(MonitorStop::Metadata(message) | MonitorStop::Drain(message)) = monitor_stop {
+        return fail(root, &current, &message, true);
     }
     let transient = matches!(&error, Error::Native(ade_distributed::Error::Io(_)))
         || matches!(&error,Error::Native(ade_distributed::Error::Remote{code,..}) if code=="transient");

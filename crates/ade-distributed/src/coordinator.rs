@@ -84,12 +84,12 @@ fn cancel(workers: &[WorkerEndpoint], job: JobId) {
         }
     });
 }
-struct TaskResults {
-    producers: BTreeMap<u64, TaskMetrics>,
-    finals: BTreeMap<u64, TaskMetrics>,
-    lost: Vec<u64>,
+pub(crate) struct TaskResults {
+    pub(crate) producers: BTreeMap<u64, TaskMetrics>,
+    pub(crate) finals: BTreeMap<u64, TaskMetrics>,
+    pub(crate) lost: Vec<u64>,
 }
-fn tasks(
+pub(crate) fn tasks(
     job: &StaticAggregateJob,
     producers: Vec<Request>,
     finals: Vec<Request>,

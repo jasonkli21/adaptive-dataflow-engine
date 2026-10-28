@@ -280,6 +280,7 @@ struct Committed {
     stores: [Arc<Store>; 2],
 }
 pub(crate) struct Session {
+    disk: Option<Arc<crate::disk::Budget>>,
     spec: Spec,
     worker: usize,
     parent: PathBuf,
@@ -303,10 +304,20 @@ fn spill_config() -> crate::ExchangeConfig {
     }
 }
 impl Session {
+    #[cfg(test)]
     pub(crate) fn new(spec: Spec, worker: usize, parent: &Path) -> Result<Self> {
+        Self::new_budget(spec, worker, parent, None)
+    }
+    pub(crate) fn new_budget(
+        spec: Spec,
+        worker: usize,
+        parent: &Path,
+        disk: Option<Arc<crate::disk::Budget>>,
+    ) -> Result<Self> {
         spec.validate()?;
         require(worker < spec.workers.len(), "join worker")?;
         Ok(Self {
+            disk,
             spec,
             worker,
             parent: parent.into(),
@@ -425,13 +436,20 @@ impl Session {
         for side in 0..2 {
             let broadcast = decision.distribution == Distribution::BroadcastBuild
                 && decision.build.index() == side;
-            stores.push(Arc::new(Store::typed(
+            stores.push(Arc::new(Store::typed_budget(
                 &self.parent,
                 (0..self.spec.workers.len())
                     .map(|p| transfer(self.spec.job, side as u64 + 2, self.worker as u64, p as u64))
                     .collect(),
                 self.token.clone(),
-                spill_config(),
+                if self.disk.is_some() {
+                    crate::ExchangeConfig {
+                        buffer_bytes: 1,
+                        ..spill_config()
+                    }
+                } else {
+                    spill_config()
+                },
                 Payload::JoinRows,
                 decision.digest.clone(),
                 limits(self.spec.config.local.max_input_rows_per_side),
@@ -439,6 +457,7 @@ impl Session {
                     workers: self.spec.workers.len(),
                     destination: self.worker,
                 }),
+                self.disk.clone(),
             )?));
         }
         *current = Some(Committed {
@@ -665,7 +684,7 @@ fn execute_inner_bounded(
     cancel(spec);
     result
 }
-fn prepare(spec: &Spec, deadline: Instant) -> Result<(Decision, u64, u64)> {
+pub(crate) fn prepare(spec: &Spec, deadline: Instant) -> Result<(Decision, u64, u64)> {
     for w in &spec.workers {
         match protocol::rpc_until(w, Request::PrepareJoin(spec.clone()), deadline)? {
             Reply::Ready => {}
@@ -715,7 +734,7 @@ fn prepare(spec: &Spec, deadline: Instant) -> Result<(Decision, u64, u64)> {
     Ok((decision, probe_ns, commit_ns))
 }
 type TaskSet = BTreeMap<u64, TaskMetrics>;
-fn tasks(
+pub(crate) fn tasks(
     spec: &Spec,
     deadline: Instant,
     address: SocketAddr,
@@ -780,9 +799,18 @@ fn gather(
     parent: &Path,
     token: &CancellationToken,
 ) -> Result<(Vec<Arc<Store>>, Receiver)> {
+    gather_budget(spec, decision, parent, token, None)
+}
+pub(crate) fn gather_budget(
+    spec: &Spec,
+    decision: &Decision,
+    parent: &Path,
+    token: &CancellationToken,
+    disk: Option<&Arc<crate::disk::Budget>>,
+) -> Result<(Vec<Arc<Store>>, Receiver)> {
     let mut stores = Vec::with_capacity(spec.workers.len());
     for p in 0..spec.workers.len() {
-        stores.push(Arc::new(Store::typed(
+        stores.push(Arc::new(Store::typed_budget(
             parent,
             [transfer(
                 spec.job,
@@ -792,7 +820,14 @@ fn gather(
             )]
             .into(),
             token.clone(),
-            spill_config(),
+            if disk.is_some() {
+                crate::ExchangeConfig {
+                    mode: crate::ExchangeMode::LocalMaterialized,
+                    ..spill_config()
+                }
+            } else {
+                spill_config()
+            },
             Payload::JoinPairs,
             decision.digest.clone(),
             limits(spec.config.local.max_output_rows),
@@ -800,6 +835,7 @@ fn gather(
                 workers: spec.workers.len(),
                 destination: p,
             }),
+            disk.cloned(),
         )?));
     }
     let receiving = stores.clone();
@@ -1067,6 +1103,7 @@ mod tests {
             sources: sides.try_into().unwrap(),
             workers: (0..2)
                 .map(|w| WorkerEndpoint {
+                    managed: None,
                     id: crate::ids::WorkerId(w),
                     control: format!("127.0.0.1:{}", 1000 + w * 2).parse().unwrap(),
                     exchange: format!("127.0.0.1:{}", 1001 + w * 2).parse().unwrap(),

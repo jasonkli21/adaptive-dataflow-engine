@@ -200,6 +200,9 @@ pub(crate) fn rpc_until(
     request: Request,
     deadline: Instant,
 ) -> Result<Reply> {
+    if endpoint.managed.is_some() {
+        return crate::managed::call(endpoint, request, deadline);
+    }
     let mut socket = connect(endpoint.control, remaining_until(deadline)?)?;
     let id = 1;
     let mut socket = DeadlineStream {
@@ -374,6 +377,7 @@ mod tests {
             std::thread::sleep(Duration::from_secs(1));
         });
         let endpoint = WorkerEndpoint {
+            managed: None,
             id: crate::ids::WorkerId(0),
             control: address,
             exchange: address,

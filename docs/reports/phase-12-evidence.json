@@ -1,0 +1,493 @@
+{
+  "schema_version": 2,
+  "status": "COMPLETE_BOUNDED_V1",
+  "date": "2026-10-28",
+  "base": "fb82b9b454e918f11dcac0776139beb293056acf",
+  "final_commit": "The single Phase12 commit containing this file; see handoff/git log -1 --format=%H",
+  "historical_foundation": {
+    "source": "fcffd77b312fda66994051f9f0608ad95674c473",
+    "status": "PARTIAL",
+    "inventory_sha256": "e66bc540538883cb78658a52bde13c65ca1318b5bda53f9722214e22d382adfe",
+    "workspace_passed": 214,
+    "ops_tests": 20,
+    "raw_evidence": "benchmarks/results/phase12-quality/"
+  },
+  "source_inventory_sha256": "ed8c79bcaeabe8e28ea1801ca2bc7e80f8e0c3772aecbc6c2301f06adc7ca259",
+  "source_inventory_entries": 102,
+  "provenance": {
+    "workspace_inventory_sha256": "49f4a46d811ec89433b0fca588259065a12ecf4b549448caa3f9da54558b67c8",
+    "final_inventory_sha256": "ed8c79bcaeabe8e28ea1801ca2bc7e80f8e0c3772aecbc6c2301f06adc7ca259",
+    "entries": 102,
+    "changed_since_workspace_gate": [
+      "crates/ade-ops/tests/native_crash.rs",
+      "crates/ade-ops/tests/support/mod.rs"
+    ],
+    "production_source_unchanged": true,
+    "final_source_unchanged_during_followup": true,
+    "workspace_pipeline_note": "All individual commands exited zero; the final inventory assertion noticed the intentional test-only recovery-oracle refinement. This followup validates that refinement and unchanged production sources."
+  },
+  "native_runtime_source_blake3": "2eb78ca479e60813d2294ef527621ca8546f8d53291a9d8ae1c5f0a2827799ed",
+  "environment": {
+    "os": "macos",
+    "arch": "aarch64",
+    "kernel": "27.0.0",
+    "cpu_model": "Apple M3",
+    "physical_cores": 8,
+    "logical_cores": 8,
+    "memory_bytes": 25769803776
+  },
+  "build": {
+    "harness_version": "0.1.0",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "profile": "debug",
+    "target": "aarch64-apple-darwin",
+    "debug_assertions": true,
+    "allocator": "system-default",
+    "codegen_overrides": [
+      "debug-assertions=true",
+      "debug-info=2",
+      "lto=false",
+      "opt-level=0"
+    ]
+  },
+  "features": [
+    "workspace/all-features",
+    "ade-ops/fault-injection",
+    "ade-distributed/research-hooks"
+  ],
+  "workspace_tests": {
+    "passed": 238,
+    "failed": 0,
+    "ignored": 1,
+    "inventory_sha256": "49f4a46d811ec89433b0fca588259065a12ecf4b549448caa3f9da54558b67c8"
+  },
+  "focused_ops_tests": 39,
+  "final_recovery_oracle_tests": 10,
+  "python_tests": 20,
+  "commands": {
+    "fmt": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.628553666,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "check": {
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 7.077513832999999,
+      "sha256": "cae3c67a8053feaa6475f5830821daf6c359422cbf691b64974d9d88df824ce0"
+    },
+    "clippy": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 5.429540708,
+      "sha256": "558156f3c960cead406169f1c935a314a6e6e127cff2c2594aa5d2638687eac5"
+    },
+    "build": {
+      "command": [
+        "cargo",
+        "build",
+        "--workspace",
+        "--all-features",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 4.353808375,
+      "sha256": "15460095ce3affb8166adcd785629034ed984a1c56b37906e1cdf3e1694636f8"
+    },
+    "test": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--all-features",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 137.180684542,
+      "sha256": "6c7f5032ebf41033f7869fb646426360148a6c5451ffee58cb3fd5a105a68349"
+    },
+    "focused": {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "ade-ops",
+        "--all-features",
+        "--locked",
+        "--offline",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 60.519180167,
+      "sha256": "f25e4d05c2799e90a527ac7db2195a226e18cbd31383af4584699edcc8c1c5a2"
+    },
+    "smoke": {
+      "command": [
+        "bash",
+        "scripts/smoke.sh"
+      ],
+      "exit_code": 0,
+      "seconds": 8.434210291999989,
+      "sha256": "ddaa2b9559ab2bdd60eb1b267804a0b83e797028a2062aac32dce0327e0d6562"
+    },
+    "python": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/tests",
+        "-p",
+        "test_*.py"
+      ],
+      "exit_code": 0,
+      "seconds": 0.4442982079999922,
+      "sha256": "b560210a92e2a24856559b90848126449143dcd1f927166cc0fa58b409fecfd2"
+    },
+    "final-fmt": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.6181606660000001,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "final-check": {
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 4.204459084,
+      "sha256": "e73333d1518c71ead91b697a8ffd15b8af9f48b58fa511ee2065d438d3e1ef01"
+    },
+    "final-clippy": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 4.892826459000001,
+      "sha256": "a08e3be8fb0b25214d1816a35c2b0abc85e46bf4bdf15e09b2c8b92e69500078"
+    },
+    "final-recovery-oracle": {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "ade-ops",
+        "--all-features",
+        "--locked",
+        "--offline",
+        "--test",
+        "native_crash",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 10.538941916,
+      "sha256": "8ef6ab93536c1d5867616805268d9b0cd0295cef685e0b7c6e8a78683cbd6974"
+    }
+  },
+  "fault_domain": "Real same-host coordinator SIGKILL; fixed externally supervised native workers. Worker death/reboot/poison refuse automatic replay. No power-cut or cross-host proof.",
+  "real_native_kill_stages": [
+    "claimed_native",
+    "gather",
+    "marker_published",
+    "prepared",
+    "prepublish",
+    "published_before_success",
+    "real_gather_prefix",
+    "real_producer_prefix",
+    "retry_wait",
+    "staged"
+  ],
+  "output_io_faults": [
+    "output_batch",
+    "data_sync",
+    "manifest_sync",
+    "link",
+    "exdev",
+    "marker_sync",
+    "success_write"
+  ],
+  "hash_checks": [
+    "preflight cancellation",
+    "postflight cancellation",
+    "preflight deadline",
+    "postflight deadline"
+  ],
+  "recovery_oracles": [
+    {
+      "join": false,
+      "stage": "claimed_native",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "prepared",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "gather",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "staged",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "prepublish",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "marker_published",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": false,
+      "stage": "published_before_success",
+      "canonical_blake3": "be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca",
+      "ipc_blake3": "369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a"
+    },
+    {
+      "join": true,
+      "stage": "claimed_native",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "prepared",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "gather",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "staged",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "prepublish",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "marker_published",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    },
+    {
+      "join": true,
+      "stage": "published_before_success",
+      "canonical_blake3": "a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c",
+      "ipc_blake3": "f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937"
+    }
+  ],
+  "publication": "Native exact-terminal proof, schema/row/actual IPC bytes/hash and source postflight; synced private files/manifest; no-clobber COMMITTED.json hard link; directory sync; exact durable-candidate reconciliation; late cancel preserves success.",
+  "quota_domains": {
+    "jobs": 32,
+    "pending": 8,
+    "active_native": 1,
+    "events_per_job": 32,
+    "attempts_per_job": 3,
+    "recipe_bytes": 524288,
+    "snapshot_bytes": 8388608,
+    "source_table_bytes": 67108864,
+    "source_table_rows": 1000000,
+    "output_rows": 1000000,
+    "ipc_bytes_max": 67108864,
+    "manifest_bytes": 65536,
+    "total_stage": "configured IPC plus manifest cap",
+    "runtime": "cumulative reservations per worker/coordinator/attempt; max_attempts*(N+1)*runtime_bytes across attempts",
+    "excluded": [
+      "RSS",
+      "Arrow/Parquet transients",
+      "kernel buffers",
+      "filesystem allocation metadata",
+      "physical free space",
+      "SSD amplification",
+      "cloud durability"
+    ]
+  },
+  "versions": {
+    "snapshot": 2,
+    "snapshot_v1": "checksum-validated migration; legacy unmapped claims require operator",
+    "recipe": 1,
+    "cli_json": 1,
+    "publication_manifest": 1,
+    "managed_control": "ADEOPS01/v1",
+    "legacy_control": "unchanged ADETCP12",
+    "exchange_wire": 2,
+    "hash": 1,
+    "physical_ir": 1,
+    "benchmark_result": 1
+  },
+  "static_overhead": {
+    "classification": "Local debug sequential diagnostic; no nonregression/gain or historical release acceptance claim",
+    "baseline_archive_git_metadata": {
+      "git_commit": null,
+      "git_dirty": null
+    },
+    "completion_build_git_metadata": {
+      "git_commit": "fcffd77b312fda66994051f9f0608ad95674c473",
+      "git_dirty": true
+    },
+    "dataset_manifest_fingerprint": "2998a1295d031b4627c8827953d37baaf09523cc0279fa31ffedef97fbcf1eb9",
+    "dataset_logical_fingerprint": "07669f106031f3b2d3dcdb9b0f493bd05b1d955c6a5246c76c52527c23b1f920",
+    "samples": {
+      "2": {
+        "before": {
+          "samples_ms": [
+            140.36575,
+            140.072375,
+            137.954791,
+            140.174959,
+            138.248834
+          ],
+          "median_ms": 140.072375,
+          "min_ms": 137.954791,
+          "max_ms": 140.36575,
+          "fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063",
+          "result_sha256": "8bf60c17315560eaf27b4c3e011e268cf76d6011d81af56c4fc7fa004fdfb134"
+        },
+        "after": {
+          "samples_ms": [
+            149.30625,
+            143.367291,
+            140.166667,
+            141.607667,
+            139.809416
+          ],
+          "median_ms": 141.607667,
+          "min_ms": 139.809416,
+          "max_ms": 149.30625,
+          "fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063",
+          "result_sha256": "7c7469b2db4c0ae05554beb32251fdac87c94cf41fb8bfaa2cccb5db7e7e64ee"
+        },
+        "after_over_before_median": 1.01096070513547
+      },
+      "4": {
+        "before": {
+          "samples_ms": [
+            96.454083,
+            93.338791,
+            95.684708,
+            96.088167,
+            97.772375
+          ],
+          "median_ms": 96.088167,
+          "min_ms": 93.338791,
+          "max_ms": 97.772375,
+          "fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063",
+          "result_sha256": "c8e0f84ac7d56333e1ddefed92d36ea043df9b2b78ce78212e0690db4a936252"
+        },
+        "after": {
+          "samples_ms": [
+            95.51525,
+            95.32725,
+            94.829791,
+            95.663792,
+            94.766375
+          ],
+          "median_ms": 95.32725,
+          "min_ms": 94.766375,
+          "max_ms": 95.663792,
+          "fingerprint": "6b076867709e975ff2fc43fa8c68ca4887502ef9700d585fbbccc1fb7a334063",
+          "result_sha256": "8968e3f7953893951631843d686958ad32e773de8cbeb79f1446455659014a8a"
+        },
+        "after_over_before_median": 0.9920810540594454
+      }
+    }
+  },
+  "binary_hash_capture": {
+    "benchmarks/results/phase12-completion/foundation-source.tar": "890459019dd5e4ff79d65ce79f94c43653d9b80578a45395bf2302dd69854e17",
+    "benchmarks/results/phase12-completion/baseline-bin/ade-bench": "34c295fb402ad94a93deb106cb4ff87490a3cf15cd99b6807ad816a361d68aca",
+    "benchmarks/results/phase12-completion/baseline-bin/ade-worker": "774fee91b805dba74a6b4eb9e137fc754a1e8af973373f3f08a6263d7436b5d5",
+    "target/debug/ade-bench": "ea3e6f2cffc37cb16a97ea773f8b2436932896cd5abe1212552d12957d969ebb",
+    "target/debug/ade-worker": "1a0002ff69ab3140dd1d0ec4f1899535620cb6d590436f6b186629b060651d8a",
+    "target/debug/ade-batch": "df39f12e1176207cbda03f6ecff95d418faf5e33b05e9b9a722b55046a436957"
+  },
+  "limitations": [
+    "single trusted Unix host/operator and stable nonrollback clock/storage",
+    "fixed 2\u20134 workers; operator spill/grace disabled",
+    "unreachable/restarted/poisoned/unproved workers require operator",
+    "no preemption of blocking OS calls",
+    "no replicated/cross-host HA, worker replacement, arbitrary sinks/SQL or streaming",
+    "Phase10 remains PARTIAL with fixed physical membership; historical timing sources/failures unchanged"
+  ],
+  "raw_evidence": "benchmarks/results/phase12-completion/ (ignored, local)",
+  "reproduction": "docs/phase-12-operations-guide.md",
+  "development_negative_evidence": [
+    "phase12-quality foundation logs",
+    "ade-ops-native-4.log: inherited Arrow byte guard rejects three-column million-row output; projected row-boundary fixture added without relaxing byte guard",
+    "ade-ops-faults-2.log: corrupt staged recovery transition fixed",
+    "first-final-attempt: noncanonical overflow/config test root corrected",
+    "second-final-attempt: immediate metadata Owned in parallel worker reboot test; bounded read retry added",
+    "workspace pipeline source assertion detected final test-only oracle refinement; final-source-verification explicitly proves unchanged production and validates refinement"
+  ]
+}

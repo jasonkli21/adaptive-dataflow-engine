@@ -377,6 +377,7 @@ struct Registry {
 pub struct Store {
     payload: Payload,
     context: Option<String>,
+    terminals: Mutex<BTreeMap<TransferId, String>>,
     limits: Option<IngressLimits>,
     ingress: Mutex<NetworkMetrics>,
     hash_owner: Option<HashOwner>,
@@ -391,6 +392,8 @@ pub struct Store {
     objects: Option<Objects>,
     poisoned: Arc<AtomicBool>,
     pub cancellation: CancellationToken,
+    // Last field: ownership proof outlives every store file/TempDir destructor.
+    disk: Option<Arc<crate::disk::Budget>>,
 }
 impl Store {
     #[allow(
@@ -406,6 +409,25 @@ impl Store {
         context: String,
         limits: IngressLimits,
         hash_owner: Option<HashOwner>,
+    ) -> Result<Self> {
+        Self::typed_budget(
+            parent, expected, token, config, payload, context, limits, hash_owner, None,
+        )
+    }
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Typed native retention binds ownership and one optional disk budget."
+    )]
+    pub(crate) fn typed_budget(
+        parent: &Path,
+        expected: BTreeSet<TransferId>,
+        token: CancellationToken,
+        config: ExchangeConfig,
+        payload: Payload,
+        context: String,
+        limits: IngressLimits,
+        hash_owner: Option<HashOwner>,
+        disk: Option<Arc<crate::disk::Budget>>,
     ) -> Result<Self> {
         require(
             payload != Payload::Aggregate
@@ -427,7 +449,7 @@ impl Store {
                 "join hash ownership",
             )?;
         }
-        let mut store = Self::configured(parent, expected, token, config)?;
+        let mut store = Self::configured_budget(parent, expected, token, config, None, disk)?;
         store.payload = payload;
         store.context = Some(context);
         store.limits = Some(limits);
@@ -465,6 +487,16 @@ impl Store {
         config: ExchangeConfig,
         object_backend: Option<&ObjectStoreBackend>,
     ) -> Result<Self> {
+        Self::configured_budget(parent, expected, cancellation, config, object_backend, None)
+    }
+    pub(crate) fn configured_budget(
+        parent: &Path,
+        expected: BTreeSet<TransferId>,
+        cancellation: CancellationToken,
+        config: ExchangeConfig,
+        object_backend: Option<&ObjectStoreBackend>,
+        disk: Option<Arc<crate::disk::Budget>>,
+    ) -> Result<Self> {
         config.validate()?;
         require(
             !expected.is_empty() && expected.len() <= 16,
@@ -485,7 +517,8 @@ impl Store {
             .prefix("ade-exchange-")
             .tempdir_in(parent)?;
         let poisoned = Arc::new(AtomicBool::new(false));
-        let buffer = Buffer::new_with_poison(config.clone(), root.path(), poisoned.clone())?;
+        let buffer =
+            Buffer::new_budget(config.clone(), root.path(), poisoned.clone(), disk.clone())?;
         let objects = if matches!(
             config.mode,
             ExchangeMode::ObjectStoreMaterialized | ExchangeMode::Adaptive
@@ -501,6 +534,8 @@ impl Store {
         };
         Ok(Self {
             payload: Payload::Aggregate,
+            terminals: Mutex::default(),
+            disk,
             context: None,
             limits: None,
             ingress: Mutex::default(),
@@ -637,6 +672,14 @@ impl Store {
             metrics.current_buffer_bytes == 0 && metrics.current_spill_backlog_bytes == 0,
             "successful exchange ended with retained backlog",
         )
+    }
+    pub(crate) fn terminal(&self, id: TransferId) -> Result<String> {
+        self.terminals
+            .lock()
+            .expect("managed terminals")
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| Error::Invalid("missing managed receive terminal".into()))
     }
     pub(crate) fn is_poisoned(&self) -> bool {
         self.poisoned.load(Ordering::Acquire)
@@ -790,18 +833,28 @@ impl Store {
         };
         let mut writer = temporary
             .as_mut()
-            .map(|f| StreamWriter::try_new(f.as_file_mut(), &self.payload.schema()))
+            .map(|f| {
+                StreamWriter::try_new(
+                    crate::disk::Writer {
+                        inner: f.as_file_mut(),
+                        budget: self.disk.clone(),
+                    },
+                    &self.payload.schema(),
+                )
+            })
             .transpose()?;
         let mut metrics = NetworkMetrics::default();
         // Aggregate schema1 keeps its accepted receive path; terminal hashing
         // belongs only to the new context-bound join schemas.
-        let mut fingerprint = header.context.as_ref().map(|context| {
+        let mut fingerprint = (header.context.is_some() || self.disk.is_some()).then(|| {
             let mut digest = blake3::Hasher::new();
             digest.update(b"ade-transfer-v1");
             digest
                 .update(&serde_json::to_vec(&header.id.logical()).expect("primitive transfer ID"));
-            digest.update(b"ade-join-context-v1");
-            digest.update(context.as_bytes());
+            if let Some(context) = &header.context {
+                digest.update(b"ade-join-context-v1");
+                digest.update(context.as_bytes());
+            }
             digest
         });
         loop {
@@ -912,6 +965,17 @@ impl Store {
                 .expect("registry lock")
                 .observed_batches
                 .insert(header.id, metrics.batches);
+        }
+        if self.disk.is_some() {
+            let digest = fingerprint.as_mut().expect("managed receive digest");
+            if self.payload == Payload::Aggregate {
+                digest.update(b"terminal-v1");
+                digest.update(&metrics.batches.to_le_bytes());
+            }
+            self.terminals
+                .lock()
+                .expect("managed terminals")
+                .insert(header.id, digest.finalize().to_hex().to_string());
         }
         if let Some(writer) = &mut writer {
             writer.finish()?;

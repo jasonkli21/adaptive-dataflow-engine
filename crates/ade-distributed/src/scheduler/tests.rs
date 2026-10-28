@@ -71,6 +71,7 @@ fn malformed_control_aborts_service_and_dead_service_refuses_clients() {
     task.exchange.mode = crate::ExchangeMode::Spill;
     let workers = (0..2)
         .map(|w| WorkerEndpoint {
+            managed: None,
             id: WorkerId(w),
             control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
             exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
@@ -120,6 +121,7 @@ fn stalled_control_does_not_monopolize_minimum_lease_renewals() {
     task.exchange.mode = crate::ExchangeMode::Spill;
     let workers = (0..2)
         .map(|w| WorkerEndpoint {
+            managed: None,
             id: WorkerId(w),
             control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
             exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
@@ -184,6 +186,7 @@ fn persistent_idle_main_session_retains_independent_renewals_and_closure() {
     };
     let workers = (0..2)
         .map(|w| WorkerEndpoint {
+            managed: None,
             id: WorkerId(w),
             control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
             exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),
@@ -709,6 +712,7 @@ fn control_admission_saturation_aborts_and_closes_bounded_peer_set() {
     };
     let workers = (0..2)
         .map(|w| WorkerEndpoint {
+            managed: None,
             id: WorkerId(w),
             control: format!("127.0.0.1:{}", 10000 + w * 2).parse().unwrap(),
             exchange: format!("127.0.0.1:{}", 10001 + w * 2).parse().unwrap(),

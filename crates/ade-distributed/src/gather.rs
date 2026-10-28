@@ -43,6 +43,16 @@ impl Gather {
         active: std::collections::BTreeSet<u64>,
         schedule: Option<(&str, &crate::scheduler::Config)>,
     ) -> Result<Self> {
+        Self::with_budget(parent, job, workers, active, schedule, None)
+    }
+    pub(crate) fn with_budget(
+        parent: &Path,
+        job: JobId,
+        workers: usize,
+        active: std::collections::BTreeSet<u64>,
+        schedule: Option<(&str, &crate::scheduler::Config)>,
+        disk: Option<&Arc<crate::disk::Budget>>,
+    ) -> Result<Self> {
         require(
             !active.is_empty() && active.iter().all(|p| *p < workers as u64),
             "invalid gather active set",
@@ -67,10 +77,13 @@ impl Gather {
                         None,
                     )?
                 } else {
-                    Store::new(
+                    Store::configured_budget(
                         parent,
                         [transfer(job, 1, 0, workers as u64 + p)].into(),
                         ade_exec::CancellationToken::default(),
+                        crate::ExchangeConfig::default(),
+                        None,
+                        disk.cloned(),
                     )?
                 }),
             );
@@ -181,8 +194,47 @@ impl Gather {
         self.committed.insert(partition, attempt);
         Ok(())
     }
+    pub(crate) fn verify_terminal(
+        &self,
+        partition: u64,
+        expected: &crate::lineage::TransferManifest,
+    ) -> Result<()> {
+        let id = transfer(self.job, 1, 0, self.workers as u64 + partition);
+        require(
+            expected.logical == id.logical()
+                && expected.attempt == id.attempt
+                && expected.fingerprint == self.stores[&(partition, 0)].terminal(id)?,
+            "managed final fingerprint mismatch",
+        )
+    }
     pub(crate) fn attempts(&self) -> BTreeMap<u64, AttemptId> {
         self.committed.clone()
+    }
+    pub(crate) fn stream(
+        &self,
+        mut sink: impl FnMut(u64, arrow::record_batch::RecordBatch) -> Result<()>,
+    ) -> Result<Vec<crate::managed::Terminal>> {
+        require(
+            self.committed.len() == self.workers,
+            "managed complete final set",
+        )?;
+        let mut terminals = vec![];
+        for (partition, attempt) in &self.committed {
+            require(attempt.0 == 0, "managed engine replay forbidden")?;
+            let store = &self.stores[&(*partition, 0)];
+            let metrics = store.metrics()?;
+            let fingerprint =
+                store.terminal(transfer(self.job, 1, 0, self.workers as u64 + partition))?;
+            exchange::visit_batches(store, |batch| sink(*partition, batch))?;
+            terminals.push(crate::managed::Terminal {
+                partition: *partition,
+                rows: metrics.rows,
+                batches: metrics.batches,
+                bytes: metrics.payload_bytes,
+                fingerprint,
+            });
+        }
+        Ok(terminals)
     }
     pub(crate) fn collect(
         &self,

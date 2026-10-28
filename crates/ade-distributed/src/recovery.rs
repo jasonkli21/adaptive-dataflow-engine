@@ -597,6 +597,7 @@ mod tests {
             .collect();
         let workers = (0..2)
             .map(|id| crate::WorkerEndpoint {
+                managed: None,
                 id: WorkerId(id),
                 control: "127.0.0.1:10000".parse().unwrap(),
                 exchange: "127.0.0.1:10001".parse().unwrap(),

@@ -20,6 +20,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+#[path = "worker_managed.rs"]
+mod managed_control;
 struct Job {
     prepared: Mutex<Option<(ade_exec::PreparedAggregate, u64)>>,
     layout: Mutex<Option<crate::topology::Layout>>,
@@ -70,6 +72,7 @@ impl ade_exec::BatchSource for TimedSource {
     }
 }
 struct State {
+    managed: Option<managed_control::Managed>,
     endpoint: WorkerEndpoint,
     job: Mutex<Option<Arc<Job>>>,
     join: Mutex<Option<Arc<crate::join::Session>>>,
@@ -317,6 +320,14 @@ fn producer(
                     }
                 }
             }
+            #[cfg(feature = "research-hooks")]
+            managed_pause(
+                &job.parent,
+                job.spec.workers.iter().any(|w| w.managed.is_some()),
+                &token,
+                "producer",
+            )
+            .map_err(local_sink_error)?;
             routing_ns +=
                 crate::materialization::ns(route_start).saturating_sub(sending_ns - sent_before);
             Ok(())
@@ -727,6 +738,14 @@ fn final_task(
                 .batch(&batch)
                 .map_err(local_sink_error)?;
             #[cfg(feature = "research-hooks")]
+            managed_pause(
+                &job.parent,
+                job.spec.workers.iter().any(|w| w.managed.is_some()),
+                &token,
+                "gather",
+            )
+            .map_err(local_sink_error)?;
+            #[cfg(feature = "research-hooks")]
             if job.spec.schedule.is_some()
                 && job.spec.config.scheduler.research_exit_final_worker
                     == Some(task.0 - job.spec.workers.len() as u64)
@@ -756,7 +775,7 @@ fn final_task(
         Some(sender) => sender,
         None => open()?,
     };
-    if job.spec.schedule.is_some() {
+    if job.spec.schedule.is_some() || job.spec.workers.iter().any(|w| w.managed.is_some()) {
         let (sent, manifest) = sender.finish_manifest()?;
         metrics.sent = sent;
         metrics.manifests.insert(0, manifest);
@@ -1002,11 +1021,12 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
             )?;
             let mut last = state.last_job_id.lock().expect("job watermark");
             require(last.is_none_or(|id| spec.job > id), "join stale job")?;
-            let session = crate::join::Session::new(
+            let session = crate::join::Session::new_budget(
                 spec.clone(),
                 usize::try_from(state.endpoint.id.0)
                     .map_err(|_| Error::Invalid("worker ID overflow".into()))?,
                 &state.parent,
+                state.managed.as_ref().map(managed_control::Managed::budget),
             )?;
             *last = Some(spec.job);
             *state
@@ -1142,12 +1162,13 @@ fn handle(state: &State, request: Request) -> Result<Reply> {
                     }),
                 )?
             } else {
-                Store::configured_with_backend(
+                Store::configured_budget(
                     &state.parent,
                     expected,
                     CancellationToken::default(),
                     spec.config.exchange.clone(),
                     state.object_backend.as_ref(),
+                    state.managed.as_ref().map(managed_control::Managed::budget),
                 )?
             });
             let accepted_job_id = spec.job;
@@ -1476,7 +1497,7 @@ pub fn serve(
     parent: &Path,
     ready: impl Write,
 ) -> Result<()> {
-    serve_inner(id, control, exchange, parent, None, ready)
+    serve_inner(id, control, exchange, parent, None, None, ready)
 }
 
 /// Serve with a caller-installed object-store backend for static or adaptive retention.
@@ -1491,13 +1512,17 @@ pub fn serve_with_object_store(
     backend: crate::ObjectStoreBackend,
     ready: impl Write,
 ) -> Result<()> {
-    serve_inner(id, control, exchange, parent, Some(backend), ready)
+    serve_inner(id, control, exchange, parent, Some(backend), None, ready)
 }
 
 fn handle_socket(state: &State, socket: &mut std::net::TcpStream) {
     if socket.set_read_timeout(Some(crate::IO_TIMEOUT)).is_err()
         || socket.set_write_timeout(Some(crate::IO_TIMEOUT)).is_err()
     {
+        return;
+    }
+    if let Some(managed) = &state.managed {
+        managed.socket(state, socket);
         return;
     }
     if let Ok(envelope) = protocol::read_message::<Envelope<Request>>(
@@ -1544,21 +1569,28 @@ fn serve_inner(
     exchange: SocketAddr,
     parent: &Path,
     object_backend: Option<crate::ObjectStoreBackend>,
+    managed: Option<managed_control::Managed>,
     mut ready: impl Write,
 ) -> Result<()> {
     let listener = TcpListener::bind(control)?;
     listener.set_nonblocking(false)?;
     let exchange_listener = TcpListener::bind(exchange)?;
     let endpoint = WorkerEndpoint {
+        managed: None,
         id,
         control: listener.local_addr()?,
         exchange: exchange_listener.local_addr()?,
     };
     let state = Arc::new(State {
+        last_job_id: Mutex::new(
+            managed
+                .as_ref()
+                .and_then(managed_control::Managed::last_job),
+        ),
+        managed,
         endpoint: endpoint.clone(),
         job: Mutex::new(None),
         join: Mutex::new(None),
-        last_job_id: Mutex::new(None),
         last_execution_namespace: Mutex::new(None),
         producer_busy: AtomicBool::new(false),
         final_busy: AtomicBool::new(false),
@@ -1576,7 +1608,17 @@ fn serve_inner(
         committed_layout(&job)?;
         Ok(job.store.clone())
     })?;
-    protocol::write_message(&mut ready, &endpoint)?;
+    if let Some(managed) = &state.managed {
+        crate::managed::write_message(
+            &mut ready,
+            &crate::managed::Ready {
+                endpoint,
+                boot: managed.boot.clone(),
+            },
+        )?;
+    } else {
+        protocol::write_message(&mut ready, &endpoint)?;
+    }
     ready.flush()?;
     let mut handlers: Vec<JoinHandle<()>> = Vec::new();
     let mut listener_error = None;
@@ -1632,6 +1674,49 @@ fn serve_inner(
     Ok(())
 }
 
+/// Serve an externally supervised fixed worker with explicit versioned session fencing.
+/// # Errors
+/// Refuses unsafe/reused scratch, deployment mismatch, binding and persistence failures.
+pub fn serve_managed(
+    id: crate::ids::WorkerId,
+    control: SocketAddr,
+    exchange: SocketAddr,
+    parent: &Path,
+    store: &str,
+    ready: impl Write,
+) -> Result<()> {
+    let managed = managed_control::Managed::open(parent, store)?;
+    serve_inner(id, control, exchange, parent, None, Some(managed), ready)
+}
+
+#[cfg(feature = "research-hooks")]
+fn managed_pause(
+    parent: &Path,
+    managed: bool,
+    token: &CancellationToken,
+    stage: &str,
+) -> Result<()> {
+    if managed && std::env::var("ADE_MANAGED_PAUSE").as_deref() == Ok(stage) {
+        let path = parent.join(format!("fault-{stage}.once"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(_) => {
+                eprintln!("ADE_MANAGED_REACHED {stage}");
+                loop {
+                    token.check()?;
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1649,11 +1734,13 @@ mod tests {
         let exchange_listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let exchange_address = exchange_listener.local_addr().unwrap();
         let endpoint = WorkerEndpoint {
+            managed: None,
             id: crate::ids::WorkerId(0),
             control: control_address,
             exchange: exchange_address,
         };
         let state = Arc::new(State {
+            managed: None,
             endpoint: endpoint.clone(),
             job: Mutex::new(None),
             join: Mutex::new(None),
@@ -1676,6 +1763,7 @@ mod tests {
         let workers = vec![
             endpoint,
             WorkerEndpoint {
+                managed: None,
                 id: crate::ids::WorkerId(1),
                 control: peer_control.local_addr().unwrap(),
                 exchange: peer_exchange.local_addr().unwrap(),

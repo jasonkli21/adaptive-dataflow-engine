@@ -7,6 +7,17 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 7 && args[1] == "--managed" {
+        worker::serve_managed(
+            WorkerId(args[2].parse()?),
+            args[5].parse()?,
+            args[6].parse()?,
+            std::path::Path::new(&args[3]),
+            &args[4],
+            std::io::stdout().lock(),
+        )?;
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--verify-scheduler" {
         use std::io::Read;
         let mut bytes = Vec::new();

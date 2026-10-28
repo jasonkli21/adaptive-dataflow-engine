@@ -230,13 +230,30 @@ impl Buffer {
     pub fn new(config: ExchangeConfig, root: &FsPath) -> Result<Self> {
         Self::new_with_poison(config, root, Arc::default())
     }
+    #[cfg(test)]
     pub(crate) fn new_with_poison(
         config: ExchangeConfig,
         root: &FsPath,
         poisoned: Arc<AtomicBool>,
     ) -> Result<Self> {
+        Self::new_budget(config, root, poisoned, None)
+    }
+    pub(crate) fn new_budget(
+        config: ExchangeConfig,
+        root: &FsPath,
+        poisoned: Arc<AtomicBool>,
+        budget: Option<Arc<crate::disk::Budget>>,
+    ) -> Result<Self> {
         let spool = if matches!(config.mode, ExchangeMode::Spill | ExchangeMode::Adaptive) {
-            Some(SpoolIo::new(tempfile::tempfile_in(root)?, poisoned.clone()))
+            Some(SpoolIo::with_log(
+                FileSpillLog {
+                    file: tempfile::tempfile_in(root)?,
+                    read_offset: 0,
+                    write_offset: 0,
+                    budget,
+                },
+                poisoned.clone(),
+            ))
         } else {
             None
         };
@@ -444,11 +461,13 @@ struct FileSpillLog {
     file: File,
     read_offset: u64,
     write_offset: u64,
+    budget: Option<Arc<crate::disk::Budget>>,
 }
 impl FileSpillLog {
     pub(crate) fn new(file: File) -> Self {
         Self {
             file,
+            budget: None,
             read_offset: 0,
             write_offset: 0,
         }
@@ -456,6 +475,9 @@ impl FileSpillLog {
 }
 impl SpillLog for FileSpillLog {
     fn write_frame(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        if let Some(budget) = &self.budget {
+            budget.charge(4 + bytes.len() as u64)?;
+        }
         self.file.seek(SeekFrom::Start(self.write_offset))?;
         self.file.write_all(
             &u32::try_from(bytes.len())

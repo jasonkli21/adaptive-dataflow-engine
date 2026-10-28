@@ -24,6 +24,8 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Build feature-matched native worker for process tests
+        run: cargo build --workspace --all-features --locked
       - name: Test
         run: cargo test --workspace --all-features --locked
       - name: Build CLI

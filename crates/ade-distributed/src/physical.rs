@@ -185,7 +185,7 @@ pub fn execute(request: Request<'_>) -> Result<Output> {
         metrics,
     })
 }
-fn adapt(plan: &PlanV1, base: u32, batch: &RecordBatch) -> Result<RecordBatch> {
+pub(crate) fn adapt(plan: &PlanV1, base: u32, batch: &RecordBatch) -> Result<RecordBatch> {
     let schema = ade_exec::physical::arrow_schema(&plan.nodes[base as usize].schema);
     require(
         batch.num_columns() == schema.fields().len(),

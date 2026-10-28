@@ -47,10 +47,19 @@ Phase 11 bounded v1 is COMPLETE under docs/plans/phase-11-implementation-plan.md
 and ADR-0018. On 2026-10-26 the user authorized repo-wide readiness and bounded
 Phase 10 remediation, without subagents. After the first measured candidate
 failed, the user explicitly instructed continued reassessment and remediation
-until the failures are addressed, superseding the earlier two-candidate time box. This stabilization is the current scope; it does not widen recovery,
+until the failures are addressed, superseding the earlier two-candidate time box. This stabilization was the scope before the 2026-10-28 Phase 12 authorization; it does not widen recovery,
 frontend admission or physical membership. Preserve historical source identities
 and failed gates. Static remains the supported default; leased scheduling remains
-an opt-in bounded research path with local acceptance at ee9f8da. Do not begin Phase 12.
+an opt-in bounded research path with local acceptance at ee9f8da. The user explicitly authorized Phase 12 implementation on 2026-10-28, without
+subagents and with one local commit. The continuation completes Phase 12 bounded v1
+under ADR-0019 and `docs/reports/phase-12-implementation-report.md`: opt-in durable
+local operations for static aggregate and bounded HashOnly join, fixed externally
+supervised 2–4 managed workers, proved drain before fresh whole-job retry, atomic
+local output, cancellation and byte budgets. Operator spill is disabled in this
+path; ambiguous/poisoned/changed workers require an operator. Full production HA,
+replication, worker replacement and broader sinks remain deferred. No Phase 13
+authorization is inferred. Preserve the initial foundation evidence at fcffd77b
+and the separately measured completion source; do not relabel old timing evidence.
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
 fcc325e passes correctness but fails all six timing guards. Continued source/scan
 and contribution remediation at ee9f8da passes all 62 children/49 measured samples,
@@ -161,7 +170,8 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. The active Phase11 report is
+Each phase ends with an implementation report. The active Phase12 report is
+`docs/reports/phase-12-implementation-report.md` (COMPLETE bounded v1; full HA deferred). The Phase11 report is
 `docs/reports/phase-11-implementation-report.md`. The Phase10 debt report is
 `docs/reports/phase-10-implementation-report.md`; Phase8 prerequisite closure remains recorded in:
 

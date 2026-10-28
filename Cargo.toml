@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/ade-ops",
     "crates/ade-physical",
     "crates/ade-frontend",
     "crates/ade-bench",

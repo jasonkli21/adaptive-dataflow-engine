@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "phase": 12,
+  "status": "COMPLETE_BOUNDED_V1",
+  "metadata_registration": [
+    "distributed_aggregate",
+    "distributed_join"
+  ],
+  "executable_targets": [
+    "distributed_aggregate_static_fixed_hash_no_operator_spill",
+    "distributed_join_hash_only_no_operator_spill"
+  ],
+  "supported": [
+    "private_local_snapshot_store",
+    "process_exclusive_coordinator",
+    "immutable_recipe_source_config_identity",
+    "native_worker_boot_session_fence_and_proved_drain",
+    "fresh_whole_job_retry_backoff_original_deadline",
+    "durable_active_cancellation",
+    "native_terminal_validated_streaming_ipc",
+    "atomic_no_clobber_publication_and_reconciliation",
+    "bounded_attempt_history_and_resource_reservations",
+    "managed_exchange_gather_write_quotas",
+    "total_ipc_and_manifest_staging_quota",
+    "terminal_recorded_namespace_gc"
+  ],
+  "refused_or_unimplemented": [
+    "operator_spill_or_grace_in_operations",
+    "leased_or_adaptive_topology_in_operations",
+    "ambiguous_dead_restarted_or_poisoned_worker_replay",
+    "automatic_worker_replacement_or_adoption",
+    "history_reclamation_and_backup_restore",
+    "cross_host_ha_and_replicated_metadata",
+    "physical_worker_membership_changes",
+    "leased_recovery",
+    "arbitrary_sql_dags_remote_sources",
+    "external_transactional_sinks",
+    "streaming_and_external_exactly_once_effects",
+    "process_rss_or_free_disk_space_quota"
+  ],
+  "version_changes": {
+    "new_operations_snapshot": 2,
+    "new_recipe": 1,
+    "new_publication_manifest": 1,
+    "new_cli_output": 1,
+    "physical_ir": "unchanged_v1",
+    "control": "unchanged_ADETCP12_for_legacy",
+    "exchange": "unchanged_v2",
+    "hash": "unchanged_v1",
+    "benchmark_manifest_and_result": "unchanged_v1",
+    "managed_control": "ADEOPS01_v1"
+  }
+}

@@ -13,12 +13,14 @@ pub use retention::{
     RetentionMetrics,
 };
 pub mod coordinator;
+pub mod disk;
 pub mod exchange;
 mod gather;
 pub mod ids;
 pub mod join;
 pub mod join_policy;
 pub mod lineage;
+pub mod managed;
 pub mod metrics;
 pub mod partition;
 mod probe;
@@ -71,6 +73,8 @@ pub const TASK_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkerEndpoint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed: Option<managed::Fence>,
     pub id: ids::WorkerId,
     pub control: SocketAddr,
     pub exchange: SocketAddr,

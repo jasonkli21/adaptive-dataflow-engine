@@ -20,7 +20,8 @@
   "codec": "le-fixed64-blake3-v1",
   "output_version": 1,
   "delivery": "at_least_once_across_manual_restore",
-  "output_identity": "job:key:window_start:window_end:1",
+  "output_identity": "job:key:window_start:window_end:1; logical identity only, not a replay-payload identity",
+  "output_payload_fingerprint": "window-payload-v1:<sum_i64>:<count_u64>; consumers must compare repeated IDs and reconcile conflicting payloads",
   "checkpoint": "full local immutable generation, matched quiescent state/confirmed offsets/time; file and directory sync; atomic CURRENT replacement",
   "restore": "explicit --restore; all bytes/ownership/progress and semantic fingerprint validated; Kafka ranges/config/identity verified before output; new session UUID",
   "source_contract": "one trusted immutable Kafka topic/cluster, 1..4 explicit partitions, uncompressed <=32768-byte batch history; no group offset commits",
@@ -31,6 +32,7 @@
     "cold_bytes_max": 134217728,
     "cold_quota_includes_rewrite_overlap": true,
     "checkpoint_root_bytes_max": 268435456,
+    "checkpoint_root_bytes_min": 66048,
     "checkpoint_generation_count_max": 64,
     "manifest_bytes": 32768,
     "current_pointer_bytes": 512,
@@ -73,5 +75,7 @@
     "phase14_stateless_contract": "unchanged; fresh 30-case regression",
     "phase16": "not authorized"
   },
-  "cross_partition_order": "Kafka has no total merge order; window/late results are deterministic for the observed delivery trace. Stable IDs do not attest payload equality under different legal late-data interleavings."
+  "cross_partition_order": "Trace-relative semantics: Kafka has no total merge order; different legal interleavings can emit one logical output_id with different payload_fingerprint values. ID-only deduplication is unsafe; consumers must compare fingerprints and reconcile conflicts.",
+  "checkpoint_cadence": "A record/time trigger is eligible only after acknowledged forwarded progress changes; unchanged empty and restored-idle cuts do not publish generations.",
+  "test_stop_midframe": "A deadline at a frame boundary may stop cleanly; after any frame bytes are written it fails as partial_output_frame with byte counts and does not acknowledge or checkpoint."
 }

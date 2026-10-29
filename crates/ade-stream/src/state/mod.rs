@@ -79,9 +79,12 @@ impl Config {
             "hot/cold caps",
         )?;
         check(
-            (65536..=256 * 1024 * 1024).contains(&self.checkpoint_bytes)
-                && (2..=64).contains(&self.max_generations),
-            "checkpoint quotas",
+            (checkpoint::MIN_CHECKPOINT_BYTES..=256 * 1024 * 1024).contains(&self.checkpoint_bytes),
+            "checkpoint byte quota minimum 66048..268435456",
+        )?;
+        check(
+            (2..=64).contains(&self.max_generations),
+            "checkpoint generation count",
         )?;
         check(
             (1..=1_000_000).contains(&self.checkpoint_every_records)
@@ -166,6 +169,8 @@ pub struct WindowOutput {
     pub sum_i64: i64,
     pub count_u64: u64,
     pub output_id: String,
+    /// Canonical semantic payload token; compare it when an `output_id` repeats.
+    pub payload_fingerprint: String,
 }
 pub struct State {
     pub config: Config,
@@ -314,6 +319,7 @@ impl State {
             sum_i64: e.sum,
             count_u64: e.count,
             output_id: format!("{}:{}:{}:{}:1", self.config.job_id, e.key, e.start, end),
+            payload_fingerprint: format!("window-payload-v1:{}:{}", e.sum, e.count),
         }))
     }
     /// # Errors
@@ -325,10 +331,16 @@ impl State {
         Ok(())
     }
     #[must_use]
+    pub fn has_pending_close(&self) -> bool {
+        self.pending_close.is_some()
+    }
+    #[must_use]
     pub fn due(&self, p: &Progress, ms: u64) -> bool {
-        p.forwarded_records.saturating_sub(self.last_records)
-            >= self.config.checkpoint_every_records
-            || ms.saturating_sub(self.last_ms) >= self.config.checkpoint_every_ms
+        let changed = p.forwarded_records != self.last_records;
+        changed
+            && (p.forwarded_records.saturating_sub(self.last_records)
+                >= self.config.checkpoint_every_records
+                || ms.saturating_sub(self.last_ms) >= self.config.checkpoint_every_ms)
     }
     /// # Errors
     /// Refuses any incomplete cut; source demand must already be paused by caller.

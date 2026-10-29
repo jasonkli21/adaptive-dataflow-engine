@@ -37,6 +37,8 @@ class Model:
             want = dict(type='window', output_version=1, job_id=self.config['job_id'], key=key,
                         window_start=start, window_end=stop, sum_i64=amount, count_u64=count,
                         output_id=f"{self.config['job_id']}:{key}:{start}:{stop}:1")
+            if 'payload_fingerprint' in frame:
+                want['payload_fingerprint'] = f'window-payload-v1:{amount}:{count}'
             require(frame == want, f'window oracle mismatch: {frame} != {want}')
             self.outputs.append(frame)
             return

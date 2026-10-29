@@ -12,8 +12,13 @@ Signed tumbling windows use checked Euclidean alignment. Global min/unknown
 watermarks retain every assigned partition. Close when frontier >= end; arrivals
 whose end <= the confirmed frontier receive explicit closed-window-late receipts
 and never reopen state. This differs from the partition-watermark late diagnostic.
-Output order is (window start,key). Output identity is job/key/start/end/version;
-at-least-once sink replay after crash is expected and visible.
+Output order is (window start,key). The logical output ID is job/key/start/end/version;
+at-least-once sink replay after crash is expected and visible. Each output also
+includes `payload_fingerprint=window-payload-v1:<sum_i64>:<count_u64>`. Kafka does
+not define a total order across partitions, so different legal merges can emit the
+same logical ID with different sum/count payloads. Consumers must compare the
+fingerprint and reconcile conflicts; ID-only deduplication is unsafe. This bounded
+contract is correct for the observed delivery trace, not order-independent replay.
 
 One record mutates working state before its receipt, then confirms progress after
 the complete receipt. Any error poisons the attempt; no checkpoint is allowed with
@@ -68,6 +73,19 @@ The native statistics enqueue behavior was inspected in pinned librdkafka2.12.1
 `rd_kafka_stats_emit_all`: snapshots enter the application queue each interval.
 An owned control pump avoids accumulating them during slow filesystem calls;
 thread safety follows [librdkafka threads/callbacks](https://github.com/confluentinc/librdkafka/blob/v2.12.1/INTRODUCTION.md#threads-and-callbacks).
+
+Record/time cadence publishes only after acknowledged input progress has changed
+since the last cut. Filtered and closed-window-late receipts count as progress;
+unchanged empty or restored-idle cuts do not create generations. The minimum
+admitted checkpoint budget is 66,048 bytes (64 KiB staging reserve plus admission
+headroom); larger state can still fail closed when retained generations plus a
+new staging generation exceed the configured quota.
+
+The shared operator-test time stop is successful only at a frame boundary. If
+any bytes of an input or window NDJSON frame were written when the deadline fires,
+the attempt fails with `partial_output_frame`, reports written/total byte counts,
+and does not acknowledge the receipt/closure or publish a checkpoint. The
+stateful terminal reports pending input and pending window output separately.
 
 Kafka preserves per-partition order, not a total cross-partition merge order.
 Window/late decisions are deterministic for the observed ordered delivery trace

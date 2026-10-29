@@ -24,6 +24,39 @@ def input_frame(partition,offset,key,value,ts,late=False,closed=False):
 def event(key,value,ts):return dict(version=1,key=key,value_i64=value,event_time_ms=ts)
 
 class Phase15Evidence(unittest.TestCase):
+    def test_cross_partition_replay_keeps_logical_id_but_marks_conflicting_payload(self):
+        c=config();c['source']['key_less_than']=2
+        ledger={(0,0):event(1,2,0),(1,0):event(1,3,0),
+                (0,1):event(9,0,200),(0,2):event(1,7,50),(1,1):event(9,0,200)}
+        orders=[[(0,0),(1,0),(0,1),(0,2),(1,1)],
+                [(0,0),(1,0),(0,1),(1,1),(0,2)]]
+        outputs=[]
+        for order in orders:
+            m=oracle.Model(c);frames=[]
+            for p,o in order:
+                e=ledger[p,o]
+                accepted=e['key']<c['source']['key_less_than']
+                maximum=m.maxima.get(p)
+                late=maximum is not None and e['event_time_ms']<maximum-c['source']['allowance_ms']
+                start=(e['event_time_ms']//c['window_ms'])*c['window_ms']
+                closed=accepted and m.frontier is not None and start+c['window_ms']<=m.frontier
+                frame=input_frame(p,o,e['key'],e['value_i64'],e['event_time_ms'],late=late,closed=closed)
+                if not accepted:frame['receipt']['projected']=None
+                m.consume(frame,ledger)
+                while m.due():
+                    start,key=m.due()[0];amount,count=m.state[(start,key)];stop=start+c['window_ms']
+                    output=dict(type='window',output_version=1,job_id=c['job_id'],key=key,
+                                window_start=start,window_end=stop,sum_i64=amount,count_u64=count,
+                                output_id=f"{c['job_id']}:{key}:{start}:{stop}:1",
+                                payload_fingerprint=f'window-payload-v1:{amount}:{count}')
+                    m.consume(output,ledger);frames.append(output)
+            outputs.append(frames)
+        self.assertEqual(len(outputs[0]),1);self.assertEqual(len(outputs[1]),1)
+        self.assertEqual(outputs[0][0]['output_id'],outputs[1][0]['output_id'])
+        self.assertEqual((outputs[0][0]['sum_i64'],outputs[0][0]['count_u64']),(12,3))
+        self.assertEqual((outputs[1][0]['sum_i64'],outputs[1][0]['count_u64']),(5,2))
+        self.assertNotEqual(outputs[0][0]['payload_fingerprint'],outputs[1][0]['payload_fingerprint'])
+
     def test_quiet_partition_signed_alignment_and_exact_close(self):
         m=oracle.Model(config());ledger={(0,0):event(1,2,-1),(1,3):event(1,3,-50),(0,4):event(2,0,100),(1,9):event(2,0,100)}
         for p,o in [(0,0),(1,3),(0,4),(1,9)]:

@@ -114,11 +114,13 @@ reused. Event timers stay pending while any partition has an unknown watermark.
 
 A whole NDJSON receipt written to the output FD acknowledges a record. This is
 **not fsync, external consumer acceptance, a durable checkpoint or exactly-once**.
-A partial/failed write can leave a truncated line. On cancellation the unconfirmed
-record is discarded and no later acknowledgment occurs. Preserve output/traces
-for diagnosis and choose explicit replay offsets yourself. Replaying from a prior
-offset may duplicate data. `next_offset_suggestion` is nondurable; losing output
-can invalidate even a previously observed suggestion.
+A partial/failed write can leave a truncated line. A `--test-stop-ms` deadline at
+a frame boundary stops cleanly; after any frame byte is written it fails as
+`partial_output_frame` with byte counts. The unconfirmed record is discarded and
+no later acknowledgment occurs. Preserve output/traces for diagnosis and choose
+explicit replay offsets yourself. Replaying from a prior offset may duplicate
+data. `next_offset_suggestion` is nondurable; losing output can invalidate even a
+previously observed suggestion.
 
 Seen/read and forwarded cursors are distinct. Increasing Kafka gaps (including
 aborted transaction/control offsets under read_committed) are legal. Backwards

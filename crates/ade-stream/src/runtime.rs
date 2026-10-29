@@ -291,7 +291,14 @@ fn write_frame(
     while written < frame.len() {
         token.check().map_err(|_| Error::Cancelled)?;
         if stop.after_ms.is_some_and(|ms| clock.now_ms() >= ms) {
-            return Ok(None);
+            return if written == 0 {
+                Ok(None)
+            } else {
+                Err(Error::PartialFrame {
+                    written,
+                    total: frame.len(),
+                })
+            };
         }
         if clock.now_ms().saturating_sub(began) >= stall_ms {
             return Err(Error::SinkDeadline);

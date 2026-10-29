@@ -45,7 +45,7 @@ message.max.bytes=32768
 log.retention.hours=24
 ''')
 source_paths=sorted(set(subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard'],text=True).splitlines()))
-source_paths=[p for p in source_paths if not p.startswith('docs/evidence/') and p!='sol-medium-phase-0-bootstrap-implementation-prompt.md']
+source_paths=[p for p in source_paths if not p.startswith('docs/evidence/') and p not in ('docs/reports/phase-15-review-remediation-2026-10-29.md','sol-medium-phase-0-bootstrap-implementation-prompt.md')]
 inventory={p:hashlib.sha256((repo/p).read_bytes()).hexdigest() for p in source_paths if (repo/p).is_file()}
 dump(root/'source-inventory.json',inventory)
 with tarfile.open(root/'source.tar.gz','w:gz') as tar:
@@ -138,6 +138,28 @@ def run_ok(label,c,total,restore=False,model=None):
     p=launch(label,c,(['--restore'] if restore else [])+['--test-stop-records',total]);finish(p,label,c,model=model)
     if control_process is not None and label in ['owner1','owner2','owner4','owner1-return','quiet-frontier','close','late-open','final-close']:wait_total('ample-control',total)
     return p
+
+def run_cross_order(label,accept_late):
+    stream=topic(label,2);c=descriptor(stream,label+'-roots',partitions=2)
+    c['job_id']=str(uuid.UUID(int=15))
+    c['source']['key_less_than']=2;c['source']['allowance_ms']=0
+    c['checkpoint_every_records']=2;c['checkpoint_every_ms']=3600000
+    model=Model(c)
+    produce(stream,[(0,event(1,2,0)),(1,event(1,3,0))])
+    run_ok(label+'-seed',c,2,model=model)
+    d=fork_config(c,label+'-restore-roots')
+    p=launch(label,d,['--restore','--test-stop-records',5]);wait_trace(label,'admitted')
+    produce(stream,[(0,event(9,0,200))]);wait_total(label,3)
+    if accept_late:
+        produce(stream,[(0,event(1,7,50))]);wait_total(label,4)
+        produce(stream,[(1,event(9,0,200))])
+    else:
+        produce(stream,[(1,event(9,0,200))]);wait_trace(label,'window_confirmed')
+        produce(stream,[(0,event(1,7,50))])
+    finish(p,label,d,model=model)
+    windows=[r for r in model.outputs if r['type']=='window']
+    require(len(windows)==1,f'{label} expected one closed window')
+    return windows[0]
 
 try:
     command([java,'-cp',cp,'kafka.tools.StorageTool','format','--cluster-id',cluster,'--config',str(props)],'format')
@@ -246,6 +268,13 @@ try:
     produce(outage,[(0,event(1,2,0)),(1,event(1,3,0))]);om=Model(oc);run_ok('outage-seed',oc,2,model=om)
     p=launch('broker-outage',oc,['--restore','--test-stop-ms',15000]);wait_trace('broker-outage','admitted');broker.terminate();broker.wait(10);finish(p,'broker-outage',oc,1,reason=('broker failure','unexpected main-queue data/error'),timeout=15)
     broker=start_broker('restart');produce(outage,[(0,event(2,4,0)),(1,event(2,5,0))]);run_ok('broker-restart',oc,4,True,om);om.check_checkpoint(current(oc))
+    # Same checkpointed prefix and immutable suffix, deliberately released in two legal cross-partition orders.
+    cross_a=run_cross_order('cross-order-a',True)
+    cross_b=run_cross_order('cross-order-b',False)
+    require(cross_a['output_id']==cross_b['output_id'],'cross-order logical ID changed')
+    require((cross_a['sum_i64'],cross_a['count_u64'])==(12,3),'cross-order A aggregate mismatch')
+    require((cross_b['sum_i64'],cross_b['count_u64'])==(5,2),'cross-order B aggregate mismatch')
+    require(cross_a['payload_fingerprint']!=cross_b['payload_fingerprint'],'cross-order payload conflict token missing')
     # Retention invalidates the seed's saved next offset, even if initial config offsets differ.
     high=max(o for p,o,e in ledgers[stream] if p==0)+1;fixture('retain',stream,extra=[0,high])
     d=fork_config(frozen,'retention-roots');p=launch('retention-lost',d,['--restore','--test-stop-ms',1000]);finish(p,'retention-lost',d,1,reason='offset range/retention');require(not (root/'retention-lost.output.jsonl').read_bytes(),'retention output')

@@ -102,7 +102,13 @@ at least once. Physical distributed rescale, remote/disk-loss HA, transactions,
 savepoints and adaptive checkpoints remain deferred; no Phase16 authorization is
 inferred. The user's no-subagent requirement overrides the proposed independent
 review step; same-session self-review and independent producer-ledger oracle
-proofs are disclosed without claiming an independent reviewer.
+proofs are disclosed without claiming an independent reviewer. The additive
+2026-10-29 review remediation is recorded in
+`docs/reports/phase-15-review-remediation-2026-10-29.md`: bounded replay semantics
+are trace-relative, repeated logical IDs carry a payload fingerprint, ID-only
+deduplication is unsafe across legal Kafka interleavings, unchanged cuts do not
+consume checkpoint generations, the minimum checkpoint budget is 66,048 bytes,
+and time-stop interruption after a partial output frame is a failed run.
 
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
 fcc325e passes correctness but fails all six timing guards. Continued source/scan
@@ -214,8 +220,9 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. The current Phase15 report is
-`docs/reports/phase-15-implementation-report.md` (COMPLETE bounded state v1; full
+Each phase ends with an implementation report. The current Phase15 reports are
+`docs/reports/phase-15-implementation-report.md` and its additive review follow-up
+`docs/reports/phase-15-review-remediation-2026-10-29.md` (COMPLETE bounded state v1; full
 distributed rescale/production HA and exactly-once deferred). The Phase14 report is
 `docs/reports/phase-14-implementation-report.md` (COMPLETE bounded streaming v1;
 checkpointing/exactly-once and full streaming SQL deferred). The Phase12 report is

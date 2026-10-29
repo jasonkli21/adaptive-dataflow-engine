@@ -90,19 +90,32 @@ is a separate diagnostic; out-of-order records in open windows still update.
 Filtered inputs retain explicit receipts and time progress.
 
 Output is NDJSON: `type:input` wraps the original receipt and the closed-window
-late decision. `type:window` carries sum/count and the stable ID
-`job:key:start:end:1`. Whole-frame local FD writes confirm delivery; this is not
-an external transactional acknowledgment. Partial writes, cancellation or a crash
-can replay input/window frames. Deduplicate window IDs downstream if appropriate.
-A crash after output but before checkpoint promotion demonstrably produces
-at-least-once duplicates. No exactly-once or transactional sink guarantee exists. Kafka has no total
-cross-partition order: late-record acceptance can differ under a different legal
-merge after restart. Stable IDs alone do not attest identical payloads across
-those different interleavings. Equivalence evidence uses causally released input
-prefixes and independently checks each observed delivery order.
+late decision. `type:window` carries sum/count, logical ID
+`job:key:start:end:1`, and `payload_fingerprint` in the canonical form
+`window-payload-v1:<sum_i64>:<count_u64>`. Whole-frame local FD writes confirm
+delivery; this is not an external transactional acknowledgment. A crash after
+output but before checkpoint promotion can replay the same ID and fingerprint.
+
+Kafka preserves order within each partition but does not define one total order
+across partitions. A different legal merge can therefore close a window before a
+late record arrives, producing the same logical ID with different sum/count and
+fingerprint values. The contract is trace-relative. Consumers must compare the
+fingerprint and reconcile conflicting payloads; deduplicating by `output_id`
+alone can silently keep the wrong aggregate. Exactly-once and order-independent
+replay are not provided. Equivalence evidence checks each observed delivery order.
+
+`--test-stop-ms` can end successfully only before any byte of the current frame is
+written. If time expires after a partial input or window frame, the process fails
+with `failure_class: partial_output_frame`; terminal diagnostics include the
+written and total frame bytes plus `pending_input` and
+`pending_window_output`. The receipt/closure remains unconfirmed and no checkpoint
+is published. This shared runtime rule also applies to the stateless Phase 14 CLI.
 
 Checkpoint cadence is fixed by records or elapsed milliseconds, observed only at
-quiescent turns. Demand pauses; pending receipt and one-at-a-time window closure
+quiescent turns after acknowledged input progress changed since the last cut.
+Filtered and closed-window-late receipts count as changes. Empty startup and idle
+restored cuts are not republished periodically, so unchanged state does not burn
+generations. Demand pauses; pending receipt and one-at-a-time window closure
 frames finish before serialization. The manifest records confirmed next offsets,
 max times/watermarks/min-or-unknown frontier, late counts and open accumulators.
 Open entries encode their event-time deadlines; no overdue closure is permitted
@@ -133,9 +146,11 @@ control; expect replay duplicates. There is no savepoint/upgrade API. Normal exi
 cleans owned working state and removes the lock; cleanup failure may leave private
 garbage, never a new recovery selection. The process retains no cleanup queue.
 
-`max_generations`2..64 and `checkpoint_bytes`64KiB..256MiB bound retained plus staging
+`max_generations`2..64 and `checkpoint_bytes`66,048..256MiB bound retained plus staging
 checkpoint storage, including a conservative64KiB metadata/pointer reserve per
-promotion. No automatic GC deletes recovery history. Exhaustion fails closed;
+promotion. The minimum can publish an empty or one-entry first generation; later
+promotions also need room for retained generations and the new staging cut. No
+automatic GC deletes recovery history. Exhaustion fails closed;
 operators can remove unselected staging/old generations offline while preserving
 CURRENT and at least one verified prior generation. An indefinitely running
 service needs explicit storage/trace rotation. This bounded research path can

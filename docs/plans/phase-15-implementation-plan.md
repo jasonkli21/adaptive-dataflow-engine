@@ -35,7 +35,7 @@ This is a *bounded research milestone*, not a claim of full scalable/distributed
 | Checkpoint | Full immutable, integrity-checked local checkpoint at quiescent cut of state, next offsets, progress/watermarks and event-time window obligations; atomic current-pointer publication | Incremental/async adaptive snapshots, unaligned distributed checkpoints, durability claimed without fsync/verified storage |
 | Restore | Exact compatible job/schema/hash/topic/cluster/partition policy and historical-source checks; manual restart from saved next offsets; no output before validation | Automatic HA, retention-lost replay, unverified topic incarnation, group offsets, silently reset state |
 | Rescale | 1↔2↔4 *logical local state owners* on restore, stable virtual shards, no lost/duplicated keys, deterministic hash/serialization | Live physical membership, cross-host migration, Phase 10 worker elasticity, savepoint/upgrade API |
-| Sink | Backpressured window records and input/late receipts; at-least-once outputs across crash/replay, stable output IDs for downstream dedupe | Exactly-once, atomic external offsets/sink commit, retract/update after window close |
+| Sink | Backpressured window records and input/late receipts; at-least-once trace-relative outputs with a logical ID plus payload fingerprint | ID-only dedupe across legal cross-partition replays, exactly-once, atomic external offsets/sink commit, retract/update after window close |
 | Security/ops | Local private checkpoint roots, no symlink escape/path traversal, redacted logs, bounded metadata/cleanup, operator-visible recovery refusal | Production multi-tenant state service, cloud secrets, process-level HA |
 
 Use a schema whose fields distinguish: immutable **logical job identity** (`job_id`, schema/operator/window/late policy/hash version, source cluster/topic/partition inventory), runtime **attempt/session identity**, and restart **checkpoint generation**. A `--restore` path must take precedence over configured initial offsets, but only after strict compatibility validation; do not silently combine CLI offsets and checkpoint offsets. If adding a new stateful CLI, leave the original Phase 14 binary behavior intact. Persist a canonical codec version and canonical numeric byte order; avoid Rust `DefaultHasher`/unstable iteration as an ownership or serialization contract.
@@ -62,7 +62,7 @@ Use a schema whose fields distinguish: immutable **logical job identity** (`job_
 2. Full checkpoints are versioned, immutable generations under an operator-provided local root. Write state shards plus normalized manifest to a unique staging generation, integrity-hash and verify lengths/counts, `fsync` (files/parent directories where supported), then publish an atomic no-clobber generation and only afterward atomically update a recoverable current pointer/manifest. A crash at any failpoint leaves the previous checkpoint loadable; incomplete generations are ignored/quarantined and never selected as latest. Explicit operator policy controls retention/GC; retain at least one verified prior generation until new promotion is proved. Do not treat rename alone as power-loss durability.
 3. Include stable schema/codec/hash/window policy identifiers, immutable source identity, source offsets, watermarks and progress, state-shard counts/digests, logical owner assignment, close obligations, checkpoint ID and prior generation linkage. On restore verify **all** data before any network assignment/output; reject wrong job/config, missing files, truncated/corrupted data, inconsistent offset frontier, duplicate key ownership, unsupported version and foreign checkpoint. Guard against path traversal/symlinks, size bombs and unbounded manifest loading. Error messages must be useful but redact credentials and payloads.
 4. If Kafka retention has passed a checkpoint offset, or topic/partition history/identity is uncertain under Phase 14's trusted-history contract, fail closed. Checkpointing cannot retroactively attest Kafka topic incarnation; retain that explicit operator assumption. Do not commit Kafka consumer-group offsets.
-5. State/window closure outputs are nontransactional. A crash after emitting to the sink but before checkpoint promotion can replay outputs. A stable `(job, window, key, semantic output version)` identity allows consumers to dedupe but is **not** an exactly-once guarantee. Checkpoint restoration must be mathematically equivalent to clean replay modulo these disclosed duplicate output frames.
+5. State/window closure outputs are nontransactional and trace-relative. A crash after emitting to the sink but before checkpoint promotion can replay outputs. A stable `(job, window, key, semantic output version)` ID does not promise a stable payload when a different legal cross-partition merge changes late-window admission. Frames carry a payload fingerprint; consumers must detect/reconcile conflicting payloads, and ID-only dedupe is unsafe. Checkpoint restoration preserves the selected cut and confirmed offsets, but not the uncheckpointed merge order.
 
 ## 3. Implementation work packages
 
@@ -145,3 +145,24 @@ partition data or owns the state/sink cut. This preserves the single data-owner
 loop and stateless defaults while closing the slow-checkpoint control-queue hole.
 No runtime input changed after candidate8 acceptance. Source snapshots, failed
 candidates, the full gate matrix and all qualifications are in the report.
+
+## 8. Review remediation — 2026-10-29
+
+The bounded result is explicitly trace-relative. `output_id` identifies a logical
+window; `payload_fingerprint` identifies the emitted sum/count. Legal cross-partition
+replays may retain the same ID while changing the fingerprint, so consumers must
+reconcile conflicts and must not rely on ID-only deduplication. This does not change
+the full PRD boundary: physical distributed rescale remains partial.
+
+Checkpoint cadence now requires acknowledged forwarded progress to differ from the
+last published cut before either the record or elapsed-time trigger can publish.
+Filtered and closed-window-late receipts count as progress. No empty initial cut is
+scheduled, and unchanged restored-idle cuts do not consume generations. The
+checkpoint byte quota admission floor is 66,048 bytes, sufficient for a first empty
+or single-entry cut; retained generations plus staging remain subject to the total
+quota.
+
+The shared stateless/stateful test-stop loop now returns a failure with explicit
+partial-frame byte counts if its time deadline fires after any bytes have been
+written. No receipt or closure is confirmed and no new checkpoint is published.
+At a zero-byte frame boundary the existing clean test stop remains available.

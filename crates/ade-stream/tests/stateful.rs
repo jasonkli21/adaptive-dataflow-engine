@@ -184,6 +184,289 @@ fn cross_partition_windows_unknown_frontier_late_and_overflow() {
     ));
     assert!(cut(&mut e).is_err());
 }
+
+#[test]
+fn legal_cross_partition_replays_keep_id_and_expose_payload_conflict() {
+    let job_id = Uuid::from_u128(15);
+    let make = |trace_a: bool| {
+        let t = Temp::new();
+        let mut c = config(&t);
+        c.job_id = job_id;
+        c.source.key_less_than = 2;
+        c.source.allowance_ms = 0;
+        let mut e =
+            Engine::stateful(c, Uuid::new_v4(), CancellationToken::default(), false).unwrap();
+        deliver(&mut e, 0, 0, 1, 2, 0);
+        deliver(&mut e, 1, 0, 1, 3, 0);
+        deliver(&mut e, 0, 1, 9, 0, 200);
+        if trace_a {
+            deliver(&mut e, 0, 2, 1, 7, 50);
+        }
+        deliver(&mut e, 1, 1, 9, 0, 200);
+        if !trace_a {
+            let closed = drain(&mut e);
+            assert_eq!(closed.len(), 1);
+            assert_eq!(closed[0]["sum_i64"], 5);
+            deliver(&mut e, 0, 2, 1, 7, 50);
+            assert!(e.state.as_ref().unwrap().last_closed_late);
+            return closed[0].clone();
+        }
+        drain(&mut e).remove(0)
+    };
+
+    let accepted_late = make(true);
+    let dropped_late = make(false);
+    assert_eq!(accepted_late["output_id"], dropped_late["output_id"]);
+    assert_eq!(accepted_late["sum_i64"], 12);
+    assert_eq!(accepted_late["count_u64"], 3);
+    assert_eq!(dropped_late["sum_i64"], 5);
+    assert_eq!(dropped_late["count_u64"], 2);
+    assert_ne!(
+        accepted_late["payload_fingerprint"],
+        dropped_late["payload_fingerprint"]
+    );
+}
+
+#[test]
+fn checkpoint_cadence_ignores_unchanged_cuts_but_tracks_receipt_progress() {
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.checkpoint_every_records = 100;
+    c.checkpoint_every_ms = 1000;
+    let mut empty = Engine::stateful(
+        c.clone(),
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        false,
+    )
+    .unwrap();
+    assert!(!empty.state.as_ref().unwrap().due(&empty.progress, 100_000));
+    cut(&mut empty).unwrap();
+    assert!(!empty.state.as_ref().unwrap().due(&empty.progress, 100_000));
+    drop(empty);
+
+    let restored = Engine::stateful(
+        c.clone(),
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        true,
+    )
+    .unwrap();
+    assert!(
+        !restored
+            .state
+            .as_ref()
+            .unwrap()
+            .due(&restored.progress, 100_000)
+    );
+    drop(restored);
+
+    let t = Temp::new();
+    c = config(&t);
+    c.checkpoint_every_records = 100;
+    c.checkpoint_every_ms = 1000;
+    c.source.key_less_than = 1;
+    let mut filtered =
+        Engine::stateful(c, Uuid::new_v4(), CancellationToken::default(), false).unwrap();
+    deliver(&mut filtered, 0, 0, 1, 4, 50);
+    assert!(
+        !filtered
+            .state
+            .as_ref()
+            .unwrap()
+            .due(&filtered.progress, 999)
+    );
+    assert!(
+        filtered
+            .state
+            .as_ref()
+            .unwrap()
+            .due(&filtered.progress, 1000)
+    );
+
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.source.key_less_than = 2;
+    c.source.allowance_ms = 0;
+    c.checkpoint_every_records = 100;
+    c.checkpoint_every_ms = 1000;
+    let mut late =
+        Engine::stateful(c, Uuid::new_v4(), CancellationToken::default(), false).unwrap();
+    deliver(&mut late, 0, 0, 9, 0, 200);
+    deliver(&mut late, 1, 0, 9, 0, 200);
+    late.state
+        .as_mut()
+        .unwrap()
+        .checkpoint(&late.progress, 1000, &mut |_| Ok(()))
+        .unwrap();
+    deliver(&mut late, 0, 1, 1, 7, 0);
+    assert!(late.state.as_ref().unwrap().last_closed_late);
+    assert!(!late.state.as_ref().unwrap().due(&late.progress, 1999));
+    assert!(late.state.as_ref().unwrap().due(&late.progress, 2000));
+
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.checkpoint_every_records = 1;
+    let mut changed =
+        Engine::stateful(c, Uuid::new_v4(), CancellationToken::default(), false).unwrap();
+    deliver(&mut changed, 0, 0, 1, 2, 0);
+    assert!(changed.state.as_ref().unwrap().due(&changed.progress, 0));
+}
+
+#[test]
+fn minimum_checkpoint_budget_publishes_empty_and_single_entry_cuts() {
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.checkpoint_bytes = checkpoint::MIN_CHECKPOINT_BYTES;
+    c.validate().unwrap();
+    let mut e = Engine::stateful(
+        c.clone(),
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        false,
+    )
+    .unwrap();
+    cut(&mut e).unwrap();
+    let previous = fs::read(c.checkpoint_root.join("CURRENT")).unwrap();
+    assert!(matches!(
+        cut(&mut e),
+        Err(Error::State(
+            "total checkpoint byte quota including staging"
+        ))
+    ));
+    assert_eq!(
+        fs::read(c.checkpoint_root.join("CURRENT")).unwrap(),
+        previous
+    );
+    drop(e);
+
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.checkpoint_bytes = checkpoint::MIN_CHECKPOINT_BYTES;
+    let mut e = Engine::stateful(
+        c.clone(),
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        false,
+    )
+    .unwrap();
+    deliver(&mut e, 0, 0, 1, 2, 0);
+    cut(&mut e).unwrap();
+    assert!(checkpoint::load(&c, &CancellationToken::default()).is_ok());
+
+    c.checkpoint_bytes = 65_536;
+    assert!(matches!(
+        c.validate(),
+        Err(Error::State(
+            "checkpoint byte quota minimum 66048..268435456"
+        ))
+    ));
+}
+
+#[test]
+fn partial_window_frame_deadline_fails_without_promoting_a_checkpoint() {
+    use ade_stream::{
+        Clock, Poll, Progress, Result, Source,
+        runtime::{Metrics, Sink, Stop, run},
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+
+    struct Idle;
+    impl Source for Idle {
+        fn poll(&mut self) -> Result<Poll> {
+            Ok(Poll::Pending)
+        }
+        fn pause(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn resume(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn verify(&mut self, _: &Progress) -> Result<()> {
+            Ok(())
+        }
+    }
+    struct FakeClock(Arc<AtomicU64>);
+    impl Clock for FakeClock {
+        fn now_ms(&self) -> u64 {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+    struct PartialWindow {
+        clock: Arc<AtomicU64>,
+        bytes: Vec<u8>,
+        frame_bytes: usize,
+    }
+    impl Sink for PartialWindow {
+        fn try_write(&mut self, remaining: &[u8]) -> Result<usize> {
+            assert!(
+                self.bytes.is_empty(),
+                "deadline should stop before a second write"
+            );
+            self.frame_bytes = remaining.len();
+            self.bytes.extend_from_slice(&remaining[..5]);
+            self.clock.store(100, Ordering::SeqCst);
+            Ok(5)
+        }
+    }
+    struct Drain;
+    impl Sink for Drain {
+        fn try_write(&mut self, bytes: &[u8]) -> Result<usize> {
+            Ok(bytes.len())
+        }
+    }
+
+    let t = Temp::new();
+    let mut c = config(&t);
+    c.source.key_less_than = 2;
+    c.source.allowance_ms = 0;
+    let mut e = Engine::stateful(
+        c.clone(),
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        false,
+    )
+    .unwrap();
+    cut(&mut e).unwrap();
+    let previous = fs::read(c.checkpoint_root.join("CURRENT")).unwrap();
+    deliver(&mut e, 0, 0, 1, 2, 0);
+    deliver(&mut e, 0, 1, 9, 0, 100);
+    deliver(&mut e, 1, 0, 9, 0, 100);
+    let clock_state = Arc::new(AtomicU64::new(0));
+    let mut output = PartialWindow {
+        clock: clock_state.clone(),
+        bytes: Vec::new(),
+        frame_bytes: 0,
+    };
+    let result = run(
+        &mut Idle,
+        &mut e,
+        &mut output,
+        &mut Drain,
+        &FakeClock(clock_state),
+        &CancellationToken::default(),
+        &Stop {
+            after_records: None,
+            after_ms: Some(100),
+        },
+        1000,
+        &mut Metrics::default(),
+    );
+    let err = result.unwrap_err();
+    assert_eq!(err.class(), "partial_output_frame");
+    assert_eq!(err.partial_output(), Some((5, output.frame_bytes)));
+    assert_eq!(output.bytes.len(), 5);
+    assert!(output.frame_bytes > 5);
+    assert!(e.state.as_ref().unwrap().has_pending_close());
+    assert_eq!(
+        fs::read(c.checkpoint_root.join("CURRENT")).unwrap(),
+        previous
+    );
+    assert!(cut(&mut e).is_err());
+}
 #[test]
 fn tiny_tier_matches_control_reloads_skew_and_disk_quota() {
     let t = Temp::new();

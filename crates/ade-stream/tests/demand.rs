@@ -242,3 +242,75 @@ fn processing_clock_is_monotonic_injected_and_idle_never_completes() {
     assert!(metrics.pending_polls > 0);
     assert_eq!(e.progress.frontier, None);
 }
+
+#[test]
+fn test_deadline_at_frame_boundary_is_clean_but_midframe_is_failure() {
+    use std::sync::atomic::AtomicU64;
+
+    struct FakeClock(Arc<AtomicU64>);
+    impl Clock for FakeClock {
+        fn now_ms(&self) -> u64 {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+    struct PartialSink {
+        clock: Arc<AtomicU64>,
+        first_write: bool,
+        limit: usize,
+        bytes: Vec<u8>,
+        frame_bytes: usize,
+    }
+    impl Sink for PartialSink {
+        fn try_write(&mut self, remaining: &[u8]) -> Result<usize> {
+            assert!(
+                self.first_write,
+                "deadline should stop before a second write"
+            );
+            self.first_write = false;
+            self.frame_bytes = remaining.len();
+            let n = self.limit.min(remaining.len());
+            self.bytes.extend_from_slice(&remaining[..n]);
+            self.clock.store(100, Ordering::SeqCst);
+            Ok(n)
+        }
+    }
+
+    for limit in [0, 5] {
+        let (mut e, mut source, _) = setup();
+        let clock_state = Arc::new(AtomicU64::new(0));
+        let mut sink = PartialSink {
+            clock: clock_state.clone(),
+            first_write: true,
+            limit,
+            bytes: Vec::new(),
+            frame_bytes: 0,
+        };
+        let stop = Stop {
+            after_records: None,
+            after_ms: Some(100),
+        };
+        let result = run(
+            &mut source,
+            &mut e,
+            &mut sink,
+            &mut Bytes(vec![]),
+            &FakeClock(clock_state),
+            &CancellationToken::default(),
+            &stop,
+            1000,
+            &mut Metrics::default(),
+        );
+        assert_eq!(e.progress.partitions[&0].forwarded, None);
+        assert_eq!(e.progress.partitions[&0].seen, Some(0));
+        if limit == 0 {
+            assert_eq!(result.unwrap(), "STOPPED_BY_OPERATOR_TEST_LIMIT");
+            assert_eq!(sink.bytes.len(), 0);
+        } else {
+            let err = result.unwrap_err();
+            assert_eq!(err.class(), "partial_output_frame");
+            assert_eq!(err.partial_output(), Some((5, sink.frame_bytes)));
+            assert_eq!(sink.bytes.len(), 5);
+            assert!(sink.frame_bytes > sink.bytes.len());
+        }
+    }
+}

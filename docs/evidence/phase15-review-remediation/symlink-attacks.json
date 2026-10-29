@@ -1,0 +1,4 @@
+{
+  "symlink-shard-roots/check/0b00a25b-014b-4648-8d7a-ed3bcdf19edb/shard-17.bin": "/etc/passwd",
+  "symlink-shard.checkpoints/0b00a25b-014b-4648-8d7a-ed3bcdf19edb/shard-17.bin": "/etc/passwd"
+}

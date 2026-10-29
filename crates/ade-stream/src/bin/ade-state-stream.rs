@@ -121,13 +121,21 @@ fn execute() -> Result<()> {
         &mut metrics,
     );
     let pending = engine.has_unconfirmed_input();
+    let pending_window = engine
+        .state
+        .as_ref()
+        .is_some_and(ade_stream::state::State::has_pending_close);
+    let partial_output =
+        result.as_ref().err().and_then(Error::partial_output).map(
+            |(written, total)| serde_json::json!({"written_bytes":written,"frame_bytes":total}),
+        );
     engine.cancel();
     if let Err(e) = source.shutdown() {
         result = Err(e);
     }
     trace(
         &mut diagnostics,
-        &serde_json::json!({"type":"terminal","status":if result.is_ok(){"STOPPED"}else{"FAILED"},"reason":result.as_ref().map_or_else(ToString::to_string,|s|(*s).into()),"failure_class":result.as_ref().err().map(Error::class),"progress":engine.progress,"metrics":metrics,"state":engine.state.as_ref().expect("state").store.metrics,"closed_window_late":engine.state.as_ref().expect("state").closed_window_late,"generation":engine.state.as_ref().expect("state").generation,"pending_input":pending,"elapsed_ms":clock.now_ms(),"broker":source.metrics(&engine.progress)}),
+        &serde_json::json!({"type":"terminal","status":if result.is_ok(){"STOPPED"}else{"FAILED"},"reason":result.as_ref().map_or_else(ToString::to_string,|s|(*s).into()),"failure_class":result.as_ref().err().map(Error::class),"progress":engine.progress,"metrics":metrics,"state":engine.state.as_ref().expect("state").store.metrics,"closed_window_late":engine.state.as_ref().expect("state").closed_window_late,"generation":engine.state.as_ref().expect("state").generation,"pending_input":pending,"pending_window_output":pending_window,"partial_output":partial_output,"elapsed_ms":clock.now_ms(),"broker":source.metrics(&engine.progress)}),
     )?;
     result.map(|_| ())
 }
@@ -138,7 +146,7 @@ fn main() -> ExitCode {
             if let Ok(mut sink) = stderr_sink() {
                 let _ = trace(
                     &mut sink,
-                    &serde_json::json!({"type":"failure","failure_class":e.class(),"reason":e.to_string()}),
+                    &serde_json::json!({"type":"failure","failure_class":e.class(),"reason":e.to_string(),"partial_output":e.partial_output().map(|(written,total)|serde_json::json!({"written_bytes":written,"frame_bytes":total}))}),
                 );
             }
             ExitCode::FAILURE

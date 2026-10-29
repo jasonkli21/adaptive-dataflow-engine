@@ -15,7 +15,8 @@ NEGATIVE={
  'pointer-traversal':'strict checkpoint','symlink-shard':'open regular','oversized-pointer':'regular private file',
  'slow-checkpoint-control':'cancelled','cancel-blocked':'cancelled','cancel-checkpoint-write':'cancelled','cancel-checkpoint-promote':'cancelled','orphan-working':'working root not empty','broker-outage':('broker failure','unexpected main-queue data/error'),'retention-lost':'offset range/retention'}
 MAIN=['owner1','owner2','owner4','owner1-return','quiet-frontier','close','late-open','final-close']
-EXPECTED=set(MAIN+['ample-control','window-kill','window-replay','backpressure','outage-seed','broker-restart'])|set(NEGATIVE)|{'kill-'+p+s for p in POINTS for s in ('','-restore')}
+EXPECTED_BASE=set(MAIN+['ample-control','window-kill','window-replay','backpressure','outage-seed','broker-restart'])|set(NEGATIVE)|{'kill-'+p+s for p in POINTS for s in ('','-restore')}
+CROSS_ORDER={'cross-order-a-seed','cross-order-a','cross-order-b-seed','cross-order-b'}
 
 def config(root,label):return json.loads((root/(label+'.config.json')).read_text())
 def traces(root,label):return rows(root/(label+'.trace.jsonl'))
@@ -51,7 +52,10 @@ def replay(root,label,model,ledger,check_terminal=True):
 
 def verify(root):
     cases=json.loads((root/'cases.json').read_text());names=[c['name'] for c in cases]
-    require(len(names)==len(set(names)) and set(names)==EXPECTED,'missing/extra mandatory process cases')
+    env_path=root/'environment.json'
+    env=json.loads(env_path.read_text()) if env_path.exists() else {}
+    expected=EXPECTED_BASE|CROSS_ORDER if env.get('base')=='7f838db7bfb0275f6f8e7c65aab8da90e4d6bd79' else EXPECTED_BASE
+    require(len(names)==len(set(names)) and set(names)==expected,'missing/extra mandatory process cases')
     ledgers={topic:{(p,off):event for p,off,event in ledger} for topic,ledger in json.loads((root/'ledgers.json').read_text()).items()}
     sessions=[]
     for case in cases:
@@ -126,7 +130,19 @@ def verify(root):
     require(any(t['type']=='sink_blocked' for t in traces(root,'cancel-blocked')),'cancellation did not block')
     oc=config(root,'outage-seed');om=Model(oc);ol=ledgers[oc['source']['topic']];replay(root,'outage-seed',om,ol);replay(root,'broker-restart',om,ol);om.check_checkpoint(current(root,'broker-restart'))
     require(om.total==4,'broker restore did not preserve inputs')
-    env=json.loads((root/'environment.json').read_text());require(env['base']=='dc767c7c4e9e08c7b79ae034411fd9218f30a8e6' and env['kafka']=='3.9.1','source/environment mismatch')
+    if env['base']=='7f838db7bfb0275f6f8e7c65aab8da90e4d6bd79':
+        cross=[]
+        for label in ('cross-order-a','cross-order-b'):
+            seed=label+'-seed';cc=config(root,seed);mm=Model(cc);ll=ledgers[cc['source']['topic']]
+            replay(root,seed,mm,ll);replay(root,label,mm,ll)
+            windows=[r for r in mm.outputs if r['type']=='window']
+            require(len(windows)==1,label+' expected one window result')
+            cross.append(windows[0])
+        require(cross[0]['output_id']==cross[1]['output_id'],'legal orders changed logical output ID')
+        require((cross[0]['sum_i64'],cross[0]['count_u64'])==(12,3),'legal order A result mismatch')
+        require((cross[1]['sum_i64'],cross[1]['count_u64'])==(5,2),'legal order B result mismatch')
+        require(cross[0]['payload_fingerprint']!=cross[1]['payload_fingerprint'],'payload conflict is not detectable')
+    require(env['base'] in ('dc767c7c4e9e08c7b79ae034411fd9218f30a8e6','7f838db7bfb0275f6f8e7c65aab8da90e4d6bd79') and env['kafka']=='3.9.1','source/environment mismatch')
     return dict(cases=len(cases),sessions=len(sessions),windows=len(m.outputs),stall_ms=blocks[-1]['elapsed_ms']-blocks[0]['elapsed_ms'],queue_plateau=blocks[-1]['source']['queue_bytes_peak'],source_files=len(json.loads((root/'source-inventory.json').read_text())))
 
 

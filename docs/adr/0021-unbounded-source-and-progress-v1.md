@@ -38,6 +38,13 @@ whole NDJSON receipt is written. Legal increasing holes are accepted. Backward,
 foreign session/partition, overflow and malformed payloads fail. Restart suggestions
 are diagnostics; output may be partially written and replayed on manual restart.
 
+Shared runtime amendment (2026-10-29): a `--test-stop-ms` deadline at a frame
+boundary may stop successfully. If any bytes of the current NDJSON frame have
+already been written, the run fails as `partial_output_frame` with byte counts;
+the receipt remains unconfirmed and replay may be required. This test-only stop
+rule applies to both `ade-stream` and the Phase15 stateful CLI. Historical Phase14
+campaign evidence and source identity are unchanged.
+
 ## Time and timers
 
 Per partition: published watermark = max forwarded event_time_ms minus nonnegative

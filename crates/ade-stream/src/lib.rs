@@ -35,6 +35,8 @@ pub enum Error {
     Broker,
     #[error("sink failure (details redacted)")]
     Sink,
+    #[error("operator test limit interrupted a partially written frame ({written}/{total} bytes)")]
+    PartialFrame { written: usize, total: usize },
     #[error("sink stall deadline")]
     SinkDeadline,
     #[error("cancelled")]
@@ -55,9 +57,19 @@ impl Error {
             Self::State(_) => "state_or_checkpoint",
             Self::Broker => "broker",
             Self::Sink => "sink_or_diagnostics",
+            Self::PartialFrame { .. } => "partial_output_frame",
             Self::SinkDeadline => "sink_deadline",
             Self::Cancelled => "cancelled",
             Self::Native(_) => "native_operator",
+        }
+    }
+
+    /// Byte counts for a frame interrupted by an operator test deadline.
+    #[must_use]
+    pub fn partial_output(&self) -> Option<(usize, usize)> {
+        match self {
+            Self::PartialFrame { written, total } => Some((*written, *total)),
+            _ => None,
         }
     }
 }

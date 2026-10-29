@@ -13,6 +13,9 @@ use std::{
 };
 use uuid::Uuid;
 const MANIFEST_CAP: u64 = 32768;
+/// Admission floor includes the staging reserve plus room for the lock and one entry.
+pub const MIN_CHECKPOINT_BYTES: u64 = 65_536 + 512;
+const STAGING_RESERVE_BYTES: u64 = 65_536;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Pointer {
@@ -322,7 +325,7 @@ pub fn publish(
         .metrics
         .windows
         .checked_mul(store::RECORD)
-        .and_then(|n| n.checked_add(65536))
+        .and_then(|n| n.checked_add(STAGING_RESERVE_BYTES))
         .and_then(|n| n.checked_add(used))
         .ok_or(Error::Overflow("checkpoint quota"))?;
     check(

@@ -69,6 +69,10 @@ fn cost_configured_egress_checked_overflow_and_all_limits() {
     };
     assert_eq!(
         r.estimate_nano_usd(&c).unwrap(),
+        2 + 6 + 15 + 28 + 55 + 78 + 102
+    );
+    assert_eq!(
+        r.estimate_lifecycle_nano_usd(&c, 5).unwrap(),
         2 + 6 + 15 + 28 + 55 + 78 + 102 + 5 * 23 * 19
     );
     assert!(
@@ -78,6 +82,7 @@ fn cost_configured_egress_checked_overflow_and_all_limits() {
         })
         .is_err()
     );
+    assert!(r.estimate_lifecycle_nano_usd(&c, u64::MAX).is_err());
     for field in [
         "segments",
         "write_bytes",
@@ -114,7 +119,7 @@ fn cost_configured_egress_checked_overflow_and_all_limits() {
 }
 #[test]
 fn old_control_oversized_unknown_and_truncated_remote_frames_refuse() {
-    for magic in [b"ADETCP12", b"ADEOPS01", b"ADEOBJ00"] {
+    for magic in [b"ADETCP12", b"ADEOPS01", b"ADEOBJ00", b"ADEOBJ01"] {
         assert!(wire::read::<wire::Grant>(&mut &magic[..]).is_err());
     }
     let mut bytes = wire::MAGIC.to_vec();

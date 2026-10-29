@@ -35,4 +35,4 @@ Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke 
 ## Bounded operations and disaggregation
 
 - [Phase 12](phase-12-implementation-report.md) — accepted local durable operations; production HA deferred.
-- [Phase 13](phase-13-implementation-report.md) — COMPLETE_BOUNDED_REMOTE_V1; separately running S3 fixture, exact static aggregation and real process turnover, source-bound G0–G8 evidence.
+- [Phase 13](phase-13-implementation-report.md) — COMPLETE_BOUNDED_REMOTE_V1; dedicated remote-object aggregate executor, separate S3 fixture and process turnover. Review remediation and evidence-access limits are recorded in [the addendum](phase-13-review-remediation-evidence.json).

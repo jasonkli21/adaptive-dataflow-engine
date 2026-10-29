@@ -52,10 +52,14 @@ impl Client {
     ) -> Result<Self> {
         config.validate()?;
         limits.validate()?;
-        let key = std::env::var("AWS_ACCESS_KEY_ID")
-            .map_err(|_| Error::Invalid("remote credentials required".into()))?;
-        let secret = std::env::var("AWS_SECRET_ACCESS_KEY")
-            .map_err(|_| Error::Invalid("remote credentials required".into()))?;
+        let key = std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| Error::Remote {
+            code: "credentials".into(),
+            message: "remote credentials refused".into(),
+        })?;
+        let secret = std::env::var("AWS_SECRET_ACCESS_KEY").map_err(|_| Error::Remote {
+            code: "credentials".into(),
+            message: "remote credentials refused".into(),
+        })?;
         require(
             !key.is_empty() && !secret.is_empty() && key.len() <= 4096 && secret.len() <= 4096,
             "remote credentials required/bounded",
@@ -149,14 +153,17 @@ impl Client {
     }
     fn failed<T>(&mut self, error: Failure) -> Result<T> {
         self.poisoned = true;
-        let message = match error {
-            Failure::Cancelled => "remote I/O cancelled; attempt quarantined",
-            Failure::Timeout => "remote I/O deadline; attempt quarantined",
-            Failure::Exists => "remote immutable create conflict; attempt quarantined",
-            Failure::Provider(_) => "remote provider request refused; attempt quarantined",
-            Failure::Bounds => "remote request/byte/object cap; attempt quarantined",
+        let (code, message) = match error {
+            Failure::Cancelled => ("cancelled", "remote stage cancelled"),
+            Failure::Timeout => ("timeout", "remote stage deadline"),
+            Failure::Exists => ("integrity", "remote immutable create conflict"),
+            Failure::Provider(_) => ("provider", "remote provider request refused"),
+            Failure::Bounds => ("limit", "remote request/byte/object cap"),
         };
-        Err(Error::Invalid(message.into()))
+        Err(Error::Remote {
+            code: code.into(),
+            message: message.into(),
+        })
     }
     fn one<T>(
         &mut self,

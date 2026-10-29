@@ -155,6 +155,9 @@ fn genuine_remote_static_turnover_and_scoped_cleanup() {
     ] {
         let (_dir, mut run, oracle) = fixture(n, rows);
         run.job.readers = readers;
+        run.job.rates.delete_nano_usd = 7;
+        run.job.rates.storage_byte_ms_nano_usd = 19;
+        run.job.rates.retention_ms = 23;
         let mut exited = false;
         let mut result =
             remote::execute_observed(&run, ade_exec::CancellationToken::default(), |event| {
@@ -201,6 +204,8 @@ fn genuine_remote_static_turnover_and_scoped_cleanup() {
         assert_eq!(actual, oracle);
         let dry = result.cleanup(false).unwrap();
         assert!(!dry.applied);
+        assert!(dry.post_cleanup_lifecycle_proxy_nano_usd.is_none());
+        assert!(dry.verified_retained_bytes > 0);
         assert_ne!(dry.keys, Vec::<String>::new());
         assert!(dry.keys.iter().all(|k| k.starts_with(&format!(
             "acceptance/remote-v1/{}/attempt-0/",
@@ -209,6 +214,27 @@ fn genuine_remote_static_turnover_and_scoped_cleanup() {
         let applied = result.cleanup(true).unwrap();
         assert_eq!(applied.keys, dry.keys);
         assert_eq!(applied.counters.delete, dry.keys.len() as u64);
+        let mut lifecycle_counters = result.receipt.counters.clone();
+        lifecycle_counters.add(&applied.counters).unwrap();
+        assert_eq!(
+            applied.post_cleanup_lifecycle_proxy_nano_usd,
+            Some(
+                result
+                    .receipt
+                    .effective
+                    .rates
+                    .estimate_lifecycle_nano_usd(
+                        &lifecycle_counters,
+                        applied.verified_retained_bytes,
+                    )
+                    .unwrap()
+            )
+        );
+        assert!(
+            applied.post_cleanup_lifecycle_proxy_nano_usd.unwrap()
+                >= result.receipt.estimated_nano_usd
+                    + applied.counters.delete * run.job.rates.delete_nano_usd
+        );
         eprintln!(
             "ADE_REMOTE_ORACLE workers={n} readers={readers} rows={} canonical={} receipt={}",
             rows * 4,
@@ -377,6 +403,20 @@ fn real_remote_caps_and_producer_death_cancel_fail_without_result() {
             Ok(())
         });
         assert!(result.is_err(), "accepted {attack}");
+        if ["missing-bucket", "write-bytes", "producer-death"].contains(&attack) {
+            let error = match &result {
+                Err(error) => error.to_string(),
+                Ok(_) => unreachable!("failure was asserted above"),
+            };
+            let code = match attack {
+                "missing-bucket" => "provider",
+                "write-bytes" => "limit",
+                "producer-death" => "child_crash",
+                _ => unreachable!(),
+            };
+            assert!(error.contains(code), "{attack}: {error}");
+            assert!(!error.contains("ade-fixture-secret"), "{attack}: {error}");
+        }
         if ["producer-death", "cancel-producers"].contains(&attack) {
             assert!(started);
         }
@@ -530,7 +570,7 @@ fn fresh_boot_stale_epoch_attempt_backend_duplicate_and_foreign_grants_refuse_be
     use std::process::{Command, Stdio};
     fn write_frame(out: &mut impl Write, v: &serde_json::Value) {
         let data = serde_json::to_vec(v).unwrap();
-        out.write_all(b"ADEOBJ01").unwrap();
+        out.write_all(b"ADEOBJ02").unwrap();
         out.write_all(&u32::try_from(data.len()).unwrap().to_le_bytes())
             .unwrap();
         out.write_all(&data).unwrap();
@@ -538,7 +578,7 @@ fn fresh_boot_stale_epoch_attempt_backend_duplicate_and_foreign_grants_refuse_be
     fn read_frame(input: &mut impl Read) -> serde_json::Value {
         let mut m = [0; 8];
         input.read_exact(&mut m).unwrap();
-        assert_eq!(&m, b"ADEOBJ01");
+        assert_eq!(&m, b"ADEOBJ02");
         let mut n = [0; 4];
         input.read_exact(&mut n).unwrap();
         let n = u32::from_le_bytes(n) as usize;
@@ -575,7 +615,7 @@ fn fresh_boot_stale_epoch_attempt_backend_duplicate_and_foreign_grants_refuse_be
         let ready = read_frame(child.stdout.as_mut().unwrap());
         let boot = &ready["Ready"];
         let execution = uuid::Uuid::new_v4().to_string();
-        let mut grant = serde_json::json!({"version":1,"boot":boot["instance"],"context":{"version":1,"execution":execution,"attempt":0,"job":run.job.job,"workers":2,"plan":run.job.plan.digest().unwrap(),"source":fingerprint(&serde_json::to_vec(&run.job.plan.sources).unwrap()),"config":fingerprint(&serde_json::to_vec(&run.job).unwrap()),"store":run.job.store.digest().unwrap(),"topology":fingerprint(&serde_json::to_vec(&("static-hash1",2usize)).unwrap())},"job":run.job,"role":{"Read":{"worker":0,"width":2,"epoch":1,"manifest_bytes":1,"manifest_hash":"a".repeat(64),"gather":"127.0.0.1:1"}}});
+        let mut grant = serde_json::json!({"version":2,"boot":boot["instance"],"context":{"version":1,"execution":execution,"attempt":0,"job":run.job.job,"workers":2,"plan":run.job.plan.digest().unwrap(),"source":fingerprint(&serde_json::to_vec(&run.job.plan.sources).unwrap()),"config":fingerprint(&serde_json::to_vec(&run.job).unwrap()),"store":run.job.store.digest().unwrap(),"topology":fingerprint(&serde_json::to_vec(&("static-hash1",2usize)).unwrap())},"job":run.job,"role":{"Read":{"worker":0,"width":2,"epoch":1,"manifest_bytes":1,"manifest_hash":"a".repeat(64),"gather":"127.0.0.1:1"}}});
         match attack {
             "boot" => grant["boot"] = uuid::Uuid::new_v4().to_string().into(),
             "epoch" => grant["role"]["Read"]["epoch"] = 0.into(),
@@ -600,10 +640,14 @@ fn fresh_boot_stale_epoch_attempt_backend_duplicate_and_foreign_grants_refuse_be
         }
         let output = child.wait_with_output().unwrap();
         assert!(!output.status.success(), "{attack}");
-        assert!(
-            output.stdout.is_empty(),
-            "unexpected success reply {attack}"
-        );
+        let refusal = read_frame(&mut output.stdout.as_slice());
+        let expected_class = if attack == "credentials" {
+            "credentials"
+        } else {
+            "admission"
+        };
+        assert_eq!(refusal["Refused"]["class"], expected_class, "{attack}");
+        assert!(refusal.get("Done").is_none(), "unexpected result {attack}");
         assert!(!PathBuf::from(boot["scratch"].as_str().unwrap()).exists());
         eprintln!(
             "ADE_REMOTE_GRANT_REFUSED attack={attack} boot={} no_output=true",
@@ -646,6 +690,32 @@ fn immutable_cleanup_capability_cannot_delete_another_live_namespace() {
     );
     second.cleanup(true).unwrap();
     eprintln!("ADE_REMOTE_GC immutable_authority=true other_live_namespace_preserved=true");
+}
+
+#[test]
+#[ignore = "requires separate S3-compatible fixture and feature-matched worker"]
+fn failed_delete_reports_partial_cleanup_without_lifecycle_estimate() {
+    let (_dir, run, _) = fixture(2, 1031);
+    let mut output = remote::execute(&run, ade_exec::CancellationToken::default()).unwrap();
+    let expected_keys = output.cleanup(false).unwrap().keys.len();
+    proxy_control(&serde_json::json!({
+        "action": "500",
+        "method": "POST",
+        "contains": "?delete",
+        "remaining": 1
+    }));
+    let error = output.cleanup(true).unwrap_err().to_string();
+    assert!(error.contains("cleanup_incomplete"), "{error}");
+    assert!(error.contains("successful deletes=0"), "{error}");
+    assert!(error.contains("failed delete attempts=1"), "{error}");
+    assert!(error.contains("lifecycle estimate unavailable"), "{error}");
+    assert!(!error.contains("ade-fixture-secret"), "{error}");
+
+    // The exact same in-memory capability can retry after the transient failure.
+    let completed = output.cleanup(true).unwrap();
+    assert!(completed.applied);
+    assert_eq!(completed.counters.delete, expected_keys as u64);
+    assert!(completed.post_cleanup_lifecycle_proxy_nano_usd.is_some());
 }
 
 #[test]

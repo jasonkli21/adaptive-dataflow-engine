@@ -2,7 +2,7 @@
 use super::{
     Context, Counters, Job, Manifest, VERSION, add, json,
     store::Client,
-    wire::{self, Boot, Done, Grant, Reply, Role},
+    wire::{self, Boot, Done, FailureClass, Grant, Reply, Role},
     worker::{load_terminals, segment_key, terminal_key},
 };
 use crate::{Error, Result, bounded_output::OutputLimits, gather::Gather, ids::AttemptId, require};
@@ -56,7 +56,10 @@ struct Quiesced {
     store: super::S3Config,
     limits: super::Limits,
     keys: Vec<String>,
-    applied: bool,
+    rates: super::Rates,
+    execution_counters: Counters,
+    retained_bytes: u64,
+    completed_cleanup: Option<Cleanup>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -64,23 +67,35 @@ pub struct Cleanup {
     pub keys: Vec<String>,
     pub applied: bool,
     pub counters: Counters,
+    pub verified_retained_bytes: u64,
+    pub assumed_retention_ms: u64,
+    pub post_cleanup_lifecycle_proxy_nano_usd: Option<u64>,
 }
 impl Output {
     /// Dry-run by default at the CLI. Only this post-reap output owns apply authority.
     /// # Errors
     /// Refuses service errors, forged namespaces and limits; it never discovers/deletes by LIST.
     pub fn cleanup(&mut self, apply: bool) -> Result<Cleanup> {
-        if self.quiesced.applied {
+        if let Some(completed) = &self.quiesced.completed_cleanup {
+            if apply {
+                return Ok(completed.clone());
+            }
             return Ok(Cleanup {
                 keys: vec![],
-                applied: apply,
+                applied: false,
                 counters: Counters::default(),
+                verified_retained_bytes: self.quiesced.retained_bytes,
+                assumed_retention_ms: self.quiesced.rates.retention_ms,
+                post_cleanup_lifecycle_proxy_nano_usd: None,
             });
         }
         let mut result = Cleanup {
             keys: self.quiesced.keys.clone(),
             applied: apply,
             counters: Counters::default(),
+            verified_retained_bytes: self.quiesced.retained_bytes,
+            assumed_retention_ms: self.quiesced.rates.retention_ms,
+            post_cleanup_lifecycle_proxy_nano_usd: None,
         };
         if apply {
             let limits = &self.quiesced.limits;
@@ -95,11 +110,26 @@ impl Output {
                 CancellationToken::default(),
                 Instant::now() + Duration::from_millis(limits.timeout_ms),
             )?;
-            for key in &result.keys {
-                client.delete(key)?;
+            for (index, key) in result.keys.iter().enumerate() {
+                if client.delete(key).is_err() {
+                    let unattempted = result.keys.len() - index - 1;
+                    return Err(Error::Remote {
+                        code: "cleanup_incomplete".into(),
+                        message: format!(
+                            "exact-key cleanup incomplete: successful deletes={index}, failed delete attempts=1, unattempted keys={unattempted}; lifecycle estimate unavailable"
+                        ),
+                    });
+                }
             }
             result.counters = client.counters;
-            self.quiesced.applied = true;
+            let mut lifecycle_counters = self.quiesced.execution_counters.clone();
+            lifecycle_counters.add(&result.counters)?;
+            result.post_cleanup_lifecycle_proxy_nano_usd =
+                Some(self.quiesced.rates.estimate_lifecycle_nano_usd(
+                    &lifecycle_counters,
+                    self.quiesced.retained_bytes,
+                )?);
+            self.quiesced.completed_cleanup = Some(result.clone());
         }
         Ok(result)
     }
@@ -160,6 +190,12 @@ struct Actor {
     boot: Option<Boot>,
 }
 impl Actor {
+    fn child_crash() -> Error {
+        Error::Remote {
+            code: FailureClass::ChildCrash.code().into(),
+            message: FailureClass::ChildCrash.message().into(),
+        }
+    }
     fn spawn(run: &Run) -> Result<Self> {
         let mut child = Command::new(&run.worker_binary)
             .arg("--remote-stage")
@@ -195,19 +231,37 @@ impl Actor {
             boot: None,
         })
     }
-    fn event(&self, token: &CancellationToken, until: Instant) -> Result<Reply> {
+    fn event(&mut self, token: &CancellationToken, until: Instant) -> Result<Reply> {
         loop {
             check(token, until)?;
             match self.events.recv_timeout(Duration::from_millis(5)) {
-                Ok(r) => return r,
+                Ok(Ok(reply)) => return Ok(reply),
+                Ok(Err(error)) => {
+                    if self.status.is_some_and(|status| !status.success()) {
+                        return Err(Self::child_crash());
+                    }
+                    return Err(error);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(_) => return Err(Error::Invalid("remote worker reply lost".into())),
+                Err(_) => {
+                    if self.status.is_some_and(|status| !status.success()) {
+                        return Err(Self::child_crash());
+                    }
+                    return Err(Error::Invalid("remote worker reply lost".into()));
+                }
             }
         }
     }
     fn ready(&mut self, token: &CancellationToken, until: Instant) -> Result<Boot> {
-        let Reply::Ready(boot) = self.event(token, until)? else {
-            return Err(Error::Invalid("remote ready expected".into()));
+        let boot = match self.event(token, until)? {
+            Reply::Ready(boot) => boot,
+            Reply::Refused { class } => {
+                return Err(Error::Remote {
+                    code: class.code().into(),
+                    message: class.message().into(),
+                });
+            }
+            Reply::Done(_) => return Err(Error::Invalid("remote ready expected".into())),
         };
         boot.validate()?;
         require(boot.pid == self.child.id(), "remote PID fence")?;
@@ -249,12 +303,20 @@ impl Actor {
         token: &CancellationToken,
         until: Instant,
     ) -> Result<Done> {
-        require(
-            self.status.is_some_and(|s| s.success()),
-            "remote worker did not exit successfully",
-        )?;
-        let Reply::Done(done) = self.event(token, until)? else {
-            return Err(Error::Invalid("remote done expected".into()));
+        let done = match self.event(token, until)? {
+            Reply::Done(done) => {
+                if !self.status.is_some_and(|status| status.success()) {
+                    return Err(Self::child_crash());
+                }
+                done
+            }
+            Reply::Refused { class } => {
+                return Err(Error::Remote {
+                    code: class.code().into(),
+                    message: class.message().into(),
+                });
+            }
+            Reply::Ready(_) => return Err(Error::Invalid("remote done expected".into())),
         };
         require(
             self.boot.as_ref() == Some(&done.boot)
@@ -293,7 +355,6 @@ fn reap(actors: &mut [Actor], token: &CancellationToken, until: Instant) -> Resu
             if a.status.is_none() {
                 if let Some(status) = a.child.try_wait()? {
                     a.status = Some(status);
-                    require(status.success(), "remote worker failed; no output")?;
                 } else {
                     remaining = true;
                 }
@@ -327,7 +388,7 @@ fn start(
         )?;
         actor.grant(
             &Grant {
-                version: VERSION,
+                version: wire::WIRE_VERSION,
                 boot: boot.instance.clone(),
                 context: context.clone(),
                 job: run.job.clone(),
@@ -535,10 +596,19 @@ pub fn execute_observed(
     check(&token, until)?;
     let consumption_ns = ns(consumption)?;
     let mut keys = vec![client.key("MANIFEST.json")];
+    let mut retained_bytes = manifest_bytes;
+    retained_bytes = add(
+        retained_bytes,
+        manifest
+            .terminals
+            .iter()
+            .try_fold(0, |a, terminal| add(a, terminal.bytes))?,
+    )?;
     for t in &all_terms {
         keys.push(client.key(&terminal_key(t.partition, t.producer)));
         for s in &t.segments {
             keys.push(client.key(&segment_key(t.partition, t.producer, s.sequence)));
+            retained_bytes = add(retained_bytes, s.bytes)?;
         }
     }
     counters.add(&client.counters)?;
@@ -554,7 +624,7 @@ pub fn execute_observed(
             readers: reader_boots,
             manifest_bytes,
             manifest_hash,
-            counters,
+            counters: counters.clone(),
             production_ns,
             consumption_ns,
             wall_ns: ns(started)?,
@@ -567,7 +637,10 @@ pub fn execute_observed(
             store: run.job.store.clone(),
             limits: run.job.limits.clone(),
             keys,
-            applied: false,
+            rates: run.job.rates.clone(),
+            execution_counters: counters.clone(),
+            retained_bytes,
+            completed_cleanup: None,
         },
     };
     verify_receipt(&output.receipt)?;

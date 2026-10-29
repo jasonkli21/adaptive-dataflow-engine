@@ -22,6 +22,9 @@
     "no_redirect_no_ambient_proxy_no_anonymous_or_filesystem_fallback",
     "quiescence_capability_exact_key_gc_dry_run_default",
     "configured_placement_prices_and_measured_request_latency_bytes",
+    "execution_pre_cleanup_cost_and_post_cleanup_lifecycle_proxy",
+    "redacted_remote_worker_failure_classes_on_ADEOBJ02",
+    "bounded_read_only_exact_attempt_orphan_inventory",
     "same_data_independent_oracle_2_and_4_worker_measurements"
   ],
   "refused_or_deferred": [
@@ -40,11 +43,14 @@
     "serverless_runtime_or_unbounded_streaming",
     "process_rss_free_disk_or_physical_network_hard_cap",
     "automatic_gc_of_failed_crashed_or_late_write_orphans",
+    "reusable_general_remote_exchange_plugin_across_graph_operators",
+    "physical_elasticity_inferred_from_predeclared_reader_width",
     "bucket_wide_prefix_list_gc_lifecycle_or_version_reclamation"
   ],
   "versions": {
-    "remote_pipe": "ADEOBJ01_v1",
+    "remote_pipe": "ADEOBJ02_v2",
     "remote_manifest_and_receipt": 1,
+    "receipt_estimated_nano_usd": "execution_pre_cleanup_proxy_excludes_retained_storage",
     "handoff_epoch": 1,
     "attempt": 0,
     "legacy_control": "unchanged_ADETCP12",

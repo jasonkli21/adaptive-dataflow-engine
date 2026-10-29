@@ -6,7 +6,53 @@ use std::{
     io::{Read, Write},
     net::SocketAddr,
 };
-pub const MAGIC: &[u8; 8] = b"ADEOBJ01";
+pub const MAGIC: &[u8; 8] = b"ADEOBJ02";
+pub const WIRE_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    Admission,
+    Source,
+    Credentials,
+    Provider,
+    Timeout,
+    Cancelled,
+    Limit,
+    Integrity,
+    Stage,
+    ChildCrash,
+}
+impl FailureClass {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Admission => "admission",
+            Self::Source => "source",
+            Self::Credentials => "credentials",
+            Self::Provider => "provider",
+            Self::Timeout => "timeout",
+            Self::Cancelled => "cancelled",
+            Self::Limit => "limit",
+            Self::Integrity => "integrity",
+            Self::Stage => "stage",
+            Self::ChildCrash => "child_crash",
+        }
+    }
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::Admission => "remote grant refused",
+            Self::Source => "remote source verification failed",
+            Self::Credentials => "remote credentials refused",
+            Self::Provider => "remote provider request refused",
+            Self::Timeout => "remote stage deadline",
+            Self::Cancelled => "remote stage cancelled",
+            Self::Limit => "remote resource limit reached",
+            Self::Integrity => "remote data integrity verification failed",
+            Self::Stage => "remote worker stage failed",
+            Self::ChildCrash => "remote worker exited without a valid result",
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Boot {
@@ -62,14 +108,14 @@ pub struct Done {
 pub enum Reply {
     Ready(Boot),
     Done(Box<Done>),
-    Refused,
+    Refused { class: FailureClass },
 }
 /// # Errors
 /// Refuses oversized, foreign-version and truncated frames before JSON decoding.
 pub fn read<T: DeserializeOwned>(input: &mut impl Read) -> Result<T> {
     let mut magic = [0; 8];
     input.read_exact(&mut magic)?;
-    require(&magic == MAGIC, "remote protocol requires ADEOBJ01")?;
+    require(&magic == MAGIC, "remote protocol requires ADEOBJ02")?;
     let mut n = [0; 4];
     input.read_exact(&mut n)?;
     let n = u32::from_le_bytes(n) as usize;

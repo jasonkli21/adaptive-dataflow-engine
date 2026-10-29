@@ -1,0 +1,197 @@
+{
+  "finding_dispositions": {
+    "F13-01": "Receipt v1 remains pre-cleanup execution-only estimate; exact successful cleanup returns delete counters and a checked lifecycle proxy over verified retained bytes and assumed duration. Partial cleanup has no lifecycle estimate.",
+    "F13-02": "ADEOBJ02 wire v2 adds bounded redacted refusal classes; Boot/receipt/manifest stay v1 and legacy protocols are unchanged.",
+    "F13-03": "Exact UUID read-only inventory is bounded and non-destructive; late-PUT namespace classified as five current objects and preserved through a later successful UUID.",
+    "F13-04": "Tracked summary source-fingerprints committed inputs and hashes local raw evidence. Raw external-service artifacts remain inaccessible to a fresh repository-only reviewer.",
+    "F13-05": "Docs state this is a dedicated static aggregate remote-object executor; general common-exchange plugin and physical elasticity remain deferred."
+  },
+  "historical_evidence": {
+    "new_campaign_is_supplemental": true,
+    "original_acceptance_source": "ead9de6c0bbd3494b88110e50aa825f651be58cc",
+    "phase13_original_evidence_json_sha256": "fe818506b12f7c6b472c8f9d8df0504194e89e350753c108aa4c38ada30ff47d",
+    "phase13_original_evidence_json_unchanged": true
+  },
+  "limits": [
+    "Moto loopback evidence does not establish real cloud provider billing, cross-AZ durability, or multi-host failure behavior.",
+    "No production or paid service was contacted.",
+    "Original Phase 13 evidence and measurements remain historical and unchanged."
+  ],
+  "raw_artifacts": {
+    "bytes": 2512941,
+    "contents": "All 32 sample JSON files, manifests, request trace, campaign verifier and raw logs; final gates, selected prior attempts, orphan snapshots and final service-restart log.",
+    "external_evidence_access": "EXTERNAL_EVIDENCE_NOT_PUBLICLY_REPRODUCIBLE",
+    "location_note": "Private local /private/tmp artifact only; no external artifact destination was authorized.",
+    "path": "/private/tmp/ade-phase13-review-remediation-20261028/review-remediation-raw-evidence.tar.gz",
+    "sha256": "2d9da0bb0f1748cbc204d10784a785b35157213f6e95d0f93395aebe5003b07c"
+  },
+  "review_target": "d8ffa492e34fd785f3d05447f14dffb65e36e503",
+  "schema_version": 1,
+  "source_fingerprint": {
+    "algorithm": "SHA-256 over sorted tracked repository paths, length-prefixed path bytes, and each tracked blob SHA-256; summary JSON excluded to avoid self-reference",
+    "current_commit_sha": "Intentionally omitted to avoid self-reference; retrieve the final commit from git history.",
+    "script": "scripts/phase13-source-fingerprint.py",
+    "tracked_file_count_excluding_summary": 234,
+    "tracked_inputs_sha256": "51d0cec53844f49a68d6f6fe7da4f13e5bfe28f80766968ff6f3e9b8d091f82d"
+  },
+  "status": "REMEDIATED_BOUNDED_LOCAL_VERIFICATION_PASS",
+  "toolchain": {
+    "boto3": "1.42.97",
+    "cargo": "1.99.1 (5f94df478 2026-08-27)",
+    "moto": "5.1.16",
+    "platform": "aarch64-apple-darwin; macOS Darwin 27.0.0",
+    "python": "3.9.6",
+    "remote_verifier_binary_sha256": "df18b5059ee0aa313e4b0400f3a6d751a52d0754453ca1ea79293d74e75def96",
+    "requests": "2.32.5",
+    "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+    "worker_binary_sha256": "f304d3f4da1d86495899d80cff57de5f2e3bc7702c6ff87c93bd989d60b1d097"
+  },
+  "validation": {
+    "campaign": {
+      "all_request_body_and_cleanup_conservation_verified": true,
+      "command": "cargo test -p ade-bench --features remote-s3 --locked --test phase13 -- --ignored --nocapture --test-threads=1",
+      "evidence_version": 2,
+      "http_trace_lines": 14497,
+      "log": {
+        "bytes": 9652,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/campaign.log",
+        "sha256": "392bd655c29a70209ec531050f80a7494c4ea896531cd2d399b2a87e4445c491"
+      },
+      "measured": 24,
+      "oracle": "independent oracle passed for all rows",
+      "performance_note": "All four remote/local ratios exceed 1; this loopback debug campaign shows overhead and is not a speedup claim.",
+      "remote_over_local_medians": {
+        "hot-key/2 workers": 6.2210384111439545,
+        "hot-key/4 workers": 9.376096919741848,
+        "uniform/2 workers": 6.604782541677082,
+        "uniform/4 workers": 9.768342390181724
+      },
+      "samples": 32,
+      "status": "PASS",
+      "verifier_output": {
+        "bytes": 2165,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/campaign/verify.json",
+        "sha256": "991a9600e145ea19f22ae6aaa31bf0c323a7d0d14a054799436255dfed302be7"
+      }
+    },
+    "check": {
+      "command": "cargo check --workspace --all-targets --all-features --locked",
+      "log": {
+        "bytes": 483,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/check.log",
+        "sha256": "48e6d12d3c24e806b5be499ed89de7cebc87ef5759c2d759b22ca97143f497d7"
+      },
+      "status": "PASS"
+    },
+    "clippy": {
+      "command": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+      "log": {
+        "bytes": 371,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/clippy.log",
+        "sha256": "fe6360db2139e09552f092f658af775732e23fb5dc1c72b6bc69e187efaed8d9"
+      },
+      "status": "PASS"
+    },
+    "format": {
+      "command": "cargo fmt --all -- --check",
+      "log": {
+        "bytes": 0,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/format.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "status": "PASS"
+    },
+    "orphan_inventory": {
+      "automatic_delete": "NO",
+      "before_after_successful_other_execution_identical": true,
+      "cleanup_eligibility": "NOT_ESTABLISHED_BY_INVENTORY",
+      "current_objects": 5,
+      "fresh_success_execution": "214d8be4-9710-4427-9da2-93c30d138eae",
+      "global_manifest_present": false,
+      "late_put_execution": "9aeb1c3f-ab8b-47c4-8ebf-e5ea8339bd5a",
+      "snapshots": {
+        "after": {
+          "bytes": 1342,
+          "path": "/private/tmp/ade-phase13-review-remediation-20261028/orphan-after-inventory.json",
+          "sha256": "39a65bd9a53c0cfec7daa1277f45b2085e7f73622c30290cb12c7b88f7a4f4e4"
+        },
+        "before": {
+          "bytes": 1342,
+          "path": "/private/tmp/ade-phase13-review-remediation-20261028/orphan-before-inventory.json",
+          "sha256": "39a65bd9a53c0cfec7daa1277f45b2085e7f73622c30290cb12c7b88f7a4f4e4"
+        }
+      },
+      "status": "PASS_READ_ONLY"
+    },
+    "python": {
+      "command": "python3 -m unittest discover -s scripts/tests -p 'test_*.py'",
+      "log": {
+        "bytes": 125,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/python-tests.log",
+        "sha256": "21c64c6edbc7aa4e3c74db0d0cc32e3eb69b9991876cfa65c07ffdb9af482dd1"
+      },
+      "passed": 26,
+      "status": "PASS"
+    },
+    "remote_integrations": {
+      "command": "cargo test -p ade-distributed --all-features --locked --test remote -- --ignored --skip zz_real_service_restart_refuses_lost_intermediates --nocapture --test-threads=1",
+      "failed": 0,
+      "log": {
+        "bytes": 34977,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/remote-integrations-final2.log",
+        "sha256": "8073e1d352b2a70ebacfff6f938e72fe8163f55be584aa1639a4d1ac6731004c"
+      },
+      "passed": 7,
+      "prior_failed_attempt": {
+        "bytes": 35365,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/remote-integrations-final.log",
+        "sha256": "7ed84253f90c01fdf63933f73064bc8457bfe20c2f9547dba7b0b2c18c033576"
+      },
+      "restart_test_run_separately_last": true,
+      "status": "PASS"
+    },
+    "service_restart_last": {
+      "command": "cargo test -p ade-distributed --all-features --locked --test remote zz_real_service_restart_refuses_lost_intermediates -- --ignored --nocapture --test-threads=1",
+      "fixture": "loopback Moto 5.1.16 restarted from the private task virtualenv",
+      "log": {
+        "bytes": 450,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/service-restart-last.log",
+        "sha256": "dd01cd91103d0f51c2171b5a3acabbf07fac571d01b73c99b0647c9e1826382b"
+      },
+      "owned_fixture_pid": 65756,
+      "passed": 1,
+      "status": "PASS"
+    },
+    "smoke": {
+      "command": "bash scripts/smoke.sh",
+      "log": {
+        "bytes": 1335,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/smoke.log",
+        "sha256": "4613fe426e4cf7385eb86cd8bce3fe1601018a64f38fc5a68c2087ebc511696b"
+      },
+      "status": "PASS"
+    },
+    "workspace": {
+      "command": "cargo test --workspace --all-features --locked -- --test-threads=1",
+      "failed": 0,
+      "ignored": 10,
+      "log": {
+        "bytes": 31184,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/workspace-tests-sequential.log",
+        "sha256": "25a362867c24a7e9d6d771291aff0b687e19828a92ee6fee7b8c49a44bf633cf"
+      },
+      "passed": 252,
+      "status": "PASS"
+    },
+    "workspace_parallel_attempt": {
+      "command": "cargo test --workspace --all-features --locked",
+      "log": {
+        "bytes": 29105,
+        "path": "/private/tmp/ade-phase13-review-remediation-20261028/workspace-tests-loopback.log",
+        "sha256": "10a62d3bb14cc43721b1e8e4746ec8431256b13062d4040645ff9ac6647e2e38"
+      },
+      "note": "The initial sandbox-only workspace run failed local socket tests with Operation not permitted; that tool output was not persisted as a log. The saved loopback-enabled parallel run had one transient Phase 12 OWNER_BUSY contention failure. The selected test passed with workspace feature unification and one test thread, and the complete serialized workspace gate passed.",
+      "status": "FAIL_THEN_RESOLVED"
+    }
+  }
+}

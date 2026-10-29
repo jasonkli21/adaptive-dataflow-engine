@@ -1,6 +1,6 @@
 # ADR-0020: bounded remote disaggregated shuffle v1
 
-Status: Accepted and implemented, 2026-10-28; COMPLETE_BOUNDED_REMOTE_V1. Source-bound acceptance is recorded in the Phase 13 report.
+Status: Accepted and implemented, 2026-10-28; COMPLETE_BOUNDED_REMOTE_V1. Review remediation and source-bound local revalidation are recorded in the Phase 13 report and remediation evidence.
 
 ## Authority and boundary
 
@@ -11,8 +11,8 @@ running/staged compatibility-drift witness. See the source-bound report/evidence
 This refines architecture §§7,9–10,12,15,17,22–24,27–31 and preserves INV1–10.
 Phase 10 physical elasticity and Phase 12 production HA remain incomplete.
 
-`remote-s3` is a default-off Cargo feature of `ade-distributed`. A separate
-`remote_object` coordinator API and `ade-remote` entrypoint execute only the
+`remote-s3` is a default-off Cargo feature of `ade-distributed`. A dedicated
+experimental `remote_object` aggregate executor, coordinator API and `ade-remote` entrypoint execute only the
 original static GroupBySum shape over a validated physical IR/catalog. The
 existing worker binary has a separate one-shot `--remote-stage` pipe protocol.
 Native operators, hash1 distribution, bounded IPC decoder, final merge and
@@ -29,6 +29,9 @@ compute width, not live membership changes, in-flight replacement or migration.
 Joins, projections beyond the original grouped sum/count, leased/static_projected,
 adaptive operators/topology, automatic recovery, remote inputs, general SQL/DAGs,
 managed operations integration, external sinks and HA are refused/deferred.
+This is not a reusable remote exchange plugin in the existing common exchange
+selector. Reader-width variation across predeclared fresh processes is not
+physical worker elasticity; both remain tracked roadmap debt.
 
 ## Actors, identities and trust
 
@@ -151,7 +154,13 @@ elapsed time, role/stage wall time, boot/PID/scratch/execution/source identity,
 segment and terminal counts. Service request logs independently corroborate
 network calls. Placement and integer nano-USD request/byte/egress/capacity rates
 are CONFIGURED; counters/latency are MEASURED; there is no PROVIDER_BILLED value.
-Checked deterministic arithmetic fails on overflow. No policy automatically
+The receipt's existing `estimated_nano_usd` is an execution pre-cleanup proxy;
+it excludes storage retention. Its data-byte rates apply to attempted transfer
+bytes and do not report retained occupancy. A post-cleanup lifecycle proxy adds
+successful delete counters and the exact verified retained bytes (segments,
+terminals and global manifest) multiplied by the configured assumed retention
+duration. A failed/partial cleanup has no complete lifecycle proxy. Checked
+deterministic arithmetic fails on overflow. No policy automatically
 chooses remote storage. Egress charges are configured estimates, not inferred
 from locality labels. All same-data 2/4-worker balanced/skew local/remote samples
 are retained with their methodology and overhead; no required speedup threshold.
@@ -160,3 +169,5 @@ Completion requires a real separate S3-compatible service, exact independent
 oracle comparisons, fresh-reader boot/scratch after producer process exit,
 failure/bounds/cleanup proofs, prior-path regressions and source-bound release
 evidence. A filesystem mock or one-blob read cannot satisfy those obligations.
+Repository-only reviewers must be told when raw local evidence artifacts are not
+available to them; the tracked remediation summary names that access limit.

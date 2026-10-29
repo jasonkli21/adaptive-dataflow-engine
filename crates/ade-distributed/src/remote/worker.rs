@@ -48,19 +48,33 @@ fn verified_job(grant: &Grant) -> Result<()> {
     grant.job.validate()?;
     grant.context.validate()?;
     require(
-        grant.version == VERSION
-            && grant.context.job == grant.job.job
-            && grant.context.workers == grant.job.workers
-            && grant.context.plan
-                == grant
-                    .job
-                    .plan
-                    .digest()
-                    .map_err(|e| Error::Invalid(e.to_string()))?
-            && grant.context.source == digest(&grant.job.plan.sources)?
-            && grant.context.config == digest(&grant.job)?
-            && grant.context.store == grant.job.store.digest()?,
-        "remote grant config/source/plan fence",
+        grant.version == wire::WIRE_VERSION,
+        "remote grant wire version",
+    )?;
+    require(
+        grant.context.job == grant.job.job && grant.context.workers == grant.job.workers,
+        "remote grant job/topology fence",
+    )?;
+    require(
+        grant.context.plan
+            == grant
+                .job
+                .plan
+                .digest()
+                .map_err(|e| Error::Invalid(e.to_string()))?,
+        "remote grant plan fence",
+    )?;
+    require(
+        grant.context.source == digest(&grant.job.plan.sources)?,
+        "remote grant source fence",
+    )?;
+    require(
+        grant.context.config == digest(&grant.job)?,
+        "remote grant configuration fence",
+    )?;
+    require(
+        grant.context.store == grant.job.store.digest()?,
+        "remote grant store configuration fence",
     )
 }
 /// Fresh one-shot worker. The caller owns/reaps this process; no listener is opened.
@@ -83,143 +97,266 @@ pub fn serve(parent: &Path, input: &mut impl Read, output: &mut impl Write) -> R
         scratch: scratch.path().canonicalize()?,
     };
     wire::write(output, &Reply::Ready(boot.clone()))?;
-    let grant: Grant = wire::read(input)?;
-    let mut tail = [0];
-    require(
-        input.read(&mut tail)? == 0,
-        "remote worker accepts exactly one grant",
-    )?;
-    require(grant.boot == boot.instance, "remote stale boot grant")?;
-    verified_job(&grant)?;
-    let token = CancellationToken::default();
-    let until = Instant::now() + Duration::from_millis(grant.job.limits.timeout_ms);
-    let mut client = Client::new(
-        &grant.job.store,
-        &grant.context,
-        &grant.job.limits,
-        token.clone(),
-        until,
-    )?;
-    let (terminals, finals) = match grant.role {
-        Role::Produce { worker } => {
-            require(worker < grant.context.workers, "remote producer slot")?;
-            (
-                produce(
-                    &grant.job,
-                    &grant.context,
-                    worker,
-                    &mut client,
-                    &token,
-                    until,
-                )?,
-                vec![],
-            )
-        }
-        Role::Read {
-            worker,
-            width,
-            epoch,
-            manifest_bytes,
-            ref manifest_hash,
-            gather,
-        } => {
-            require(
-                epoch == 1
-                    && width == grant.job.readers
-                    && worker < width
-                    && width <= grant.context.workers
-                    && gather.ip().is_loopback()
-                    && gather.port() != 0,
-                "remote handoff epoch/reader/gather",
-            )?;
-            let terminals = load(
-                &mut client,
-                &grant.context,
-                &grant.job.limits,
-                manifest_bytes,
-                manifest_hash,
-            )?;
-            let shared = Arc::new(Mutex::new(client));
-            let mut finals = vec![];
-            for p in (worker..grant.context.workers).step_by(width) {
-                check(&token, until)?;
-                let selected: Vec<_> = terminals
-                    .iter()
-                    .filter(|t| t.partition == p)
-                    .cloned()
-                    .collect();
-                let source_rows = Arc::new(AtomicU64::new(0));
-                let source = Source::new(selected, shared.clone(), source_rows.clone())?;
-                let mut sender = None;
-                ade_exec::execute_merge_source_to_sink(
-                    Box::new(source),
-                    execution(),
-                    token.clone(),
-                    |batch| {
-                        check(&token, until).map_err(local)?;
-                        if sender.is_none() {
-                            sender = Some(
-                                exchange::Sender::new(
-                                    gather,
-                                    crate::ids::transfer(
-                                        grant.context.job,
-                                        1,
-                                        0,
-                                        (grant.context.workers + p) as u64,
-                                    ),
-                                    token.clone(),
-                                )
-                                .map_err(local)?,
-                            );
-                        }
-                        sender
-                            .as_mut()
-                            .ok_or_else(|| {
-                                ade_exec::Error::Invalid("remote sender missing".into())
-                            })?
-                            .batch(&batch)
-                            .map_err(local)
-                    },
-                )?;
-                let sender = match sender {
-                    Some(s) => s,
-                    None => exchange::Sender::new(
-                        gather,
-                        crate::ids::transfer(
-                            grant.context.job,
-                            1,
-                            0,
-                            (grant.context.workers + p) as u64,
-                        ),
-                        token.clone(),
+    let result = (|| {
+        let grant: Grant = wire::read(input)?;
+        let mut tail = [0];
+        require(
+            input.read(&mut tail)? == 0,
+            "remote worker accepts exactly one grant",
+        )?;
+        require(grant.boot == boot.instance, "remote stale boot grant")?;
+        verified_job(&grant)?;
+        let token = CancellationToken::default();
+        let until = Instant::now() + Duration::from_millis(grant.job.limits.timeout_ms);
+        let mut client = Client::new(
+            &grant.job.store,
+            &grant.context,
+            &grant.job.limits,
+            token.clone(),
+            until,
+        )?;
+        let (terminals, finals) = match grant.role {
+            Role::Produce { worker } => {
+                require(worker < grant.context.workers, "remote producer slot")?;
+                (
+                    produce(
+                        &grant.job,
+                        &grant.context,
+                        worker,
+                        &mut client,
+                        &token,
+                        until,
                     )?,
-                };
-                let (sent, terminal) = sender.finish_manifest()?;
-                finals.push(Final {
-                    partition: p,
-                    sent,
-                    terminal,
-                    input_rows: source_rows.load(Ordering::Relaxed),
-                });
+                    vec![],
+                )
             }
-            client = Arc::try_unwrap(shared)
-                .map_err(|_| Error::Invalid("remote outstanding reader I/O".into()))?
-                .into_inner()
-                .map_err(|_| Error::Invalid("remote reader poisoned lock".into()))?;
-            (vec![], finals)
+            Role::Read {
+                worker,
+                width,
+                epoch,
+                manifest_bytes,
+                ref manifest_hash,
+                gather,
+            } => {
+                require(
+                    epoch == 1
+                        && width == grant.job.readers
+                        && worker < width
+                        && width <= grant.context.workers
+                        && gather.ip().is_loopback()
+                        && gather.port() != 0,
+                    "remote handoff epoch/reader/gather",
+                )?;
+                let terminals = load(
+                    &mut client,
+                    &grant.context,
+                    &grant.job.limits,
+                    manifest_bytes,
+                    manifest_hash,
+                )?;
+                let shared = Arc::new(Mutex::new(client));
+                let mut finals = vec![];
+                for p in (worker..grant.context.workers).step_by(width) {
+                    check(&token, until)?;
+                    let selected: Vec<_> = terminals
+                        .iter()
+                        .filter(|t| t.partition == p)
+                        .cloned()
+                        .collect();
+                    let source_rows = Arc::new(AtomicU64::new(0));
+                    let source = Source::new(selected, shared.clone(), source_rows.clone())?;
+                    let mut sender = None;
+                    ade_exec::execute_merge_source_to_sink(
+                        Box::new(source),
+                        execution(),
+                        token.clone(),
+                        |batch| {
+                            check(&token, until).map_err(local)?;
+                            if sender.is_none() {
+                                sender = Some(
+                                    exchange::Sender::new(
+                                        gather,
+                                        crate::ids::transfer(
+                                            grant.context.job,
+                                            1,
+                                            0,
+                                            (grant.context.workers + p) as u64,
+                                        ),
+                                        token.clone(),
+                                    )
+                                    .map_err(local)?,
+                                );
+                            }
+                            sender
+                                .as_mut()
+                                .ok_or_else(|| {
+                                    ade_exec::Error::Invalid("remote sender missing".into())
+                                })?
+                                .batch(&batch)
+                                .map_err(local)
+                        },
+                    )?;
+                    let sender = match sender {
+                        Some(s) => s,
+                        None => exchange::Sender::new(
+                            gather,
+                            crate::ids::transfer(
+                                grant.context.job,
+                                1,
+                                0,
+                                (grant.context.workers + p) as u64,
+                            ),
+                            token.clone(),
+                        )?,
+                    };
+                    let (sent, terminal) = sender.finish_manifest()?;
+                    finals.push(Final {
+                        partition: p,
+                        sent,
+                        terminal,
+                        input_rows: source_rows.load(Ordering::Relaxed),
+                    });
+                }
+                client = Arc::try_unwrap(shared)
+                    .map_err(|_| Error::Invalid("remote outstanding reader I/O".into()))?
+                    .into_inner()
+                    .map_err(|_| Error::Invalid("remote reader poisoned lock".into()))?;
+                (vec![], finals)
+            }
+        };
+        check(&token, until)?;
+        Ok(Done {
+            boot,
+            context: grant.context,
+            terminals,
+            finals,
+            counters: client.counters.clone(),
+        })
+    })();
+    match result {
+        Ok(done) => match scratch.close() {
+            Ok(()) => wire::write(output, &Reply::Done(Box::new(done))),
+            Err(error) => {
+                let error = Error::Io(error);
+                let class = classify_failure(&error);
+                let _ = wire::write(output, &Reply::Refused { class });
+                Err(error)
+            }
+        },
+        Err(error) => {
+            let class = classify_failure(&error);
+            let _ = wire::write(output, &Reply::Refused { class });
+            Err(error)
         }
-    };
-    check(&token, until)?;
-    let done = Done {
-        boot,
-        context: grant.context,
-        terminals,
-        finals,
-        counters: client.counters.clone(),
-    };
-    // Remove the worker-owned scratch BEFORE reporting a successful terminal reply.
-    scratch.close()?;
-    wire::write(output, &Reply::Done(Box::new(done)))
+    }
+}
+
+fn classify_failure(error: &Error) -> wire::FailureClass {
+    use wire::FailureClass;
+    match error {
+        Error::Remote { code, .. } => match code.as_str() {
+            "credentials" => FailureClass::Credentials,
+            "provider" => FailureClass::Provider,
+            "timeout" => FailureClass::Timeout,
+            "cancelled" => FailureClass::Cancelled,
+            "limit" => FailureClass::Limit,
+            "integrity" => FailureClass::Integrity,
+            "source" => FailureClass::Source,
+            "admission" => FailureClass::Admission,
+            "child_crash" => FailureClass::ChildCrash,
+            _ => FailureClass::Stage,
+        },
+        Error::ObjectStore(_) => FailureClass::Provider,
+        Error::Json(_) => FailureClass::Admission,
+        Error::Invalid(message) => classify_message(message),
+        Error::Exec(error) => classify_message(&error.to_string()),
+        _ => FailureClass::Stage,
+    }
+}
+fn classify_message(message: &str) -> wire::FailureClass {
+    use wire::FailureClass;
+    let message = message.to_ascii_lowercase();
+    if message.contains("credential") {
+        FailureClass::Credentials
+    } else if message.contains("source") {
+        FailureClass::Source
+    } else if message.contains("deadline") || message.contains("timeout") {
+        FailureClass::Timeout
+    } else if message.contains("cancel") {
+        FailureClass::Cancelled
+    } else if message.contains("limit") || message.contains("budget") || message.contains("cap") {
+        FailureClass::Limit
+    } else if message.contains("manifest")
+        || message.contains("terminal")
+        || message.contains("segment")
+        || message.contains("hash")
+        || message.contains("integrity")
+        || message.contains("checksum")
+    {
+        FailureClass::Integrity
+    } else if message.contains("provider") || message.contains("s3") {
+        FailureClass::Provider
+    } else {
+        FailureClass::Admission
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+
+    #[test]
+    fn refusal_classes_are_distinct_and_never_include_diagnostic_text() {
+        let secret = "AKIA_TEST_SECRET-looking-private-value";
+        let cases = [
+            (
+                Error::Remote {
+                    code: "credentials".into(),
+                    message: format!("provider detail {secret}"),
+                },
+                wire::FailureClass::Credentials,
+            ),
+            (
+                Error::Remote {
+                    code: "provider".into(),
+                    message: format!("SDK detail {secret}"),
+                },
+                wire::FailureClass::Provider,
+            ),
+            (
+                Error::Remote {
+                    code: "limit".into(),
+                    message: format!("request cap {secret}"),
+                },
+                wire::FailureClass::Limit,
+            ),
+            (
+                Error::Invalid(format!("remote source manifest drift {secret}")),
+                wire::FailureClass::Source,
+            ),
+            (
+                Error::Exec(ade_exec::Error::Invalid(format!(
+                    "remote exchange segment checksum mismatch {secret}"
+                ))),
+                wire::FailureClass::Integrity,
+            ),
+        ];
+        let classes = cases
+            .into_iter()
+            .map(|(error, expected)| {
+                let class = classify_failure(&error);
+                assert_eq!(class, expected);
+                let reply = serde_json::to_string(&wire::Reply::Refused { class }).unwrap();
+                assert!(!reply.contains(secret));
+                assert!(!reply.contains("SDK detail"));
+                assert!(!reply.contains("provider detail"));
+                class
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(classes.len(), 5);
+        assert_eq!(wire::MAGIC, b"ADEOBJ02");
+        assert_eq!(wire::WIRE_VERSION, 2);
+    }
 }
 #[allow(
     clippy::too_many_lines,

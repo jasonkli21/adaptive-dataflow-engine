@@ -87,7 +87,8 @@ threshold and do not establish speedup.
 
 ## Phase 13 explicit remote-object experiment
 
-The default-off `remote-s3` feature adds a separate native API/`ade-remote` CLI;
+The default-off `remote-s3` feature adds a dedicated remote-object static-aggregate
+API/`ade-remote` CLI;
 it does not add a fallback or change legacy benchmark adapters/result schema1.
 The bounded path is static GroupBySum with a separately running signed S3-compatible
 fixture and fresh final readers after producers exit. See the [operations guide](../docs/phase-13-operations-guide.md)
@@ -96,7 +97,11 @@ for paired2/4-worker uniform/hot-key measurements. Each sample has fresh coordin
 and worker processes and passes the unchanged independent oracle. Cost/traffic
 sidecars are separate from legacy result-v1 artifacts; actual HTTP logs reconstruct
 all PUT/HEAD/GET/one-key DeleteObjects requests and body bytes. Prices/placements
-are configured estimates, never provider bills or observed AZ topology. The
+are configured estimates, never provider bills or observed AZ topology. The receipt
+estimate is execution pre-cleanup; a separate lifecycle proxy is emitted only after
+successful exact-key cleanup and uses verified retained object bytes with an
+assumed duration. This path is not a reusable common-exchange plugin and reader
+width does not establish physical elasticity. The
 [report](../docs/reports/phase-13-implementation-report.md) retains all samples and
 reports local remote overhead without a speedup gate. External-service tests are
 explicitly selected and remain outside ordinary CI.

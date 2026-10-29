@@ -18,5 +18,30 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'duplicate/foreign'):
             verifier.verify([dict(row, coordinator_pid=i+1) for i in range(32)], [])
 
+    def test_v2_execution_and_post_cleanup_lifecycle_costs_are_separate(self):
+        counters = dict.fromkeys(['put', 'head', 'get', 'delete', 'write_bytes',
+                                  'read_bytes', 'retries', 'elapsed_ns',
+                                  'http_requests', 'http_request_body_bytes',
+                                  'http_response_body_bytes'], 0)
+        counters.update({'put': 3, 'head': 1, 'get': 1, 'delete': 1,
+                         'write_bytes': 100, 'read_bytes': 4})
+        rates = {'put_nano_usd': 5000, 'head_nano_usd': 400,
+                 'get_nano_usd': 400, 'delete_nano_usd': 3,
+                 'egress_byte_nano_usd': 1, 'storage_byte_ms_nano_usd': 2,
+                 'retention_ms': 60000, 'write_byte_nano_usd': 0,
+                 'read_byte_nano_usd': 0}
+        execution_cost = 3 * 5000 + 400 + 400 + 3 + 4
+        receipt = {'effective': {'rates': rates}, 'counters': counters,
+                   'estimated_nano_usd': execution_cost}
+        cleanup_counters = dict.fromkeys(counters, 0)
+        cleanup_counters['delete'] = 2
+        cleanup = {'counters': cleanup_counters, 'verified_retained_bytes': 10,
+                   'assumed_retention_ms': 60000,
+                   'post_cleanup_lifecycle_proxy_nano_usd': execution_cost + 2 * 3 + 10 * 60000 * 2}
+        verifier.verify_remote_cost(receipt, cleanup, 2)
+        cleanup['post_cleanup_lifecycle_proxy_nano_usd'] -= 1
+        with self.assertRaisesRegex(ValueError, 'post-cleanup lifecycle'):
+            verifier.verify_remote_cost(receipt, cleanup, 2)
+
 if __name__ == '__main__':
     unittest.main()

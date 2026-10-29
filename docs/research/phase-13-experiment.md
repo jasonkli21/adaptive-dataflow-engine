@@ -41,3 +41,16 @@ network PUT/HEAD/GET trace agreement, full terminal/gather/byte bounds, and raw
 checksummed provenance. Display all medians/ranges and remote overhead. A slower
 remote result is valid; restored work after producer exit is its demonstrated
 value. Historical Phase6–10 timing gates and evidence remain unchanged.
+
+## Independent-review remediation price check
+
+The original `evidence_version: 1` campaign and its frozen prices remain unchanged.
+The remediation adds a separately source-pinned `evidence_version: 2` rerun of
+the same 32-sample matrix. Its configured rates include nonzero DELETE pricing
+and nonzero storage-byte-ms pricing. The receipt continues to report only the
+execution pre-cleanup proxy; after successful cleanup the paired sample records
+the exact verified retained bytes, assumed retention duration and separate
+post-cleanup lifecycle proxy. The verifier reconstructs both estimates from
+receipt and cleanup counters and checks request/body conservation against the
+independent service trace. These supplementary timings do not replace or merge
+with the historical source's measurements.

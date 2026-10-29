@@ -87,15 +87,51 @@ all work unavailable; no fallback or cloud durability is implied.
 reader has exited/reaped. Changing display/serialized receipt metadata cannot
 retarget that capability. Apply checks its request cap before deletion, removes
 only recorded keys and is idempotent after successful completion. Partial delete
-failure leaves debt and no false cleanup success. The CLI exposes no arbitrary
+failure returns an error and has no completed lifecycle estimate. The CLI exposes no arbitrary
 receipt/prefix/bucket deletion command and no live-consumer GC.
 
+The receipt's `estimated_nano_usd` is a configured **execution pre-cleanup
+proxy**. It accounts for attempted request/body-byte rates and measured reads;
+it does not include post-run deletes or storage retention. Attempted PUT bytes
+are never used as retained storage occupancy. After successful exact-key cleanup,
+`Cleanup.post_cleanup_lifecycle_proxy_nano_usd` combines execution and successful
+DELETE request costs with the exact verified bytes represented by the cleanup
+key inventory and `Rates.retention_ms`. That duration is an explicit assumption;
+the result is not a provider bill or measured residence-time charge. A dry-run
+has no complete lifecycle estimate.
+
 For failed/crashed orphans, preserve the execution UUID, source/config, service
-trace and any manifests. Fence/stop all actors, establish provider I/O quiescence
-or retention expiry, then have an operator remove only that validated private
-execution's exact keys. There is deliberately no force-adopt/broad-prefix GC.
-Versioned stores may retain old versions/delete markers; physical version
-reclamation belongs to the bucket operator. No background TTL is installed.
+trace and any manifests. First fence and stop all owned actors and establish
+provider I/O quiescence or wait through the configured provider retention window.
+Then perform a read-only inventory of the exact attempt namespace. This inventory
+does not establish delete eligibility and has no delete operation:
+
+```bash
+# ADE_REMOTE_ATTEMPT is the UUID printed by ade-remote on stderr.
+attempt_uuid="$ADE_REMOTE_ATTEMPT"
+attempt_prefix="${ADE_REMOTE_PREFIX}/remote-v1/${attempt_uuid}/attempt-0/"
+aws s3api list-objects-v2 \
+  --endpoint-url "$ADE_REMOTE_ENDPOINT" \
+  --bucket "$ADE_REMOTE_BUCKET" \
+  --prefix "$attempt_prefix" \
+  --page-size 1000 --max-items 1100 --output json \
+  > /private/tmp/ade-phase13-orphan-list.json
+python3 scripts/phase13-orphan-inventory.py \
+  /private/tmp/ade-phase13-orphan-list.json \
+  --prefix "$ADE_REMOTE_PREFIX" --execution "$attempt_uuid" --workers 4
+```
+
+Set endpoint, bucket, prefix and worker count from the original admitted run.
+The validator rejects truncated pages, foreign/unknown keys, noncanonical IDs,
+duplicates and byte/object/segment totals outside bounded v1. It classifies only
+`CAPABILITY`, `MANIFEST.json`, terminal and segment keys. Preserve the JSON and
+validator output with the incident record. The output states `NO` automatic
+delete and `NOT_ESTABLISHED_BY_INVENTORY`; an operator must separately validate
+namespace ownership, actor fencing and provider quiescence before any manual
+disposition. Never turn this inventory into LIST-based admission or automatic
+GC. `ListObjectsV2` does not inventory noncurrent versions, delete markers or
+incomplete multipart uploads; version and multipart reclamation remain explicit
+provider-side operator responsibilities. No background TTL is installed.
 
 ## Reproduce the private fixture and gates
 
@@ -153,6 +189,9 @@ native receipt/source/config/feature verification. SHA256 inventories supply
 source/binary/raw-log provenance; this is not signed attestation.
 `ade-remote --verify-receipt` is offline structural/identity/cost verification,
 not output reexecution or provider-billed verification. Preserve refused runs.
+The tracked `phase-13-review-remediation-evidence.json` records source identity,
+command results and hashes. Raw request/sample artifacts remain locally retained
+and are explicitly marked inaccessible to repository-only review sessions.
 
 Prices and placement labels are CONFIGURED, counters/latencies MEASURED; nothing
 is PROVIDER_BILLED. Object-body and admitted HTTP-body counters have distinct

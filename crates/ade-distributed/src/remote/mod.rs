@@ -223,7 +223,12 @@ impl Rates {
             "remote configured rates/placement limits",
         )
     }
-    /// Configured estimate only; labels never establish an observed AZ or provider bill.
+    /// Configured execution proxy only; storage retention is excluded.
+    ///
+    /// This preserves the v1 receipt's pre-cleanup meaning. `write_bytes` and
+    /// `read_bytes` are attempted payload bytes, so their configured rates are
+    /// request/data proxies and must not be described as retained occupancy.
+    /// Labels never establish an observed AZ or provider bill.
     /// # Errors
     /// Refuses invalid rates and arithmetic overflow.
     pub fn estimate_nano_usd(&self, c: &Counters) -> Result<u64> {
@@ -236,12 +241,27 @@ impl Rates {
             mul(c.write_bytes, self.write_byte_nano_usd)?,
             mul(c.read_bytes, self.read_byte_nano_usd)?,
             mul(c.read_bytes, self.egress_byte_nano_usd)?,
-            mul(
-                mul(c.write_bytes, self.retention_ms)?,
-                self.storage_byte_ms_nano_usd,
-            )?,
         ];
         terms.into_iter().try_fold(0, add)
+    }
+
+    /// Configured post-cleanup lifecycle proxy using the exact verified retained
+    /// object bytes and the explicitly assumed retention duration.
+    ///
+    /// # Errors
+    /// Refuses invalid rates and arithmetic overflow.
+    pub fn estimate_lifecycle_nano_usd(
+        &self,
+        c: &Counters,
+        verified_retained_bytes: u64,
+    ) -> Result<u64> {
+        add(
+            self.estimate_nano_usd(c)?,
+            mul(
+                mul(verified_retained_bytes, self.retention_ms)?,
+                self.storage_byte_ms_nano_usd,
+            )?,
+        )
     }
 }
 

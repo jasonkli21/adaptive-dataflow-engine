@@ -232,7 +232,9 @@ fn independent_oracle_and_all_local_remote_cost_samples() {
                                 put_nano_usd: 5000,
                                 head_nano_usd: 400,
                                 get_nano_usd: 400,
+                                delete_nano_usd: 3,
                                 egress_byte_nano_usd: 1,
+                                storage_byte_ms_nano_usd: 2,
                                 retention_ms: 60000,
                                 ..Default::default()
                             },
@@ -285,7 +287,7 @@ fn independent_oracle_and_all_local_remote_cost_samples() {
                             &data, &manifest, &case, &batches,
                         ))
                         .unwrap();
-                    let row = serde_json::json!({"coordinator_pid":std::process::id(),"evidence_version":1,"distribution":distribution,"workers":workers,"mode":mode,"repetition":repetition,"warmup":repetition==0,"manifest_hash":plan.sources[0].manifest,"plan_hash":plan.digest().unwrap(),"validation":validation,"execution":receipt,"cleanup":cleanup});
+                    let row = serde_json::json!({"coordinator_pid":std::process::id(),"evidence_version":2,"distribution":distribution,"workers":workers,"mode":mode,"repetition":repetition,"warmup":repetition==0,"manifest_hash":plan.sources[0].manifest,"plan_hash":plan.digest().unwrap(),"validation":validation,"execution":receipt,"cleanup":cleanup});
                     write_new(
                         &output.join(format!("{distribution}-{workers}-{mode}-{repetition}.json")),
                         &serde_json::to_vec_pretty(&row).unwrap(),

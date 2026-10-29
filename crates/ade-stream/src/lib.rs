@@ -12,6 +12,8 @@ use uuid::Uuid;
 pub mod kafka;
 #[cfg(feature = "kafka")]
 pub mod runtime;
+#[cfg(feature = "stateful")]
+pub mod state;
 pub mod timers;
 
 #[derive(Debug, thiserror::Error)]
@@ -26,6 +28,9 @@ pub enum Error {
     Overflow(&'static str),
     #[error("timer capacity/identity: {0}")]
     Timer(&'static str),
+    #[cfg(feature = "stateful")]
+    #[error("state/checkpoint: {0}")]
+    State(&'static str),
     #[error("broker failure (details redacted)")]
     Broker,
     #[error("sink failure (details redacted)")]
@@ -46,6 +51,8 @@ impl Error {
             Self::Event => "event_schema_or_size",
             Self::Overflow(_) => "arithmetic_overflow",
             Self::Timer(_) => "timer_capacity_or_identity",
+            #[cfg(feature = "stateful")]
+            Self::State(_) => "state_or_checkpoint",
             Self::Broker => "broker",
             Self::Sink => "sink_or_diagnostics",
             Self::SinkDeadline => "sink_deadline",
@@ -263,7 +270,8 @@ impl Clock for MonotonicClock {
         u64::try_from(self.0.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Cursor {
     pub start: i64,
     pub seen: Option<i64>,
@@ -272,7 +280,8 @@ pub struct Cursor {
     pub max_forwarded_time: Option<i64>,
     pub watermark: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Progress {
     pub session: Uuid,
     pub partitions: BTreeMap<i32, Cursor>,
@@ -303,6 +312,8 @@ pub struct Engine {
     pub timers: timers::Timers,
     config: StreamConfigV1,
     pending: Option<Receipt>,
+    #[cfg(feature = "stateful")]
+    pub state: Option<state::State>,
     pub decoded_peak_bytes: usize,
     pub arrow_peak_bytes: usize,
     pub managed_in_flight_peak_bytes: usize,
@@ -344,6 +355,8 @@ impl Engine {
             timers,
             config,
             pending: None,
+            #[cfg(feature = "stateful")]
+            state: None,
             decoded_peak_bytes: 0,
             arrow_peak_bytes: 0,
             managed_in_flight_peak_bytes: 0,
@@ -472,6 +485,10 @@ impl Engine {
             late,
             projected: output,
         };
+        #[cfg(feature = "stateful")]
+        if let Some(state) = &mut self.state {
+            state.apply(&receipt, self.progress.frontier)?;
+        }
         self.pending = Some(receipt.clone());
         Ok(receipt)
     }
@@ -508,6 +525,10 @@ impl Engine {
             .and_then(|v| v.into_iter().min());
         self.progress.forwarded_records += 1;
         self.progress.late_records += u64::from(r.late);
+        #[cfg(feature = "stateful")]
+        if let Some(state) = &mut self.state {
+            state.confirm_input();
+        }
         Ok(())
     }
     #[must_use]

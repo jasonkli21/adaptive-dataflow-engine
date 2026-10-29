@@ -99,111 +99,232 @@ pub fn run(
     stall_ms: u64,
     metrics: &mut Metrics,
 ) -> Result<&'static str> {
-    let mut last_health = clock.now_ms();
-    let mut last_trace = clock.now_ms();
-    loop {
-        token.check().map_err(|_| Error::Cancelled)?;
-        if stop
-            .after_records
-            .is_some_and(|n| engine.progress.forwarded_records >= n)
-            || stop.after_ms.is_some_and(|ms| clock.now_ms() >= ms)
-        {
-            return Ok("STOPPED_BY_OPERATOR_TEST_LIMIT");
-        }
-        if clock.now_ms().saturating_sub(last_health) >= 1000 {
-            source.verify(&engine.progress)?;
-            last_health = clock.now_ms();
-        }
-        for timer in engine.timers.fire(clock.now_ms(), engine.progress.frontier) {
-            trace(
-                diagnostics,
-                &serde_json::json!({"type":"timer", "session":engine.progress.session, "processing_ms":clock.now_ms(), "frontier":engine.progress.frontier, "timer":timer}),
-            )?;
-        }
-        if clock.now_ms().saturating_sub(last_trace) >= 1000 {
-            trace(
-                diagnostics,
-                &serde_json::json!({"type":"progress", "elapsed_ms":clock.now_ms(), "progress":engine.progress, "metrics":metrics, "source":source.snapshot(&engine.progress)}),
-            )?;
-            last_trace = clock.now_ms();
-        }
-        metrics.polls = metrics
-            .polls
-            .checked_add(1)
-            .ok_or(Error::Overflow("polls"))?;
-        match source.poll()? {
-            Poll::Pending => {
-                metrics.pending_polls = metrics
-                    .pending_polls
-                    .checked_add(1)
-                    .ok_or(Error::Overflow("pending polls"))?;
-            }
-            Poll::Stopped => return Ok("STOPPED_BY_SOURCE_OPERATOR"),
-            Poll::Data(record) => {
-                let receipt = engine.prepare(record)?;
-                let mut frame = serde_json::to_vec(&receipt).map_err(|_| Error::Sink)?;
-                if frame.len() >= 2048 {
-                    return Err(Error::Sink);
-                }
-                frame.push(b'\n');
-                metrics.sink_frame_peak_bytes = metrics.sink_frame_peak_bytes.max(frame.len());
-                metrics.in_flight_peak_records = 1;
-                let began = clock.now_ms();
-                let mut written = 0;
-                let mut paused = false;
-                while written < frame.len() {
-                    token.check().map_err(|_| Error::Cancelled)?;
-                    if stop.after_ms.is_some_and(|ms| clock.now_ms() >= ms) {
+    let result = (|| {
+        let mut last_health = clock.now_ms();
+        let mut last_trace = clock.now_ms();
+        loop {
+            token.check().map_err(|_| Error::Cancelled)?;
+            #[cfg(feature = "stateful")]
+            if let Some(state) = &mut engine.state {
+                if let Some(output) = state.next_close(engine.progress.frontier)? {
+                    let frame = frame(&output)?;
+                    let Some(paused) = write_frame(
+                        source,
+                        &engine.progress,
+                        &frame,
+                        sink,
+                        diagnostics,
+                        clock,
+                        token,
+                        stop,
+                        stall_ms,
+                        metrics,
+                        &mut last_health,
+                        &mut last_trace,
+                    )?
+                    else {
                         return Ok("STOPPED_BY_OPERATOR_TEST_LIMIT");
-                    }
-                    if clock.now_ms().saturating_sub(began) >= stall_ms {
-                        return Err(Error::SinkDeadline);
-                    }
-                    if clock.now_ms().saturating_sub(last_health) >= 1000 {
-                        source.verify(&engine.progress)?;
-                        last_health = clock.now_ms();
-                    }
-                    let n = sink.try_write(&frame[written..])?;
-                    if n > frame.len() - written {
-                        return Err(Error::Sink);
-                    }
-                    written += n;
-                    if n == 0 {
-                        if !paused {
-                            source.pause()?;
-                            paused = true;
-                        }
-                        metrics.sink_blocked_ticks = metrics
-                            .sink_blocked_ticks
-                            .checked_add(1)
-                            .ok_or(Error::Overflow("sink ticks"))?;
-                        if clock.now_ms().saturating_sub(last_trace) >= 1000 {
-                            trace(
-                                diagnostics,
-                                &serde_json::json!({"type":"sink_blocked", "elapsed_ms":clock.now_ms(), "progress":engine.progress, "metrics":metrics, "source":source.snapshot(&engine.progress)}),
-                            )?;
-                            last_trace = clock.now_ms();
-                        }
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                }
-                token.check().map_err(|_| Error::Cancelled)?;
-                engine.acknowledge()?;
-
-                trace(
-                    diagnostics,
-                    &serde_json::json!({"type":"forwarded", "elapsed_ms":clock.now_ms(), "progress":engine.progress}),
-                )?;
-                for timer in engine.timers.fire(clock.now_ms(), engine.progress.frontier) {
+                    };
+                    state.confirm_close()?;
                     trace(
                         diagnostics,
-                        &serde_json::json!({"type":"timer", "session":engine.progress.session, "processing_ms":clock.now_ms(), "frontier":engine.progress.frontier, "timer":timer}),
+                        &serde_json::json!({"type":"window_confirmed","output_id":output.output_id,"state":state.store.metrics}),
                     )?;
+                    if paused {
+                        source.resume()?;
+                    }
+                    continue;
                 }
-                if paused {
+                if state.due(&engine.progress, clock.now_ms()) {
+                    source.pause()?;
+                    source.verify(&engine.progress)?;
+                    let pause = state.test_pause_at.clone();
+                    let pointer = state.checkpoint(&engine.progress,clock.now_ms(), &mut |point| {
+                    if point=="generation_synced" {source.verify(&engine.progress)?;}
+                    trace(diagnostics,&serde_json::json!({"type":"checkpoint_step","point":point,"progress":engine.progress}))?;
+                    if pause.as_deref()==Some(point) {
+                        let mut last_pause=clock.now_ms();
+                        loop {
+                            token.check().map_err(|_|Error::Cancelled)?;
+                            if clock.now_ms().saturating_sub(last_pause)>=1000 {
+                                trace(diagnostics,&serde_json::json!({"type":"checkpoint_blocked","elapsed_ms":clock.now_ms(),"progress":engine.progress,"source":source.snapshot(&engine.progress)}))?;
+                                last_pause=clock.now_ms();
+                            }
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                    Ok(())
+                })?;
+                    trace(
+                        diagnostics,
+                        &serde_json::json!({"type":"checkpoint_success","pointer":pointer,"progress":engine.progress,"state":state.store.metrics}),
+                    )?;
                     source.resume()?;
                 }
             }
+            if stop
+                .after_records
+                .is_some_and(|n| engine.progress.forwarded_records >= n)
+                || stop.after_ms.is_some_and(|ms| clock.now_ms() >= ms)
+            {
+                return Ok("STOPPED_BY_OPERATOR_TEST_LIMIT");
+            }
+            if clock.now_ms().saturating_sub(last_health) >= 1000 {
+                source.verify(&engine.progress)?;
+                last_health = clock.now_ms();
+            }
+            for timer in engine.timers.fire(clock.now_ms(), engine.progress.frontier) {
+                trace(
+                    diagnostics,
+                    &serde_json::json!({"type":"timer", "session":engine.progress.session, "processing_ms":clock.now_ms(), "frontier":engine.progress.frontier, "timer":timer}),
+                )?;
+            }
+            if clock.now_ms().saturating_sub(last_trace) >= 1000 {
+                trace(
+                    diagnostics,
+                    &serde_json::json!({"type":"progress", "elapsed_ms":clock.now_ms(), "progress":engine.progress, "metrics":metrics, "source":source.snapshot(&engine.progress)}),
+                )?;
+                last_trace = clock.now_ms();
+            }
+            metrics.polls = metrics
+                .polls
+                .checked_add(1)
+                .ok_or(Error::Overflow("polls"))?;
+            match source.poll()? {
+                Poll::Pending => {
+                    metrics.pending_polls = metrics
+                        .pending_polls
+                        .checked_add(1)
+                        .ok_or(Error::Overflow("pending polls"))?;
+                }
+                Poll::Stopped => return Ok("STOPPED_BY_SOURCE_OPERATOR"),
+                Poll::Data(record) => {
+                    let receipt = engine.prepare(record)?;
+                    #[cfg(feature = "stateful")]
+                    let frame = if let Some(state) = &engine.state {
+                        frame(
+                            &serde_json::json!({"type":"input","receipt":receipt,"closed_window_late":state.last_closed_late}),
+                        )?
+                    } else {
+                        frame(&receipt)?
+                    };
+                    #[cfg(not(feature = "stateful"))]
+                    let frame = frame(&receipt)?;
+                    metrics.sink_frame_peak_bytes = metrics.sink_frame_peak_bytes.max(frame.len());
+                    metrics.in_flight_peak_records = 1;
+                    let Some(paused) = write_frame(
+                        source,
+                        &engine.progress,
+                        &frame,
+                        sink,
+                        diagnostics,
+                        clock,
+                        token,
+                        stop,
+                        stall_ms,
+                        metrics,
+                        &mut last_health,
+                        &mut last_trace,
+                    )?
+                    else {
+                        return Ok("STOPPED_BY_OPERATOR_TEST_LIMIT");
+                    };
+                    engine.acknowledge()?;
+
+                    trace(
+                        diagnostics,
+                        &serde_json::json!({"type":"forwarded", "elapsed_ms":clock.now_ms(), "progress":engine.progress}),
+                    )?;
+                    for timer in engine.timers.fire(clock.now_ms(), engine.progress.frontier) {
+                        trace(
+                            diagnostics,
+                            &serde_json::json!({"type":"timer", "session":engine.progress.session, "processing_ms":clock.now_ms(), "frontier":engine.progress.frontier, "timer":timer}),
+                        )?;
+                    }
+                    if paused {
+                        source.resume()?;
+                    }
+                }
+            }
+        }
+    })();
+    #[cfg(feature = "stateful")]
+    if result.is_err()
+        && let Some(state) = &mut engine.state
+    {
+        state.poison();
+    }
+    result
+}
+
+fn frame(value: &impl Serialize) -> Result<Vec<u8>> {
+    let mut b = serde_json::to_vec(value).map_err(|_| Error::Sink)?;
+    if b.len() >= 2048 {
+        return Err(Error::Sink);
+    }
+    b.push(b'\n');
+    Ok(b)
+}
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Shared single-frame pump preserves identical stateless/stateful demand and cancellation"
+)]
+fn write_frame(
+    source: &mut dyn Source,
+    progress: &crate::Progress,
+    frame: &[u8],
+    sink: &mut dyn Sink,
+    diagnostics: &mut dyn Sink,
+    clock: &dyn Clock,
+    token: &CancellationToken,
+    stop: &Stop,
+    stall_ms: u64,
+    metrics: &mut Metrics,
+    last_health: &mut u64,
+    last_trace: &mut u64,
+) -> Result<Option<bool>> {
+    metrics.sink_frame_peak_bytes = metrics.sink_frame_peak_bytes.max(frame.len());
+    metrics.in_flight_peak_records = 1;
+    let began = clock.now_ms();
+    let mut written = 0;
+    let mut paused = false;
+    while written < frame.len() {
+        token.check().map_err(|_| Error::Cancelled)?;
+        if stop.after_ms.is_some_and(|ms| clock.now_ms() >= ms) {
+            return Ok(None);
+        }
+        if clock.now_ms().saturating_sub(began) >= stall_ms {
+            return Err(Error::SinkDeadline);
+        }
+        if clock.now_ms().saturating_sub(*last_health) >= 1000 {
+            source.verify(progress)?;
+            *last_health = clock.now_ms();
+        }
+        let n = sink.try_write(&frame[written..])?;
+        if n > frame.len() - written {
+            return Err(Error::Sink);
+        }
+        written += n;
+        if n == 0 {
+            if !paused {
+                source.pause()?;
+                paused = true;
+            }
+            metrics.sink_blocked_ticks = metrics
+                .sink_blocked_ticks
+                .checked_add(1)
+                .ok_or(Error::Overflow("sink ticks"))?;
+            if clock.now_ms().saturating_sub(*last_trace) >= 1000 {
+                trace(
+                    diagnostics,
+                    &serde_json::json!({"type":"sink_blocked", "elapsed_ms":clock.now_ms(), "progress":progress, "metrics":metrics, "source":source.snapshot(progress)}),
+                )?;
+                *last_trace = clock.now_ms();
+            }
+            thread::sleep(Duration::from_millis(10));
         }
     }
+
+    token.check().map_err(|_| Error::Cancelled)?;
+    Ok(Some(paused))
 }

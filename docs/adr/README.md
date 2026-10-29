@@ -55,3 +55,5 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0019: Bounded durable batch operations](0019-durable-batch-operations.md) — Phase12 bounded v1 complete; same-host fixed workers, full HA deferred.
 
 - [ADR-0020: Bounded remote disaggregated shuffle v1](0020-remote-disaggregated-shuffle-v1.md) — opt-in signed S3 exchange, immutable manifests, fresh reader stages and scoped quiesced GC.
+
+- [ADR-0022: Bounded keyed state and local checkpoints v1](0022-keyed-state-and-checkpoints-v1.md) — strict stateful admission, tiering, quiescent cuts and logical restore rescale.

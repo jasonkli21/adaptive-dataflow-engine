@@ -1,0 +1,10 @@
+{
+  "archive_sha256": "434003467c113e574e1e5d0cb8eacf978be833a07e49cec74726875bdb84747a",
+  "files": {
+    "archive-tamper.log": "defaff2e7af1dc4d6cf06bd7fd19902ee37e2f894a0f868cb0e806e32cd02e2c",
+    "offline-final.log": "d0fc9485d2c2ca8c186df6f1eb0250721b518b877918807cc58fc372b6b34e9d",
+    "package.log": "dd6753bee1ca81f50ce0cc66a320341064207e299e4691f321587708de4cd241",
+    "tamper-checks.py": "c9c51077954ee366ab7c2e547b10e901d55c3ef1ae9f6b89f28822045a3658d0"
+  },
+  "version": 1
+}

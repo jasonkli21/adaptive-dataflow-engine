@@ -10,6 +10,7 @@ workspace = true
 
 [features]
 default = []
+stateful = ["kafka"]
 kafka = ["dep:rdkafka", "dep:ctrlc", "dep:rustix", "dep:futures-executor"]
 
 [dependencies]
@@ -29,3 +30,8 @@ rustix = { version = "1", features = ["fs"], optional = true }
 name = "ade-stream"
 path = "src/bin/ade-stream.rs"
 required-features = ["kafka"]
+
+[[bin]]
+name = "ade-state-stream"
+path = "src/bin/ade-state-stream.rs"
+required-features = ["stateful"]

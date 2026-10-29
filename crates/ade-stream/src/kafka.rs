@@ -25,6 +25,12 @@ struct Counters {
     failed: AtomicBool,
     queue_bytes_peak: AtomicU64,
     queue_count_peak: AtomicU64,
+    #[cfg(feature = "stateful")]
+    control_poll_ticks: AtomicU64,
+    #[cfg(feature = "stateful")]
+    stats_callbacks: AtomicU64,
+    #[cfg(feature = "stateful")]
+    control_replyq_peak: AtomicU64,
 }
 struct Context(Arc<Counters>);
 impl ClientContext for Context {
@@ -33,6 +39,8 @@ impl ClientContext for Context {
         self.0.failed.store(true, Ordering::Relaxed);
     }
     fn stats_raw(&self, raw: &[u8]) {
+        #[cfg(feature = "stateful")]
+        self.0.stats_callbacks.fetch_add(1, Ordering::Relaxed);
         if raw.len() > 65536 {
             self.0.failed.store(true, Ordering::Relaxed);
             return;
@@ -42,6 +50,14 @@ impl ClientContext for Context {
             self.0.failed.store(true, Ordering::Relaxed);
             return;
         };
+        #[cfg(feature = "stateful")]
+        self.0.control_replyq_peak.fetch_max(
+            value
+                .get("replyq")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0),
+            Ordering::Relaxed,
+        );
         let mut bytes = 0u64;
         let mut count = 0u64;
         if let Some(topics) = value.get("topics").and_then(serde_json::Value::as_object) {
@@ -91,6 +107,8 @@ pub struct KafkaSource {
     partition_inventory: Vec<i32>,
     high: BTreeMap<i32, i64>,
     paused: bool,
+    #[cfg(feature = "stateful")]
+    checkpoint_control: Option<(Arc<AtomicBool>, std::thread::JoinHandle<()>)>,
 }
 impl KafkaSource {
     /// # Errors
@@ -188,6 +206,8 @@ impl KafkaSource {
             partition_inventory: Vec::new(),
             high: BTreeMap::new(),
             paused: false,
+            #[cfg(feature = "stateful")]
+            checkpoint_control: None,
         };
         source.verify(progress)?;
         for start in &source.config.starts {
@@ -214,10 +234,56 @@ impl KafkaSource {
         }
         Ok(source)
     }
+    #[cfg(feature = "stateful")]
+    #[must_use]
+    pub fn partition_inventory(&self) -> &[i32] {
+        &self.partition_inventory
+    }
+    /// Keep native control/statistics drained even during synchronous state I/O.
+    /// Partition data queues remain exclusively polled by the demand owner.
+    /// # Errors
+    /// Refuses duplicate setup or OS thread creation failure.
+    #[cfg(feature = "stateful")]
+    pub fn enable_checkpoint_control(&mut self) -> Result<()> {
+        crate::require(
+            self.checkpoint_control.is_none(),
+            "checkpoint control already started",
+        )?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let signal = stop.clone();
+        let consumer = self.consumer.clone();
+        let counters = self.counters.clone();
+        let handle = std::thread::Builder::new()
+            .name("ade-state-control".into())
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                while !signal.load(Ordering::Relaxed) {
+                    counters.control_poll_ticks.fetch_add(1, Ordering::Relaxed);
+                    if consumer.poll(Duration::from_millis(10)).is_some() {
+                        counters.failed.store(true, Ordering::Relaxed);
+                    }
+                }
+            })
+            .map_err(|_| Error::Source("checkpoint control thread creation"))?;
+        self.checkpoint_control = Some((stop, handle));
+        Ok(())
+    }
+    #[cfg(feature = "stateful")]
+    fn stop_checkpoint_control(&mut self) -> Result<()> {
+        if let Some((stop, handle)) = self.checkpoint_control.take() {
+            stop.store(true, Ordering::Relaxed);
+            handle
+                .join()
+                .map_err(|_| Error::Source("checkpoint control thread failed"))?;
+        }
+        Ok(())
+    }
     /// Close explicitly before reporting terminal success; drain control only.
     /// # Errors
     /// Refuses a consumer that does not close within the cooperative shutdown budget.
     pub fn shutdown(&mut self) -> Result<()> {
+        #[cfg(feature = "stateful")]
+        self.stop_checkpoint_control()?;
         self.queues.clear();
         self.consumer.unassign().map_err(|_| Error::Broker)?;
         self.consumer.close_queue().map_err(|_| Error::Broker)?;
@@ -251,6 +317,13 @@ impl KafkaSource {
         }
     }
     fn control(&self) -> Result<()> {
+        #[cfg(feature = "stateful")]
+        if let Some((_, handle)) = &self.checkpoint_control {
+            if handle.is_finished() {
+                return Err(Error::Source("checkpoint control thread stopped"));
+            }
+            return self.healthy();
+        }
         for _ in 0..8 {
             if self.consumer.poll(Duration::ZERO).is_some() {
                 return Err(Error::Source("unexpected main-queue data/error"));
@@ -312,7 +385,14 @@ impl Source for KafkaSource {
         Ok(())
     }
     fn snapshot(&self, progress: &Progress) -> serde_json::Value {
-        serde_json::to_value(self.metrics(progress)).unwrap_or(serde_json::Value::Null)
+        let value = serde_json::to_value(self.metrics(progress)).unwrap_or(serde_json::Value::Null);
+        #[cfg(feature = "stateful")]
+        if self.checkpoint_control.is_some() {
+            let mut value = value;
+            value["checkpoint_control"] = serde_json::json!({"poll_ticks":self.counters.control_poll_ticks.load(Ordering::Relaxed),"stats_callbacks":self.counters.stats_callbacks.load(Ordering::Relaxed),"replyq_peak":self.counters.control_replyq_peak.load(Ordering::Relaxed),"requested_stack_bytes":1024*1024});
+            return value;
+        }
+        value
     }
     #[allow(
         clippy::too_many_lines,
@@ -444,6 +524,8 @@ impl Source for KafkaSource {
 }
 impl Drop for KafkaSource {
     fn drop(&mut self) {
+        #[cfg(feature = "stateful")]
+        let _ = self.stop_checkpoint_control();
         // PartitionQueue owns an Arc to the consumer. Destroy every queue while
         // our owner Arc is alive, before BaseConsumer closes its queue.
         self.queues.clear();

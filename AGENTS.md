@@ -87,6 +87,23 @@ exactly-once, HA/cloud or changed PlanV1/batch EOF/default contracts are inferre
 No Phase15 authorization is inferred. During the requested review/fix agents,
 the parent stays idle; any resumed work stays in that same subagent.
 
+On 2026-10-29 the user explicitly authorized Phase15 implementation in this
+session, without subagents and with one local project commit. Phase15 is
+COMPLETE_BOUNDED_STATE_V1 under ADR-0022 and
+`docs/reports/phase-15-implementation-report.md`. The default-off stateful Kafka
+path adds checked keyed tumbling windows, separate bounded hot/cold owner stores,
+matched quiescent local checkpoints, manual restore and logical1→2→4→1 owner
+redistribution. All G0–G11 proofs are local/source-bound at candidate8; preserve
+its immutable inventory and every earlier candidate/qualification. The owned
+control-only Kafka poller drains statistics through synchronous I/O and never
+owns partition data/state/output. Defaults, StreamConfigV1/PlanV1, old protocols,
+stateless timers and Phase10–14 historical evidence remain unchanged. Output is
+at least once. Physical distributed rescale, remote/disk-loss HA, transactions,
+savepoints and adaptive checkpoints remain deferred; no Phase16 authorization is
+inferred. The user's no-subagent requirement overrides the proposed independent
+review step; same-session self-review and independent producer-ledger oracle
+proofs are disclosed without claiming an independent reviewer.
+
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
 fcc325e passes correctness but fails all six timing guards. Continued source/scan
 and contribution remediation at ee9f8da passes all 62 children/49 measured samples,
@@ -197,7 +214,9 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. The current Phase14 report is
+Each phase ends with an implementation report. The current Phase15 report is
+`docs/reports/phase-15-implementation-report.md` (COMPLETE bounded state v1; full
+distributed rescale/production HA and exactly-once deferred). The Phase14 report is
 `docs/reports/phase-14-implementation-report.md` (COMPLETE bounded streaming v1;
 checkpointing/exactly-once and full streaming SQL deferred). The Phase12 report is
 `docs/reports/phase-12-implementation-report.md` (COMPLETE bounded v1; full HA deferred). The Phase11 report is

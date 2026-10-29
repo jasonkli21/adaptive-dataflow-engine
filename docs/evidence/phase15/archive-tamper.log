@@ -1,0 +1,4 @@
+REFUSED negative-output wrong-job output before full validation
+REFUSED window-sum window oracle mismatch
+REFUSED version archive identity/version
+REFUSED byte-hash archive identity/version

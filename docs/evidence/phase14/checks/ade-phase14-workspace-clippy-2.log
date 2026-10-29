@@ -1,0 +1,32 @@
+    Checking futures-executor v0.3.34
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking futures v0.3.34
+    Checking parquet v59.3.1
+    Checking datafusion-common-runtime v55.2.0
+    Checking datafusion-common v55.2.0
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Checking datafusion-expr-common v55.2.0
+error: this function has too many lines (107/100)
+  --> crates/ade-stream/src/kafka.rs:98:5
+   |
+98 |     pub fn connect(config: StreamConfigV1, session: Uuid, progress: &Progress) -> Result<Self> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+   = note: `-D clippy::too-many-lines` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: this function has too many lines (119/100)
+   --> crates/ade-stream/src/kafka.rs:311:5
+    |
+311 |     fn verify(&mut self, progress: &Progress) -> Result<()> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+
+error: could not compile `ade-stream` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib test) due to 2 previous errors

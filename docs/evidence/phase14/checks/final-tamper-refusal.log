@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/verify_evidence.py", line 97, in <module>
+    verify(args.archive,args.manifest)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/verify_evidence.py", line 12, in verify
+    assert hashlib.sha256(data).hexdigest() == expected['archive_sha256'], 'archive identity'
+AssertionError: archive identity

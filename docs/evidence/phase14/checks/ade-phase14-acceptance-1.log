@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/acceptance.py", line 155, in <module>
+    p=launch('native',descriptor(native),['--test-stop-records',str(len(ledger))]);wait(p,'native');oracle('native',ledger)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/acceptance.py", line 115, in wait
+    rc=p.wait(timeout);assert (rc==0)==(expected==0),(label,rc,traces(label)[-3:])
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1189, in wait
+    return self._wait(timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1909, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/ade-stream', '/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase14/candidate-1/native.config.json', '--test-stop-records', '8']' timed out after 30 seconds

@@ -1,4 +1,6 @@
 //! Provisional single-node pull execution with managed memory and local spill.
+#[cfg(test)]
+use arrow::array::UInt64Array;
 mod aggregate;
 mod ipc_scan;
 pub mod join;
@@ -9,9 +11,9 @@ pub mod row_source;
 mod scan;
 mod sort;
 mod spill;
+pub mod stateless;
 use arrow::{
-    array::{Array, BooleanArray, UInt64Array},
-    compute::filter_record_batch,
+    array::Array,
     datatypes::{DataType, Field, Schema, SchemaRef},
     record_batch::RecordBatch,
 };
@@ -676,17 +678,7 @@ impl Node {
                 };
                 cx.input(self.id, &batch);
                 let start = Instant::now();
-                let values = batch
-                    .column(*column)
-                    .as_any()
-                    .downcast_ref::<UInt64Array>()
-                    .ok_or_else(|| Error::Invalid("filter type".into()))?;
-                // SQL-like null predicate semantics: nulls are excluded.
-                let mask = BooleanArray::from_iter(
-                    (0..values.len())
-                        .map(|i| Some(!values.is_null(i) && values.value(i) < *threshold)),
-                );
-                let result = filter_record_batch(&batch, &mask)?;
+                let result = stateless::filter_u64_lt(&batch, *column, *threshold)?;
                 cx.work(self.id, start);
                 Some(result)
             }
@@ -697,7 +689,7 @@ impl Node {
                 };
                 cx.input(self.id, &batch);
                 let start = Instant::now();
-                let result = batch.project(columns)?;
+                let result = stateless::project(&batch, columns)?;
                 cx.work(self.id, start);
                 Some(result)
             }

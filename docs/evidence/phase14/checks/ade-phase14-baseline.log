@@ -1,0 +1,67 @@
+   Compiling ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+   Compiling ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.58s
+     Running unittests src/lib.rs (target/debug/deps/ade_exec-6a326aaa338d2dc1)
+
+running 35 tests
+test join::tests::corrupt_and_truncated_internal_files_are_rejected_before_reading_pairs ... ok
+test aggregate::tests::partial_codec_and_checked_merge_reject_corruption ... ok
+test aggregate::tests::cancelled_partition_load_releases_state_and_spill_root ... ok
+test join::tests::hash_only_capacity_error_is_distinct_from_disabled_spill ... ok
+test aggregate::tests::compact_sentinel_keeps_zero_keys_zero_sums_and_failed_updates_atomic ... ok
+test join::tests::grace_refuses_disjoint_keys_colliding_in_an_oversized_partition_before_output ... ok
+test sort::tests::exhausted_sort_does_not_reserve_output_memory ... ok
+test sort::tests::terminal_in_memory_batch_releases_sort_reservation ... ok
+test spill::tests::read_metrics_count_consumed_bytes_and_root_is_removed ... ok
+test spill::tests::lazy_root_is_created_only_for_a_real_spill_and_closes_or_drops ... ok
+test join::tests::typed_bounds_cancellation_sink_failure_and_cleanup ... ok
+test sort::tests::cancelled_merge_releases_reservation_and_spill_root ... ok
+test row_source::tests::complete_prefix_and_full_refusal_never_confuse_coverage ... ok
+test tests::core_memory_and_cancellation ... ok
+test tests::adaptive_partial_releases_hash_before_tail_and_cleans_on_cancel ... ok
+test tests::adaptive_partial_extreme_prefix_sum_is_split_without_losing_count ... ok
+test tests::limit_stops_upstream_and_schema_errors_are_structured ... ok
+test tests::limit_releases_blocking_aggregate_before_terminal_batch_returns ... ok
+test tests::managed_reservations_are_atomic_and_raii ... ok
+test tests::explicit_projected_parquet_matches_full_scan_projection_and_refuses_bad_columns ... ok
+test tests::parquet_filter_project_and_metrics ... ok
+test tests::aggregate_empty_overflow_and_order ... ok
+test physical::tests::frontend_independent_ir_empty_signed_and_overflow ... ok
+test tests::phase2_prefetch_order_error_and_early_drop ... ok
+test tests::live_source_reuses_merge_and_shuts_down_on_error_and_cancel ... ok
+test join::tests::bags_orientation_boundaries_and_actual_hash_to_grace ... ok
+test tests::phase3_ipc_merge_and_checked_counts ... ok
+test tests::phase2_partition_no_progress_and_empty_sort ... ok
+test tests::phase3_sink_failure_tears_down_spill_and_prefetch ... ok
+test tests::phase2_spill_aggregate_and_external_sort_are_bounded ... ok
+test tests::phase2_error_cancellation_and_collection_release_everything ... ok
+test tests::adaptive_partial_sample_once_mid_batch_pressure_and_raw_conservation ... ok
+test row_source::tests::metadata_api_and_selected_decode_caps_precede_large_allocations ... ok
+test tests::prepared_prefix_resumes_once_with_identical_spill_frames_and_releases_on_failure ... ok
+test tests::unordered_file_partials_conserve_rows_with_spill_and_propagate_sink_errors ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_physical-c502d040ffa1b380)
+
+running 5 tests
+test tests::distributed_upstream_filter_refuses ... ok
+test tests::forged_graph_properties_types_and_sources_refuse ... ok
+test tests::version_unknown_fields_and_size_refuse ... ok
+test tests::canonical_roundtrip_and_digest ... ok
+test tests::columns_caps_unordered_limit_and_dead_nodes_refuse ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_exec
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_physical
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

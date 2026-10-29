@@ -1,0 +1,5 @@
+   Compiling futures-util v0.3.34
+   Compiling futures-executor v0.3.34
+   Compiling rdkafka v0.39.0
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.76s

@@ -1,0 +1,4 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 14.79s

@@ -1,0 +1,277 @@
+    Checking ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:140:29
+    |
+140 |             .downcast_ref::<UInt64Array>()
+    |                             ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+140 -             .downcast_ref::<UInt64Array>()
+140 +             .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+127 | fn aggregate_empty_overflow_and_order<UInt64Array>() {
+    |                                      +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:149:29
+    |
+149 |             .downcast_ref::<UInt64Array>()
+    |                             ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+149 -             .downcast_ref::<UInt64Array>()
+149 +             .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+127 | fn aggregate_empty_overflow_and_order<UInt64Array>() {
+    |                                      +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:276:68
+    |
+276 |                         if let Some(a) = a.as_any().downcast_ref::<UInt64Array>() {
+    |                                                                    ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+276 -                         if let Some(a) = a.as_any().downcast_ref::<UInt64Array>() {
+276 +                         if let Some(a) = a.as_any().downcast_ref::<Int64Array>() {
+    |
+help: you might be missing a type parameter
+    |
+267 | fn triples<UInt64Array>(output: &ExecutionOutput) -> Vec<Vec<i128>> {
+    |           +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:628:29
+    |
+628 |             .downcast_ref::<UInt64Array>()
+    |                             ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+628 -             .downcast_ref::<UInt64Array>()
+628 +             .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+597 | fn phase3_ipc_merge_and_checked_counts<UInt64Array>() {
+    |                                       +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:768:37
+    |
+768 |                     .downcast_ref::<UInt64Array>()
+    |                                     ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+768 -                     .downcast_ref::<UInt64Array>()
+768 +                     .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+712 | fn live_source_reuses_merge_and_shuts_down_on_error_and_cancel<UInt64Array>() {
+    |                                                               +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:844:29
+    |
+844 |             .downcast_ref::<UInt64Array>()
+    |                             ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+844 -             .downcast_ref::<UInt64Array>()
+844 +             .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+838 | fn contribution_map<UInt64Array>(batches: &[RecordBatch]) -> BTreeMap<u64, (i128, u64)> {
+    |                    +++++++++++++
+
+error[E0425]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:854:29
+    |
+854 |             .downcast_ref::<UInt64Array>()
+    |                             ^^^^^^^^^^^
+    |
+   ::: /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-array-59.3.1/src/array/primitive_array.rs:111:1
+    |
+111 | pub type Int64Array = PrimitiveArray<Int64Type>;
+    | ------------------- similarly named type alias `Int64Array` defined here
+    |
+help: a type alias with a similar name exists
+    |
+854 -             .downcast_ref::<UInt64Array>()
+854 +             .downcast_ref::<Int64Array>()
+    |
+help: you might be missing a type parameter
+    |
+838 | fn contribution_map<UInt64Array>(batches: &[RecordBatch]) -> BTreeMap<u64, (i128, u64)> {
+    |                    +++++++++++++
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+  --> crates/ade-exec/src/tests.rs:18:22
+   |
+18 |             Arc::new(UInt64Array::from_iter_values(
+   |                      ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+   |
+help: a type alias with a similar name exists
+   |
+18 -             Arc::new(UInt64Array::from_iter_values(
+18 +             Arc::new(Int64Array::from_iter_values(
+   |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+  --> crates/ade-exec/src/tests.rs:21:22
+   |
+21 |             Arc::new(UInt64Array::from_iter(
+   |                      ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+   |
+help: a type alias with a similar name exists
+   |
+21 -             Arc::new(UInt64Array::from_iter(
+21 +             Arc::new(Int64Array::from_iter(
+   |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:245:18
+    |
+245 |         Arc::new(UInt64Array::from_iter_values(
+    |                  ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+245 -         Arc::new(UInt64Array::from_iter_values(
+245 +         Arc::new(Int64Array::from_iter_values(
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:248:18
+    |
+248 |         Arc::new(UInt64Array::from_iter_values((0..rows).rev())),
+    |                  ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+248 -         Arc::new(UInt64Array::from_iter_values((0..rows).rev())),
+248 +         Arc::new(Int64Array::from_iter_values((0..rows).rev())),
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:607:26
+    |
+607 |                 Arc::new(UInt64Array::from(vec![7])),
+    |                          ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+607 -                 Arc::new(UInt64Array::from(vec![7])),
+607 +                 Arc::new(Int64Array::from(vec![7])),
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:609:26
+    |
+609 |                 Arc::new(UInt64Array::from(vec![count])),
+    |                          ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+609 -                 Arc::new(UInt64Array::from(vec![count])),
+609 +                 Arc::new(Int64Array::from(vec![count])),
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:716:22
+    |
+716 |             Arc::new(UInt64Array::from(vec![7, 7])),
+    |                      ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+716 -             Arc::new(UInt64Array::from(vec![7, 7])),
+716 +             Arc::new(Int64Array::from(vec![7, 7])),
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:718:22
+    |
+718 |             Arc::new(UInt64Array::from(vec![1, 2])),
+    |                      ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+718 -             Arc::new(UInt64Array::from(vec![1, 2])),
+718 +             Arc::new(Int64Array::from(vec![1, 2])),
+    |
+
+error[E0433]: cannot find type `UInt64Array` in this scope
+   --> crates/ade-exec/src/tests.rs:925:22
+    |
+925 |             Arc::new(UInt64Array::from(vec![0; 4])),
+    |                      ^^^^^^^^^^^ use of undeclared type `UInt64Array`
+    |
+help: a type alias with a similar name exists
+    |
+925 -             Arc::new(UInt64Array::from(vec![0; 4])),
+925 +             Arc::new(Int64Array::from(vec![0; 4])),
+    |
+
+error: item in documentation is missing backticks
+ --> crates/ade-exec/src/stateless.rs:9:48
+  |
+9 | /// SQL null semantics for the existing native UInt64 less-than predicate.
+  |                                                ^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+  = note: `-D clippy::doc-markdown` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+9 - /// SQL null semantics for the existing native UInt64 less-than predicate.
+9 + /// SQL null semantics for the existing native `UInt64` less-than predicate.
+  |
+
+error: could not compile `ade-exec` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+error: could not compile `ade-exec` (lib test) due to 16 previous errors

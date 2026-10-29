@@ -1,0 +1,100 @@
+   Compiling getrandom v0.3.4
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling getrandom v0.2.17
+   Compiling core-foundation v0.10.1
+   Compiling security-framework-sys v2.17.0
+   Compiling getrandom v0.4.3
+   Compiling parking_lot_core v0.9.12
+   Compiling ahash v0.8.12
+   Compiling ring v0.17.14
+   Compiling futures-executor v0.3.34
+   Compiling rand v0.10.3
+   Compiling parking_lot v0.12.5
+   Compiling tokio v1.53.3
+   Compiling security-framework v3.7.0
+   Compiling uuid v1.28.0
+   Compiling arrow-array v59.3.1
+   Compiling futures v0.3.34
+   Compiling tempfile v3.27.0
+   Compiling rand_core v0.9.5
+   Compiling dashmap v6.2.1
+   Compiling blake3 v1.8.7
+   Compiling rustls-webpki v0.103.16
+   Compiling rustls-native-certs v0.8.5
+   Compiling rand_chacha v0.9.0
+   Compiling ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+   Compiling indexmap v2.14.2
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling rustls v0.23.46
+   Compiling rand v0.9.5
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+   Compiling toml_edit v0.25.17+spec-1.1.0
+   Compiling arrow-select v59.3.1
+   Compiling arrow-arith v59.3.1
+   Compiling arrow-row v59.3.1
+   Compiling proc-macro-crate v3.5.0
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling datafusion-common-runtime v55.2.0
+   Compiling h2 v0.4.20
+   Compiling tower-http v0.6.11
+   Compiling tokio-stream v0.1.19
+   Compiling num_enum_derive v0.7.6
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+   Compiling tokio-rustls v0.26.6
+   Compiling arrow-ord v59.3.1
+   Compiling arrow-ipc v59.3.1
+   Compiling arrow-string v59.3.1
+   Compiling num_enum v0.7.6
+   Compiling rdkafka-sys v4.10.0+2.12.1
+   Compiling rdkafka v0.39.0
+   Compiling arrow-cast v59.3.1
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+   Compiling arrow-json v59.3.1
+   Compiling arrow-csv v59.3.1
+   Compiling reqwest v0.12.28
+   Compiling arrow v59.3.1
+   Compiling object_store v0.13.2
+   Compiling parquet v59.3.1
+   Compiling datafusion-common v55.2.0
+   Compiling ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+   Compiling datafusion-expr-common v55.2.0
+   Compiling datafusion-physical-expr-common v55.2.0
+   Compiling datafusion-functions-aggregate-common v55.2.0
+   Compiling datafusion-functions-window-common v55.2.0
+   Compiling datafusion-expr v55.2.0
+   Compiling datafusion-physical-expr v55.2.0
+   Compiling datafusion-execution v55.2.0
+   Compiling datafusion-functions v55.2.0
+   Compiling datafusion-functions-aggregate v55.2.0
+   Compiling datafusion-optimizer v55.2.0
+   Compiling datafusion-functions-window v55.2.0
+   Compiling datafusion-physical-plan v55.2.0
+   Compiling datafusion-physical-expr-adapter v55.2.0
+   Compiling datafusion-functions-nested v55.2.0
+   Compiling datafusion-sql v55.2.0
+   Compiling datafusion-session v55.2.0
+   Compiling datafusion-datasource v55.2.0
+   Compiling datafusion-catalog v55.2.0
+   Compiling datafusion-pruning v55.2.0
+   Compiling datafusion-datasource-arrow v55.2.0
+   Compiling datafusion-datasource-json v55.2.0
+   Compiling datafusion-datasource-csv v55.2.0
+   Compiling datafusion-physical-optimizer v55.2.0
+   Compiling datafusion-datasource-parquet v55.2.0
+   Compiling datafusion-functions-table v55.2.0
+   Compiling datafusion-catalog-listing v55.2.0
+   Compiling datafusion v55.2.0
+   Compiling ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ade-frontend` (bin "ade-query") generated 1 warning
+warning: `ade-bench` (bin "ade-bench") generated 1 warning (1 duplicate)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5m 33s

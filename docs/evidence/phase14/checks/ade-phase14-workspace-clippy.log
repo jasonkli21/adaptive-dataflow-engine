@@ -1,0 +1,82 @@
+    Checking getrandom v0.3.4
+    Checking socket2 v0.6.5
+    Checking mio v1.2.4
+   Compiling ring v0.17.14
+    Checking getrandom v0.2.17
+    Checking security-framework-sys v2.17.0
+    Checking core-foundation v0.10.1
+    Checking getrandom v0.4.3
+    Checking parking_lot_core v0.9.12
+    Checking ahash v0.8.12
+    Checking rand v0.10.3
+    Checking uuid v1.28.0
+    Checking tempfile v3.27.0
+    Checking security-framework v3.7.0
+    Checking tokio v1.53.3
+    Checking arrow-array v59.3.1
+    Checking parking_lot v0.12.5
+   Compiling rustls v0.23.46
+   Compiling blake3 v1.8.7
+    Checking rand_core v0.9.5
+    Checking dashmap v6.2.1
+    Checking rustls-native-certs v0.8.5
+    Checking rand_chacha v0.9.0
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling alloca v0.4.0
+    Checking rustls-webpki v0.103.16
+    Checking arrow-select v59.3.1
+    Checking arrow-arith v59.3.1
+    Checking arrow-row v59.3.1
+    Checking rand v0.9.5
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+   Compiling num_enum_derive v0.7.6
+    Checking tokio-util v0.7.20
+    Checking tower v0.5.3
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+    Checking arrow-ord v59.3.1
+    Checking arrow-ipc v59.3.1
+    Checking arrow-string v59.3.1
+    Checking tokio-rustls v0.26.6
+    Checking datafusion-common-runtime v55.2.0
+    Checking h2 v0.4.20
+    Checking arrow-cast v59.3.1
+    Checking tokio-stream v0.1.19
+    Checking tower-http v0.6.11
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+    Checking num_enum v0.7.6
+    Checking page_size v0.6.0
+    Checking arrow-csv v59.3.1
+    Checking arrow-json v59.3.1
+    Checking criterion v0.8.2
+    Checking hyper v1.12.0
+    Checking arrow v59.3.1
+    Checking hyper-util v0.1.21
+    Checking rdkafka-sys v4.10.0+2.12.1
+    Checking hyper-rustls v0.27.10
+    Checking rdkafka v0.39.0
+    Checking reqwest v0.12.28
+    Checking object_store v0.13.2
+    Checking parquet v59.3.1
+    Checking datafusion-common v55.2.0
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: this function has too many lines (106/100)
+  --> crates/ade-stream/src/runtime.rs:87:1
+   |
+87 | / pub fn run(
+88 | |     source: &mut dyn Source,
+89 | |     engine: &mut Engine,
+90 | |     sink: &mut dyn Sink,
+...  |
+96 | |     metrics: &mut Metrics,
+97 | | ) -> Result<&'static str> {
+   | |_________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+   = note: `-D clippy::too-many-lines` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: could not compile `ade-stream` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib test) due to 1 previous error

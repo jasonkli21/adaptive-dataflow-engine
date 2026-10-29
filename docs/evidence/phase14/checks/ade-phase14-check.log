@@ -1,0 +1,107 @@
+   Compiling libc v0.2.190
+   Compiling syn v2.0.119
+   Compiling winnow v1.0.4
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.3
+   Compiling vcpkg v0.2.15
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling rustversion v1.0.23
+   Compiling objc2 v0.6.5
+   Compiling cmake v0.1.58
+   Compiling cfg_aliases v0.2.2
+   Compiling indexmap v2.14.2
+   Compiling openssl-sys v0.9.117
+    Checking objc2-encode v4.1.0
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling rdkafka-sys v4.10.0+2.12.1
+   Compiling nix v0.31.3
+    Checking futures-core v0.3.34
+    Checking getrandom v0.3.4
+   Compiling toml_edit v0.25.17+spec-1.1.0
+    Checking errno v0.3.14
+    Checking getrandom v0.4.3
+   Compiling zerocopy-derive v0.8.63
+    Checking block2 v0.6.2
+    Checking futures-task v0.3.34
+    Checking rustix v1.1.5
+    Checking ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+   Compiling proc-macro-crate v3.5.0
+    Checking dispatch2 v0.3.1
+    Checking futures-util v0.3.34
+    Checking zerocopy v0.8.63
+    Checking futures-channel v0.3.34
+    Checking tempfile v3.27.0
+   Compiling num_enum_derive v0.7.6
+    Checking uuid v1.28.0
+    Checking ctrlc v3.5.2
+    Checking num_enum v0.7.6
+error: failed to run custom build command for `rdkafka-sys v4.10.0+2.12.1`
+
+Caused by:
+  process didn't exit successfully: `/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/build/rdkafka-sys-ab5f3550572c3cf7/build-script-build` (exit status: 101)
+  --- stdout
+  Configuring and compiling librdkafka
+  CMAKE_TOOLCHAIN_FILE_aarch64-apple-darwin = None
+  CMAKE_TOOLCHAIN_FILE_aarch64_apple_darwin = None
+  HOST_CMAKE_TOOLCHAIN_FILE = None
+  CMAKE_TOOLCHAIN_FILE = None
+  CMAKE_GENERATOR_aarch64-apple-darwin = None
+  CMAKE_GENERATOR_aarch64_apple_darwin = None
+  HOST_CMAKE_GENERATOR = None
+  CMAKE_GENERATOR = None
+  CMAKE_PREFIX_PATH_aarch64-apple-darwin = None
+  CMAKE_PREFIX_PATH_aarch64_apple_darwin = None
+  HOST_CMAKE_PREFIX_PATH = None
+  CMAKE_PREFIX_PATH = None
+  CMAKE_aarch64-apple-darwin = None
+  CMAKE_aarch64_apple_darwin = None
+  HOST_CMAKE = None
+  CMAKE = None
+  -- The C compiler identification is AppleClang 16.0.0.16000026
+  -- The CXX compiler identification is AppleClang 16.0.0.16000026
+  -- Detecting C compiler ABI info
+  -- Detecting C compiler ABI info - done
+  -- Check for working C compiler: /usr/bin/cc - skipped
+  -- Detecting C compile features
+  -- Detecting C compile features - done
+  -- Detecting CXX compiler ABI info
+  -- Detecting CXX compiler ABI info - done
+  -- Check for working CXX compiler: /usr/bin/c++ - skipped
+  -- Detecting CXX compile features
+  -- Detecting CXX compile features - done
+  -- Looking for pow in m
+  -- Looking for pow in m - found
+  -- Found Zstd: /opt/homebrew/lib/libzstd.dylib
+  -- Configuring incomplete, errors occurred!
+
+  --- stderr
+  Building and linking librdkafka statically
+  running: cd "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/build/rdkafka-sys-99393e26f93c3be2/out/build" && CMAKE_PREFIX_PATH="" LC_ALL="C" "cmake" "/Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rdkafka-sys-4.10.0+2.12.1/librdkafka" "-B" "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/build/rdkafka-sys-99393e26f93c3be2/out/build" "-DCMAKE_OSX_ARCHITECTURES=arm64" "-DRDKAFKA_BUILD_STATIC=1" "-DRDKAFKA_BUILD_TESTS=0" "-DRDKAFKA_BUILD_EXAMPLES=0" "-DCMAKE_INSTALL_LIBDIR=lib" "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" "-DWITH_ZLIB=0" "-DWITH_CURL=0" "-DWITH_SSL=1" "-DWITH_SASL_SCRAM=1" "-DWITH_SASL_OAUTHBEARER=1" "-DWITH_SASL=0" "-DWITH_ZSTD=0" "-DENABLE_LZ4_EXT=0" "-DCMAKE_INSTALL_PREFIX=/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/build/rdkafka-sys-99393e26f93c3be2/out" "-DCMAKE_C_FLAGS= -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=15.2 -w" "-DCMAKE_C_COMPILER=/usr/bin/cc" "-DCMAKE_CXX_FLAGS= -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=15.2 -w" "-DCMAKE_CXX_COMPILER=/usr/bin/c++" "-DCMAKE_ASM_FLAGS= -ffunction-sections -fdata-sections -fPIC --target=arm64-apple-macosx -mmacosx-version-min=15.2 -w" "-DCMAKE_ASM_COMPILER=/usr/bin/cc" "-DCMAKE_BUILD_TYPE=Debug"
+  CMake Warning (deprecated) at CMakeLists.txt:1 (cmake_minimum_required):
+    Compatibility with CMake < 3.10 will be removed from a future version of
+    CMake.
+
+    Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+    to tell CMake that the project requires at least <min> but has been updated
+    to work with policies introduced by <max> or earlier.
+  This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+  to suppress it.
+
+  CMake Error at /opt/homebrew/share/cmake/Modules/FindPackageHandleStandardArgs.cmake:290 (message):
+    Could NOT find OpenSSL, try to set the path to OpenSSL root folder in the
+    system variable OPENSSL_ROOT_DIR (missing: OPENSSL_CRYPTO_LIBRARY
+    OPENSSL_INCLUDE_DIR)
+  Call Stack (most recent call first):
+    /opt/homebrew/share/cmake/Modules/FindPackageHandleStandardArgs.cmake:654 (_FPHSA_FAILURE_MESSAGE)
+    /opt/homebrew/share/cmake/Modules/FindOpenSSL.cmake:752 (find_package_handle_standard_args)
+    src/CMakeLists.txt:241 (find_package)
+
+
+
+  thread 'main' (5015960) panicked at /Users/jasonkli/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cmake-0.1.58/src/lib.rs:1132:5:
+
+  command did not execute successfully, got: exit status: 1
+
+  build script failed, must exit now
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...

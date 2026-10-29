@@ -1,0 +1,1 @@
+Evidence checks require Python assertions enabled; do not use -O/PYTHONOPTIMIZE.

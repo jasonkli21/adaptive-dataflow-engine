@@ -1,0 +1,94 @@
+{
+  "candidates": {
+    "candidate-1": "FAILED: destruction hang; exact dirty source not frozen",
+    "candidate-2": "FAILED: destruction hang; exact source archive retained",
+    "candidate-3": "FAILED: destruction hang despite explicit close; source retained",
+    "candidate-4": "FAILED: TLS metadata budget too short; source retained",
+    "candidate-5": "PRE_FINAL_NOT_RELEASED: 28 observed cases pass, subsequent self-review fixes absent",
+    "candidate-6": "PRE_FINAL_NOT_RELEASED: 29 observed cases pass, nested security/pipe diagnostic defects subsequently confirmed",
+    "candidate-7": "ACCEPTED: 30 fresh cases pass, source/runtime identity verified"
+  },
+  "checks": {
+    "all_feature_clippy": "PASS",
+    "archive_hash_oracle_verifier": "PASS",
+    "archive_tamper_negative": "REFUSED",
+    "default_check": "PASS",
+    "final_stream_tests": {
+      "failed": 0,
+      "ignored": 0,
+      "passed": 11,
+      "repeated_from_workspace": true
+    },
+    "fmt": "PASS",
+    "optimized_python_negative": "REFUSED",
+    "python_tests": {
+      "failed": 0,
+      "passed": 26
+    },
+    "real_kafka_process_cases": {
+      "failed": 0,
+      "passed": 30
+    },
+    "selected_real_s3_regressions": {
+      "failed": 0,
+      "passed": 3,
+      "previously_ignored_in_workspace": true
+    },
+    "smoke_correctness": "PASS",
+    "timing_campaigns": "NOT_RUN",
+    "workspace_tests": {
+      "failed": 0,
+      "ignored": 10,
+      "passed": 263
+    }
+  },
+  "date_pacific": "2026-10-29",
+  "final_candidate": "candidate-7",
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS"
+  },
+  "identity": {
+    "backpressure": {
+      "blocked_seconds": 35.838578667,
+      "case": "backpressure",
+      "exit": 0,
+      "pid": 49320,
+      "plateau_bytes": 7937,
+      "status": "PASS"
+    },
+    "binary_sha256": "704663608ca323538684702011f31488888256337da6eb5574c3f0d89ba66ae5",
+    "cluster_id": "dXrWhPJdT1i2d9h2kyb4Og",
+    "runtime_digest": "b399925d7749060972412040e58c475f41f4c6d0af6401e881b0a751e52b3590",
+    "runtime_files": 119,
+    "source_archive_sha256": "6ab2cec907053db69fdbfe0146265689f51881d192fdf974368ab684b8cbb251",
+    "source_files": 253,
+    "source_inventory_sha256": "2ea359e8ff1f4e1703aaf89dc9ec92269fca43d05ebcbbe5c2728fcd38e78d7f"
+  },
+  "parent_head": "9fc6e35643b2d758ed5a06d00c4d4896f8ab2601",
+  "portable_archive": "docs/evidence/phase14/acceptance.tar.gz",
+  "portable_archive_sha256": "d65c824568e092a8dbf8b632f3e420a79ea56dcc01b20399abc2d9338f1faad5",
+  "portable_manifest": "docs/evidence/phase14/manifest.json",
+  "raw_local_root": "/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase14/candidate-7",
+  "support_matrix": "docs/reports/phase-14-support.json",
+  "unsupported_roadmap": [
+    "Phase10 physical membership",
+    "Phase12 production HA",
+    "Phase13 production cloud",
+    "Phase15 keyed state/checkpointing",
+    "Phase16 state placement",
+    "Phase17 exactly-once/savepoints",
+    "Phase18 unified optimizer",
+    "Consumer groups and more connectors"
+  ],
+  "verdict": "COMPLETE_BOUNDED_STREAMING_V1",
+  "version": 1
+}

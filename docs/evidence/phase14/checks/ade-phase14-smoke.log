@@ -1,0 +1,46 @@
+valid: 1 measured iterations; query median 126.201 ms; stddev 0.000 ms
+result schema/integrity valid
+{
+  "classification": "neutral",
+  "baseline_median_ns": 126200667.0,
+  "candidate_median_ns": 126200667.0,
+  "baseline_mean_ns": 126200667.0,
+  "candidate_mean_ns": 126200667.0,
+  "baseline_peak_rss_bytes": 67518464,
+  "candidate_peak_rss_bytes": 67518464,
+  "peak_rss_delta_percent": 0.0,
+  "median_delta_percent": 0.0,
+  "mean_delta_percent": 0.0,
+  "baseline_stddev_ns": 0.0,
+  "candidate_stddev_ns": 0.0,
+  "rows_output": 9930,
+  "warnings": [
+    "dirty source tree"
+  ]
+}
+valid: 1 measured iterations; query median 407.619 ms; stddev 0.000 ms
+result schema/integrity valid
+{
+  "classification": "regression",
+  "baseline_median_ns": 126200667.0,
+  "candidate_median_ns": 407619333.0,
+  "baseline_mean_ns": 126200667.0,
+  "candidate_mean_ns": 407619333.0,
+  "baseline_peak_rss_bytes": 67518464,
+  "candidate_peak_rss_bytes": 30720000,
+  "peak_rss_delta_percent": -54.50133462751759,
+  "median_delta_percent": 222.99301001317212,
+  "mean_delta_percent": 222.99301001317212,
+  "baseline_stddev_ns": 0.0,
+  "candidate_stddev_ns": 0.0,
+  "rows_output": 9930,
+  "warnings": [
+    "run configuration/verification policy differs",
+    "engine version/configuration differs",
+    "dirty source tree"
+  ]
+}
+{
+  "children": 1,
+  "validated": true
+}

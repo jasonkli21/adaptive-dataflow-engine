@@ -1,0 +1,543 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ade-frontend` (bin "ade-query") generated 1 warning
+   Compiling ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+warning: `ade-bench` (lib test) generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase2") generated 1 warning (1 duplicate)
+warning: `ade-frontend` (test "queries") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase1") generated 1 warning (1 duplicate)
+warning: `ade-bench` (bin "ade-bench") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase13") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase0") generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.92s
+     Running unittests src/lib.rs (target/debug/deps/ade_bench-844aba916d638f38)
+
+running 27 tests
+test dataset::tests::row_ranges_are_safe_at_the_accepted_domain_limit ... ok
+test engine::tests::engine_dispatch_rejects_unsupported_names ... ok
+test dataset::tests::row_ranges_cover_ordinary_and_degenerate_partitions ... ok
+test ade_distributed::tests::scheduler_options_are_explicit_and_strict ... ok
+test ade_distributed::tests::cost_configuration_is_explicit_effective_and_strict ... ok
+test ade_distributed::tests::static_projected_diagnostic_is_explicit_and_bounded ... ok
+test engine::tests::q1_cutoff_is_a_date32_day_value ... ok
+test engine::tests::q1_tolerance_requires_exact_counts_and_finite_values ... ok
+test environment::tests::build_metadata_includes_effective_known_settings ... ok
+test engine::tests::sort_validation_rejects_wrong_order_across_batches ... ok
+test environment::tests::build_provenance_stays_unknown_for_source_archives ... ok
+test environment::tests::repository_info_uses_compiled_values_not_runtime_git_context ... ok
+test cli::tests::cli_contract ... ok
+test engine::tests::join_canonicalization_rejects_renamed_or_nullable_schema_even_when_empty ... ok
+test dataset::topology_fixture_tests::engineered_keys_are_distinct_and_in_one_base_hash_bucket ... ok
+test runner::tests::child_command_forwards_engine_and_raw_options ... ok
+test runner::resource_tests::resource_units_and_unvalidated_protocol ... ok
+test spec::tests::semantic_identity_includes_contract_and_excludes_description_and_tags ... ok
+test result::tests::atomic_no_clobber_and_cleanup ... ok
+test stats::tests::known_statistics ... ok
+test spec::tests::specs_strict ... ok
+test environment::tests::metadata_serializes ... ok
+test engine::tests::generic_harness_accepts_adapter_owned_configuration ... ok
+test ade_distributed::tests::configuration_is_effective_and_strict ... ok
+test runner::tests::failure_protocols ... ok
+test join_dataset::tests::deterministic_sides_empty_and_manifest_separation ... ok
+test engine::tests::join_sql_oracle_preserves_duplicate_bags_and_output_cap ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src/main.rs (target/debug/deps/ade_bench-37643d1993322ce5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase0.rs (target/debug/deps/phase0-4d32763a5177cc45)
+
+running 6 tests
+git version 2.39.5 (Apple Git-154)
+test q1_cutoff_and_tolerance_reference ... ok
+test deterministic_readback_and_distribution ... ok
+test weighted_file_layout_preserves_logical_rows_and_manifest_verification ... ok
+test all_synthetic_workloads_and_errors ... ok
+test source_provenance_is_independent_of_runtime_git_repository ... ok
+test cli_process_roundtrip_and_comparison_integrity ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.29s
+
+     Running tests/phase1.rs (target/debug/deps/phase1-ba84fefcc3de67a5)
+
+running 1 test
+test phase1_adapter_validates_all_synthetic_cases ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/phase13.rs (target/debug/deps/phase13-b4eac7480c8140cd)
+
+running 1 test
+test independent_oracle_and_all_local_remote_cost_samples ... ignored, source-bound same-data local/remote campaign requires separate private S3 fixture
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase2.rs (target/debug/deps/phase2-5c5f06d814c48f2f)
+
+running 1 test
+test phase2_adapter_ordered_sort_pressure_and_configuration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_distributed-e26de68abdff7730)
+
+running 96 tests
+test adaptive::tests::direct_transition_reason_names_the_observed_pressure ... ok
+test bounded_output::tests::empty_collection_does_not_consume_output_budget ... ok
+test adaptive::tests::deterministic_monotone_thresholds_and_bounds ... ok
+test cost::tests::sequential_recovery_closures_share_remaining_slack ... ok
+test cost::tests::sequential_write_then_restore_uses_one_deadline_penalty ... ok
+test cost::tests::endpoints_ties_margin_and_determinism ... ok
+test cost::tests::source_requests_capacity_and_storage_prices_have_real_effect ... ok
+test cost::tests::empty_transfer_replay_has_no_source_or_compute_cost ... ok
+test cost::tests::active_slo_and_checked_overflow ... ok
+test disk::tests::shared_atomic_cap_and_overflow_never_write_one_more_byte ... ok
+test adaptive::tests::configuration_serialization_is_strict_and_roundtrips ... ok
+test bounded_output::tests::one_batch_at_exact_row_and_byte_boundary_is_admitted ... ok
+test bounded_output::tests::multi_batch_overflow_is_refused_before_the_next_batch_is_retained ... ok
+test exchange::tests::duplicate_completed_transfer_fails_the_session ... ok
+test exchange::tests::blocking_accept_shutdown_wakes_idle_and_all_busy_slots ... ok
+test exchange::tests::loopback_finalizes_empty_and_rejects_duplicate_and_partial ... ok
+test exchange::join_tests::typed_codec_context_route_ingress_terminal_and_stage_are_fenced ... ok
+test exchange::tests::adaptive_direct_wait_cancels_and_live_metrics_do_not_block ... ok
+test exchange::tests::rejects_oversized_frame_and_wrong_schema_version ... ok
+test exchange::tests::retention_snapshot_reports_live_buffer_and_spill_backlog_then_drains ... ok
+test exchange::tests::adaptive_all_boundaries_exact_readback_with_bounded_suffixes ... ok
+test exchange::tests::sequence_and_completion_count_rejections_fail_the_session ... ok
+test exchange::topology_tests::misrouted_but_row_conserving_batch_is_rejected ... ok
+test exchange::tests::receiver_drop_unblocks_a_direct_handoff ... ok
+test exchange::tests::rejects_duplicate_gapped_segments_and_incorrect_final_counts ... ok
+test gather::tests::completed_original_cannot_be_replaced_and_incomplete_output_cannot_commit ... ok
+test join::tests::incomplete_prefix_and_forged_complete_never_authorize_broadcast ... ok
+test gather::tests::incomplete_original_is_quarantined_and_only_one_attempt_commits ... ok
+test managed::tests::managed_and_legacy_framing_refuse_each_other ... ok
+test lineage::tests::snapshot_morsels_and_attempt_independent_segments ... ok
+test managed::tests::stale_response_fence_is_refused_over_real_socket ... ok
+test materialization::tests::empty_transfer_is_complete_and_cancellation_discards_staging ... ok
+test exchange::tests::terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty ... ok
+test partition::packer_tests::frame_boundaries_preserve_signed_rows_and_empty_destinations ... ok
+test exchange::tests::receiver_shutdown_returns_while_spill_io_is_stalled ... ok
+test join::tests::decision_fence_own_observations_and_stale_commit ... ok
+test partition::tests::stable_vectors ... ok
+test protocol::tests::rejects_version_size_and_truncation ... ok
+test materialization::tests::full_copy_survives_writer_and_rejects_corruption_missing_forgery_and_ephemeral ... ok
+test exchange::tests::mechanism_roundtrips_include_empty_transfer_and_metrics ... ok
+test protocol::tests::vectored_write_handles_partial_fallback_interruption_and_zero ... ok
+test managed::tests::oversized_truncated_and_foreign_managed_frames_refuse ... ok
+test protocol::tests::vectored_write_retains_total_deadline ... ok
+test recovery::tests::foreign_layout_cannot_reuse_materialization_facts ... ok
+test recovery::tests::minimal_file_closure_and_compact_ranges_are_deterministic ... ok
+test recovery::tests::mixed_restore_recompute_and_forged_fact_refusal ... ok
+test recovery::tests::recovery_action_selection_accumulates_elapsed_across_closures ... ok
+test recovery::tests::refuses_incomplete_multiple_losses_and_invalid_lineage ... ok
+test remote::http::tests::body_allocation_hint_per_response_total_bytes_and_actual_request_caps ... ok
+test partition::packer_tests::single_pass_matches_reference_frames_including_selective_replay_and_sink_failure ... ok
+test remote::store::tests::conditional_capability_probe_and_exact_operation_counts ... ok
+test remote::store::tests::immutable_create_wrong_size_checksum_namespace_and_caps_poison ... ok
+test remote::tests::cost_configured_egress_checked_overflow_and_all_limits ... ok
+test remote::tests::old_control_oversized_unknown_and_truncated_remote_frames_refuse ... ok
+test remote::tests::provider_endpoint_secrets_traversal_and_explicit_tls_refuse ... ok
+test remote::worker::failure_tests::refusal_classes_are_distinct_and_never_include_diagnostic_text ... ok
+test remote::worker::tests::independently_pinned_bytes_still_require_schema_rows_owner_and_terminal_chain ... ok
+test retention::tests::blocked_spill_read_cancellation_releases_retention_state_and_poisons_worker ... ok
+test recovery::tests::admitted_large_snapshot_is_not_duplicated_in_recovery_request ... ok
+test retention::tests::blocked_spill_write_cancellation_releases_retention_state_and_poisons_worker ... ok
+test retention::tests::execution_namespaces_isolate_shared_store_cleanup_for_reused_job_ids ... ok
+test remote::store::tests::cancellation_deadline_drop_future_and_no_late_local_publication ... ok
+test retention::tests::object_keys_isolate_identity_and_backend_errors_propagate ... ok
+test retention::tests::spill_fifo_has_constant_metadata_and_exact_once_readback ... ok
+test retention::tests::supplied_object_store_backend_is_used_and_reported ... ok
+test scheduler::connection::tests::oversized_frame_refuses_before_body_allocation ... ok
+test scheduler::connection::tests::persistent_frames_reset_deadline_and_refuse_a_truncated_next_frame ... ok
+test retention::tests::bounded_buffer_backpressure_and_cancellation ... ok
+test exchange::tests::waiting_reader_cancels_and_incomplete_objects_are_not_visible ... ok
+test scheduler::source::tests::source_pass_checks_cancellation_and_deadline_between_chunks ... ok
+test scheduler::tests::coverage_steal_duplicate_ack_and_bounded_log ... ok
+test scheduler::tests::fencing_owner_nonce_source_conflicts_and_expiry ... ok
+test scheduler::tests::control_admission_saturation_aborts_and_closes_bounded_peer_set ... ok
+test scheduler::tests::minimum_steal_waits_for_active_owner_and_falls_back_for_inactive_owners ... ok
+test scheduler::tests::no_steal_empty_producer_deadlines_and_bounds ... ok
+test scheduler::tests::parked_producer_waits_for_scheduled_activation_then_closes ... ok
+test scheduler::tests::parked_without_activation_closes_and_small_pending_work_makes_progress ... ok
+test scheduler::tests::participation_drain_has_cutoff_and_spot_deadline ... ok
+test scheduler::tests::malformed_control_aborts_service_and_dead_service_refuses_clients ... ok
+test scheduler::tests::pure_capacity_locality_critical_path_and_overflow ... ok
+test scheduler::tests::source_catalog_bounds_participation_and_rejects_last_active_drain ... ok
+test retention::tests::hanging_object_store_put_and_get_obey_cancel_and_deadline ... ok
+test scheduler::tests::source_verification_checks_deadline_cancellation_and_drift ... ok
+test probe::tests::compressed_large_key_chunk_is_refused_before_one_row_probe_decode ... ok
+test topology::tests::deterministic_split_coalesce_and_negative_controls ... ok
+test topology::tests::distinct_keys_in_one_virtual_shard_are_reported_as_one_occupied_shard ... ok
+test topology::tests::static_vectors_conservation_and_validation ... ok
+test worker::tests::cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected ... ok
+test worker::tests::empty_replay_emits_matching_attempt_terminal_without_source_access ... ok
+test scheduler::tests::source_replacement_and_symlink_drift_are_rechecked_after_a_verified_pass ... ok
+test scheduler::tests::stalled_control_does_not_monopolize_minimum_lease_renewals ... ok
+test scheduler::source::parallel_tests::scoped_parallel_hash_is_canonical_bounded_and_cancels_on_drift ... ok
+test scheduler::tests::persistent_idle_main_session_retains_independent_renewals_and_closure ... ok
+test protocol::tests::rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout ... ok
+test protocol::tests::total_deadline_rejects_a_continuously_progressing_peer ... ok
+test exchange::leased_tests::leased_persistent_idle_session_hash_context_and_poison ... ok
+
+test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.20s
+
+     Running unittests src/bin/ade-remote.rs (target/debug/deps/ade_remote-3e6d1f12876a3b71)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ade-worker.rs (target/debug/deps/ade_worker-489c3abe5b650e0e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/join_job.rs (target/debug/deps/join_job-b952f4b8a546632c)
+
+running 3 tests
+ADE join research exit after gather frame
+test real_join_final_loss_after_gather_frame_never_returns_partial_output ... ok
+test join_pressure_prefix_safety_refusals_and_cleanup ... ok
+test join_bags_all_physical_controls_two_three_four_workers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.62s
+
+     Running tests/leased_diagnostic.rs (target/debug/deps/leased_diagnostic-140fb1424661b28c)
+
+running 1 test
+test leased_frozen_fixture_diagnostic ... ignored, local full-fixture diagnostic; never a timing gate or isolated macrobenchmark
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/leased_job.rs (target/debug/deps/leased_job-de585e9a486afa1f)
+
+running 6 tests
+test leased_file_partials_preserve_wide_sums_and_reject_final_overflow ... ok
+ADE exchange receive failed: invalid protocol/configuration: join ingress bound exceeded
+ADE exchange receive failed: invalid protocol/configuration: join ingress bound exceeded
+test leased_admission_source_drift_deadline_and_ingress_bound_refuse_output ... ok
+ADE_SCHEDULER_FAULT {"at_ms":7,"emitted_frames":1,"emitted_rows":516,"fence":{"digest":"5f5b0dd1f466a27b1ade1a1147473da7bca3d7c55792a8eb8d81d02d5aa7a012","epoch":1,"execution":"f7b271cc-c8a6-4677-955b-c60238090b7e","job":1},"granted_ms":1,"lease":{"morsel":{"bytes":24635,"fingerprint":"847b151026e804a39021e22b8c15a8669237484028951e39a6195c1235e612fc","id":2,"path":"/var/folders/kn/djny7kpj0vl523qvdw763ppm0000gn/T/.tmpY8GqmP/2.parquet"},"nonce":2,"worker":0},"process_id":50005,"schema_version":1,"stage":"exit_after_frame"}
+test leased_exact_oracle_coverage_two_three_four_workers_and_empty_terminals ... ok
+ADE exchange receive failed: I/O: unexpected end of file
+ADE exchange receive failed: I/O: unexpected end of file
+test static_projected_matches_file_partials_with_modulo_ownership_and_cleanup ... ok
+ADE exchange receive failed: I/O: unexpected end of file
+test leased_real_process_exit_lease_expiry_and_inadequate_notice_fail_closed ... ok
+test real_pending_steal_and_live_activate_drain_keep_all_final_owners ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+     Running tests/managed_job.rs (target/debug/deps/managed_job-68c8a344033a604a)
+
+running 1 test
+test managed_real_workers_stream_both_shapes_and_prove_drain_and_fences ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/remote.rs (target/debug/deps/remote-3a508396e6a7a1ff)
+
+running 8 tests
+test failed_delete_reports_partial_cleanup_without_lifecycle_estimate ... ignored, requires separate S3-compatible fixture and feature-matched worker
+test fresh_boot_stale_epoch_attempt_backend_duplicate_and_foreign_grants_refuse_before_io ... ignored, requires feature-matched real worker; service credentials are fixture only
+test genuine_remote_static_turnover_and_scoped_cleanup ... ignored, requires separate S3-compatible fixture and feature-matched worker
+test immutable_cleanup_capability_cannot_delete_another_live_namespace ... ignored, requires separate S3-compatible fixture and feature-matched worker
+test real_remote_caps_and_producer_death_cancel_fail_without_result ... ignored, requires separate S3-compatible fixture and feature-matched worker
+test real_remote_corruption_missing_old_partial_sources_and_reader_death_never_return_output ... ignored, requires separate S3-compatible fixture and feature-matched worker
+test real_remote_transient_errors_outage_poison_and_late_put_are_bounded ... ignored, requires fault proxy in front of separate S3 service
+test zz_real_service_restart_refuses_lost_intermediates ... ignored, destructive only to the explicitly identified private fixture; run last with ADE_REMOTE_SERVICE_PID and ADE_MOTO_BIN
+
+test result: ok. 0 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/static_job.rs (target/debug/deps/static_job-7b490e506c7e909e)
+
+running 16 tests
+test a_tiny_prefix_does_not_coalesce_a_large_unobserved_suffix ... ok
+ADE research worker process exit job=JobId(1) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test complete_tiny_source_coalesces_single_key_empty_and_multi_key_inputs ... ok
+test biased_probe_and_partial_layout_commit_preserve_correctness_and_cleanup ... ok
+test dynamic_unsupported_loss_and_source_drift_fail_closed ... ok
+test many_distinct_keys_in_one_virtual_shard_keep_v1_ownership_for_two_to_four_workers ... ok
+ADE research worker process exit job=JobId(1) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test partial_three_four_worker_pinned_layout_and_tiny_coalesce ... ok
+ADE research worker process exit job=JobId(200) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+ADE exchange receive failed: invalid protocol/configuration: exchange/task before layout commitment
+test real_worker_loss_without_replayable_lineage_fails_and_cleans_survivor ... ok
+ADE research worker process exit job=JobId(301) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test sampled_protocol_fences_early_tasks_duplicate_commit_and_bounded_probe_failure ... ok
+ADE research worker process exit job=JobId(101) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test static_packed_is_an_explicit_static_diagnostic ... ok
+test real_final_worker_loss_replays_only_missing_partition_with_partial_gather ... ok
+ADE research worker process exit job=JobId(1) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+ADE research worker process exit job=JobId(301) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test partial_two_worker_modes_preserve_contributions_and_refuse_replay ... ok
+ADE research worker process exit job=JobId(1) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+ADE exchange receive failed: local execution: execution cancelled
+ADE research worker process exit job=JobId(1) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test runtime_layout_survives_real_worker_loss_by_replay_or_complete_copy ... ok
+ADE research worker process exit job=JobId(301) final=TaskId(2) attempt=0 gather_batches_before_exit=1
+test two_worker_process_graph_and_failure_cleanup ... ok
+test expected_cost_worker_loss_restores_or_recomputes_and_parent_cleans ... ok
+test runtime_split_and_real_coalesce_across_two_three_four_workers_and_retention ... ok
+test adaptive_process_oracle_divergence_and_failure ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.87s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_exec-f2b6bd961942c857)
+
+running 35 tests
+test aggregate::tests::cancelled_partition_load_releases_state_and_spill_root ... ok
+test aggregate::tests::partial_codec_and_checked_merge_reject_corruption ... ok
+test join::tests::corrupt_and_truncated_internal_files_are_rejected_before_reading_pairs ... ok
+test join::tests::hash_only_capacity_error_is_distinct_from_disabled_spill ... ok
+test aggregate::tests::compact_sentinel_keeps_zero_keys_zero_sums_and_failed_updates_atomic ... ok
+test join::tests::grace_refuses_disjoint_keys_colliding_in_an_oversized_partition_before_output ... ok
+test sort::tests::exhausted_sort_does_not_reserve_output_memory ... ok
+test sort::tests::terminal_in_memory_batch_releases_sort_reservation ... ok
+test spill::tests::read_metrics_count_consumed_bytes_and_root_is_removed ... ok
+test spill::tests::lazy_root_is_created_only_for_a_real_spill_and_closes_or_drops ... ok
+test join::tests::typed_bounds_cancellation_sink_failure_and_cleanup ... ok
+test sort::tests::cancelled_merge_releases_reservation_and_spill_root ... ok
+test row_source::tests::complete_prefix_and_full_refusal_never_confuse_coverage ... ok
+test tests::core_memory_and_cancellation ... ok
+test tests::adaptive_partial_releases_hash_before_tail_and_cleans_on_cancel ... ok
+test tests::adaptive_partial_extreme_prefix_sum_is_split_without_losing_count ... ok
+test tests::explicit_projected_parquet_matches_full_scan_projection_and_refuses_bad_columns ... ok
+test tests::limit_releases_blocking_aggregate_before_terminal_batch_returns ... ok
+test tests::managed_reservations_are_atomic_and_raii ... ok
+test tests::limit_stops_upstream_and_schema_errors_are_structured ... ok
+test tests::aggregate_empty_overflow_and_order ... ok
+test tests::parquet_filter_project_and_metrics ... ok
+test physical::tests::frontend_independent_ir_empty_signed_and_overflow ... ok
+test tests::live_source_reuses_merge_and_shuts_down_on_error_and_cancel ... ok
+test join::tests::bags_orientation_boundaries_and_actual_hash_to_grace ... ok
+test tests::phase2_prefetch_order_error_and_early_drop ... ok
+test tests::phase3_ipc_merge_and_checked_counts ... ok
+test tests::phase2_partition_no_progress_and_empty_sort ... ok
+test tests::phase3_sink_failure_tears_down_spill_and_prefetch ... ok
+test tests::phase2_spill_aggregate_and_external_sort_are_bounded ... ok
+test tests::adaptive_partial_sample_once_mid_batch_pressure_and_raw_conservation ... ok
+test tests::phase2_error_cancellation_and_collection_release_everything ... ok
+test tests::unordered_file_partials_conserve_rows_with_spill_and_propagate_sink_errors ... ok
+test tests::prepared_prefix_resumes_once_with_identical_spill_frames_and_releases_on_failure ... ok
+test row_source::tests::metadata_api_and_selected_decode_caps_precede_large_allocations ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_frontend-1c8d289883277617)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ade-query.rs (target/debug/deps/ade_query-6df8470ea9934c8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/queries.rs (target/debug/deps/queries-a0f0f07cbfce7767)
+
+running 11 tests
+test manifest_registration_refuses_an_expired_caller_deadline ... ok
+test manifest_traversal_symlink_identity_and_duplicate_registration_refuse ... ok
+test allowlisted_schema_fingerprints_are_recomputed_from_canonical_definitions ... ok
+test source_drift_caps_cancellation_and_forged_graph_no_result ... ok
+test unsupported_sql_and_target_matrix ... ok
+test signed_sum_final_overflow_and_nullable_source_refusal ... ok
+test join_four_workers_forced_baseline_empty_and_failure_controls ... ok
+test real_distributed_aggregate_and_join_oracle ... ok
+test distributed_output_bytes_are_checked_while_gathering ... ok
+test sql_local_oracle_and_dataframe_equivalence ... ok
+test cli_explain_execute_and_no_output_on_refusal ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.13s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_ops-18664ef951935f6c)
+
+running 9 tests
+test publication::tests::counted_writes_cap_plus_one_overflow_and_actual_io_failure ... ok
+test store::tests::every_state_pair_is_checked_and_terminal_or_stale_cas_never_commits ... ok
+test store::tests::failed_transaction_poisons_handle_and_never_invents_an_update ... ok
+test store::tests::checksum_validated_v1_snapshot_migrates_without_reissuing_identity ... ok
+test store::tests::older_v2_job_without_coordinator_pin_is_not_replayed ... ok
+test store::tests::original_job_deadline_expires_and_is_never_extended_by_reopen ... ok
+test store::tests::native_configuration_pin_and_engine_counter_overflow_refuse_before_effects ... ok
+test store::tests::restart_reconciliation_of_every_inflight_state_refuses_replay ... ok
+test store::tests::sequence_generation_clock_and_state_size_overflow_fail_closed ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running unittests src/main.rs (target/debug/deps/ade_batch-eecd285412cdf97f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-d4e51503c04cf228)
+
+running 2 tests
+test cli_list_labels_success_as_recorded_and_unverified ... ok
+test cli_roundtrip_structured_refusal_and_bounded_recipe_read ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+
+     Running tests/native.rs (target/debug/deps/native-e1504656f93f9faf)
+
+running 7 tests
+test output_caps_and_source_drift_never_publish ... ok
+test real_runtime_quota_exhaustion_and_exact_output_staging_boundary ... ok
+test total_staging_exact_cap_and_one_less_count_ipc_plus_manifest ... ok
+test durable_native_both_shapes_preserve_values_schema_and_duplicate_bags ... ok
+test independent_canonical_oracles_empty_skew_signed_and_overflow ... ok
+test one_million_join_rows_stream_and_one_over_global_row_cap_cannot_publish ... ok
+test source_physical_byte_cap_and_one_million_input_rows_are_real_admissions ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 34.13s
+
+     Running tests/native_crash.rs (target/debug/deps/native_crash-8a90c53a9b6b4b3a)
+
+running 13 tests
+test coordinator_semantic_drift_refuses_uncommitted_jobs_but_verifies_committed_output ... ok
+test durable_cancel_interrupts_real_preflight_and_postflight_hash_reads ... ok
+test durable_cancel_running_and_staged_never_publishes_and_late_cancel_preserves_success ... ok
+test independent_g0_changed_coordinator_never_replays_claimed_or_staged_attempt ... ok
+test finite_transient_retry_backoff_and_restart_use_new_engine_identity ... ok
+test corrupt_staged_and_foreign_markers_freeze_without_replay_or_overwrite ... ok
+test retry_limit_and_durable_backoff_cancellation_do_not_extend_deadline_or_publish ... ok
+test worker_loss_boot_registry_change_and_poisoned_quota_never_trigger_blind_retry ... ok
+test real_producer_prefix_kill_drains_original_tasks_before_fresh_instance ... ok
+test injected_output_io_failures_are_atomic_and_ambiguous_publication_reconciles_once ... ok
+test deadline_during_real_hash_reads_and_postflight_leaves_no_visible_result ... ok
+test coordinator_kills_recover_exactly_one_native_result_across_both_shapes ... ok
+test concurrent_source_hashing_does_not_cancel_running_native_job ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.57s
+
+     Running tests/operations.rs (target/debug/deps/operations-dfee224de2fdfc11)
+
+running 5 tests
+test cleanup_deletes_only_abandoned_transaction_and_preserves_every_other_file ... ok
+test corrupt_unknown_version_missing_store_and_unsafe_paths_never_initialize ... ok
+test queue_history_event_and_recipe_limits_fail_closed ... ok
+test both_recipes_are_durable_idempotent_and_execution_refuses_without_contacts ... ok
+test input_drift_rename_manifest_and_symlink_refuse ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/process_crash.rs (target/debug/deps/process_crash-8930785e8aeb54f0)
+
+running 3 tests
+test snapshot_kill_before_and_after_atomic_replacement_preserves_valid_generation ... ok
+test real_owner_kill_at_durable_claim_never_replays_ambiguous_attempt ... ok
+test publication_kill_windows_expose_zero_or_one_verified_marker ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/publication.rs (target/debug/deps/publication-5bc9ef4e54d3daf3)
+
+running 5 tests
+test failed_append_aborts_even_when_prior_rows_match_claimed_completion ... ok
+test empty_output_and_complete_set_are_valid_without_fabricating_a_job_success ... ok
+test cancellation_deadline_schema_nullability_and_coverage_fail_without_marker ... ok
+test exact_bytes_and_rows_atomic_publication_independent_read_and_late_cancel ... ok
+test marker_collision_mutation_truncation_reference_escape_and_foreign_identity_refuse ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_physical-c773175afd477bbc)
+
+running 5 tests
+test tests::forged_graph_properties_types_and_sources_refuse ... ok
+test tests::distributed_upstream_filter_refuses ... ok
+test tests::columns_caps_unordered_limit_and_dead_nodes_refuse ... ok
+test tests::version_unknown_fields_and_size_refuse ... ok
+test tests::canonical_roundtrip_and_digest ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_stream-9e0026e27f07fe7e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ade-stream.rs (target/debug/deps/ade_stream-6b9d7af650769360)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/core.rs (target/debug/deps/core-5167082f3c6f1c34)
+
+running 7 tests
+test timers_deadline_kind_tie_order_caps_and_no_refire ... ok
+test negative_times_checked_overflow_and_malformed_fail_without_ack ... ok
+test offsets_holes_frontier_and_late_records_follow_sink_ack ... ok
+test four_partition_frontier_requires_every_partition_and_config_refuses_five ... ok
+test session_partition_start_fencing_and_cancellation ... ok
+test strict_admission_security_and_event_schema ... ok
+test native_filter_projection_exact_extremes_and_partition_order ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/demand.rs (target/debug/deps/demand-2a849691472de04d)
+
+running 4 tests
+test sink_failure_and_stall_never_advance_forwarded ... ok
+test blocked_sink_stops_demand_and_resume_acknowledges_once ... ok
+test processing_clock_is_monotonic_injected_and_idle_never_completes ... ok
+test cancellation_unblocks_stalled_sink_and_pending_poll ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+   Doc-tests ade_bench
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_distributed
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_exec
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_frontend
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_ops
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_physical
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_stream
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

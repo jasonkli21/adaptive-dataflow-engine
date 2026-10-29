@@ -1,0 +1,130 @@
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: item in documentation is missing backticks
+ --> crates/ade-stream/src/runtime.rs:7:49
+  |
+7 | /// A sink must preserve a partial frame across WouldBlock and must not block.
+  |                                                 ^^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+  = note: `-D clippy::doc-markdown` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+7 - /// A sink must preserve a partial frame across WouldBlock and must not block.
+7 + /// A sink must preserve a partial frame across `WouldBlock` and must not block.
+  |
+
+error: docs for function returning `Result` missing `# Errors` section
+ --> crates/ade-stream/src/runtime.rs:9:5
+  |
+9 |     fn try_write(&mut self, remaining: &[u8]) -> Result<usize>;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+  = note: `-D clippy::missing-errors-doc` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::missing_errors_doc)]`
+
+error: docs for function returning `Result` missing `# Errors` section
+  --> crates/ade-stream/src/runtime.rs:49:1
+   |
+49 | pub fn trace(sink: &mut dyn Sink, value: &impl Serialize) -> Result<()> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: docs for function returning `Result` missing `# Errors` section
+  --> crates/ade-stream/src/lib.rs:41:1
+   |
+41 | pub fn require(ok: bool, message: &'static str) -> Result<()> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: docs for function which may panic missing `# Panics` section
+   --> crates/ade-stream/src/lib.rs:181:5
+    |
+181 |     pub fn identity(&self) -> String {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: first possible panic found here
+   --> crates/ade-stream/src/lib.rs:183:23
+    |
+183 |         blake3::hash(&serde_json::to_vec(self).expect("scalar config serialization"))
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_panics_doc
+    = note: `-D clippy::missing-panics-doc` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::missing_panics_doc)]`
+
+error: item in documentation is missing backticks
+   --> crates/ade-stream/src/lib.rs:210:27
+    |
+210 | /// Separate from bounded BatchSource. No empty-poll EOF.
+    |                           ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+help: try
+    |
+210 - /// Separate from bounded BatchSource. No empty-poll EOF.
+210 + /// Separate from bounded `BatchSource`. No empty-poll EOF.
+    |
+
+error: docs for function returning `Result` missing `# Errors` section
+   --> crates/ade-stream/src/lib.rs:212:5
+    |
+212 |     fn poll(&mut self) -> Result<Poll>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: docs for function returning `Result` missing `# Errors` section
+   --> crates/ade-stream/src/lib.rs:213:5
+    |
+213 |     fn pause(&mut self) -> Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: docs for function returning `Result` missing `# Errors` section
+   --> crates/ade-stream/src/lib.rs:214:5
+    |
+214 |     fn resume(&mut self) -> Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: docs for function returning `Result` missing `# Errors` section
+   --> crates/ade-stream/src/lib.rs:215:5
+    |
+215 |     fn verify(&mut self, progress: &Progress) -> Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_errors_doc
+
+error: this function has too many lines (105/100)
+   --> crates/ade-stream/src/lib.rs:321:5
+    |
+321 |     pub fn prepare(&mut self, record: RawRecord) -> Result<Receipt> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: this argument is passed by value, but not consumed in the function body
+   --> crates/ade-stream/src/lib.rs:321:39
+    |
+321 |     pub fn prepare(&mut self, record: RawRecord) -> Result<Receipt> {
+    |                                       ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_pass_by_value
+    = note: `-D clippy::needless-pass-by-value` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+321 |     pub fn prepare(&mut self, record: &RawRecord) -> Result<Receipt> {
+    |                                       +
+
+error: could not compile `ade-stream` (lib test) due to 12 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib) due to 12 previous errors

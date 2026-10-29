@@ -1,0 +1,114 @@
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: 5 bindings with single-character names in scope
+   --> crates/ade-stream/tests/core.rs:139:13
+    |
+139 |     let mut t = Timers::new(3, 384, 4).unwrap();
+    |             ^
+140 |     let a = t
+    |         ^
+...
+146 |     let b = t
+    |         ^
+...
+152 |     let c = t
+    |         ^
+...
+191 |     let d = t
+    |         ^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#many_single_char_names
+    = note: `-D clippy::many-single-char-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::many_single_char_names)]`
+
+error: redundant closure
+  --> crates/ade-stream/src/bin/ade-stream.rs:75:22
+   |
+75 |         .map_or_else(|e| e.to_string(), |s| (*s).to_string());
+   |                      ^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `std::string::ToString::to_string`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#redundant_closure_for_method_calls
+   = note: `-D clippy::redundant-closure-for-method-calls` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+
+error: this `if` statement can be collapsed
+  --> crates/ade-stream/src/bin/ade-stream.rs:90:13
+   |
+90 | /             if let Ok(fd) = std::fs::OpenOptions::new().write(true).open("/dev/stderr") {
+91 | |                 if let Ok(mut diagnostic) = Nonblocking::new(fd) {
+92 | |                     let _ = trace(
+93 | |                         &mut diagnostic,
+...  |
+97 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+   = note: `-D clippy::collapsible-if` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+   |
+90 ~             if let Ok(fd) = std::fs::OpenOptions::new().write(true).open("/dev/stderr")
+91 ~                 && let Ok(mut diagnostic) = Nonblocking::new(fd) {
+92 |                     let _ = trace(
+...
+95 |                     );
+96 ~                 }
+   |
+
+error: could not compile `ade-stream` (bin "ade-stream" test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (bin "ade-stream") due to 2 previous errors
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/core.rs:165:5
+    |
+165 |     assert!(t.fire(9, None).is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+165 -     assert!(t.fire(9, None).is_empty());
+165 +     assert_eq!(t.fire(9, None), [] as [ade_stream::timers::Fired; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/core.rs:181:5
+    |
+181 |     assert!(t.fire(10, Some(-6)).is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+181 -     assert!(t.fire(10, Some(-6)).is_empty());
+181 +     assert_eq!(t.fire(10, Some(-6)), [] as [ade_stream::timers::Fired; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/core.rs:190:5
+    |
+190 |     assert!(t.fire(u64::MAX, Some(i64::MAX)).is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+190 -     assert!(t.fire(u64::MAX, Some(i64::MAX)).is_empty());
+190 +     assert_eq!(t.fire(u64::MAX, Some(i64::MAX)), [] as [ade_stream::timers::Fired; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/core.rs:227:5
+    |
+227 |     assert!(t.fire(10, Some(10)).is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+227 -     assert!(t.fire(10, Some(10)).is_empty());
+227 +     assert_eq!(t.fire(10, Some(10)), [] as [ade_stream::timers::Fired; 0]);
+    |
+
+error: could not compile `ade-stream` (test "core") due to 5 previous errors

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/acceptance.py", line 193, in <module>
+    out,_=p.communicate(timeout=40);(root/'backpressure.output.jsonl').write_bytes(out)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1134, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1980, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1178, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/ade-stream', '/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase14/candidate-2/backpressure.config.json', '--test-stop-records', '1600']' timed out after 40 seconds

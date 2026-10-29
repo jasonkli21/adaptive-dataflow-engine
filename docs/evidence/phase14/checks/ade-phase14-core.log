@@ -1,0 +1,28 @@
+   Compiling uuid v1.28.0
+   Compiling ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.25s
+     Running unittests src/lib.rs (target/debug/deps/ade_stream-3a25cb0f14c40106)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/core.rs (target/debug/deps/core-a9ea220f5fcb0905)
+
+running 6 tests
+test timers_deadline_kind_tie_order_caps_and_no_refire ... ok
+test strict_admission_security_and_event_schema ... ok
+test negative_times_checked_overflow_and_malformed_fail_without_ack ... ok
+test session_partition_start_fencing_and_cancellation ... ok
+test offsets_holes_frontier_and_late_records_follow_sink_ack ... ok
+test native_filter_projection_exact_extremes_and_partition_order ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ade_stream
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

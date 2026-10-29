@@ -73,6 +73,20 @@ remote operations, general SQL/joins and serverless remain deferred. Phase10
 physical elasticity and Phase12 production HA remain separate debt. No Phase14
 authorization is inferred.
 
+On 2026-10-28 the user explicitly authorized Phase14 bounded streaming v1,
+without implementation subagents and with one implementation commit, followed
+by independent Sol High review and Luna XHigh remediation in one fix commit.
+Phase14 is COMPLETE_BOUNDED_STREAMING_V1 under ADR-0021 and
+`docs/reports/phase-14-implementation-report.md`: default-off real Kafka input,
+fixed explicit offsets/partitions, shared native stateless Arrow kernels,
+sink-confirmed progress, bounded timers and source-demand backpressure. All
+G0–G9 are local evidence; preserve failed candidates and frozen source identities.
+Topics require trusted immutable uncompressed <=32KiB batch history. Offset
+suggestions/timers are nondurable; no consumer-group recovery, windows/state,
+exactly-once, HA/cloud or changed PlanV1/batch EOF/default contracts are inferred.
+No Phase15 authorization is inferred. During the requested review/fix agents,
+the parent stays idle; any resumed work stays in that same subagent.
+
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
 fcc325e passes correctness but fails all six timing guards. Continued source/scan
 and contribution remediation at ee9f8da passes all 62 children/49 measured samples,
@@ -183,7 +197,9 @@ Avoid rewriting the PRD merely to mirror code. Product scope changes should be e
 
 ## 8. Phase completion
 
-Each phase ends with an implementation report. The active Phase12 report is
+Each phase ends with an implementation report. The current Phase14 report is
+`docs/reports/phase-14-implementation-report.md` (COMPLETE bounded streaming v1;
+checkpointing/exactly-once and full streaming SQL deferred). The Phase12 report is
 `docs/reports/phase-12-implementation-report.md` (COMPLETE bounded v1; full HA deferred). The Phase11 report is
 `docs/reports/phase-11-implementation-report.md`. The Phase10 debt report is
 `docs/reports/phase-10-implementation-report.md`; Phase8 prerequisite closure remains recorded in:

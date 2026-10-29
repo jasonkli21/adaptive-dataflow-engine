@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/acceptance.py", line 200, in <module>
+    p=launch('sasl-ssl',descriptor(native,bootstrap=f'127.0.0.1:{tls_port}',security=secure),['--test-stop-records','8']);wait(p,'sasl-ssl');oracle('sasl-ssl',ledger)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase14/acceptance.py", line 152, in wait
+    rc=p.wait(timeout);assert (rc==0)==(expected==0),(label,rc,traces(label)[-3:])
+AssertionError: ('sasl-ssl', 1, [{'reason': 'broker failure (details redacted)', 'type': 'failure'}])

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "scope": "bounded_streaming_v1",
+  "source": "Kafka-compatible protocol, one trusted immutable topic/cluster, one reader session",
+  "supported": {
+    "partitions": "1..4 explicitly fixed partition IDs 0..3, sorted unique absolute start offsets",
+    "topic_contract": "at most four partitions and four brokers; immutable incarnation and uncompressed <=32768-byte retained batches since topic creation",
+    "security": "explicit loopback development plaintext or certificate/hostname-verified SASL_SSL PLAIN using bounded environment credentials",
+    "event": "strict JSON EventV1: version=1, key:u64, value_i64:i64, event_time_ms:i64; payload <=4096 bytes",
+    "native": "shared ade-exec UInt64 key less-than filter, Arrow value/key/time projection, explicit filtered receipts",
+    "offsets": "increasing legal holes, distinct seen and sink-forwarded cursors, nondurable explicit restart suggestions",
+    "progress": "checked monotone max-forwarded-time minus allowance per partition; global min/unknown, idle never completes",
+    "timers": "bounded in-process monotonic processing/event timers; inclusive deadlines, deterministic ties, no per-session refiring",
+    "sink": "nonblocking Unix NDJSON file/pipe receipts; whole-frame write acknowledgment, finite stall deadline",
+    "backpressure": "one in-flight record; no downstream channel; stop partition polling while sink blocked; bounded native prefetch; control/statistics continue",
+    "stop": "SIGINT cancellation, failure or explicit finite operator test limit; discard unacknowledged input; no source EOF"
+  },
+  "bounds": {
+    "config_bytes": 16384,
+    "payload_bytes_max": 4096,
+    "oversize_detection_bytes_max": 4097,
+    "arrow_accounted_bytes": 8192,
+    "managed_in_flight_bytes": 16384,
+    "sink_frame_bytes": 2048,
+    "diagnostic_frame_bytes": 8192,
+    "client_queue_target_kib": [1, 1024],
+    "client_receive_response_bytes": 65536,
+    "client_fetched_payload_conservative_bound": "4*(queue_target_bytes+65536), protocol/allocator/control/TLS/kernel domains separate",
+    "timer_live_count": 64,
+    "timer_charged_bytes": 8192,
+    "timer_lifetime_registrations": 1024,
+    "sink_stall_ms_max": 120000,
+    "poll_wait_ms_max": 100,
+    "metadata_rpc_timeout_ms": 1000,
+    "rss_cap": false
+  },
+  "refused_or_deferred": [
+    "Consumer-group subscriptions/rebalances/committed offset adoption",
+    "Compressed or mutable historical topics; implicit offset reset or malformed-message skipping",
+    "Non-loopback plaintext, insecure TLS and arbitrary client property overrides",
+    "Automatic retry/replay, crash recovery, durable offsets or source incarnation/leader-epoch attestation",
+    "Transactional sinks, fsync/publication, external consumer acknowledgment or end-to-end exactly-once",
+    "Windows, aggregates, joins, keyed state, checkpoint barriers, savepoints, durable timers",
+    "General SQL/unbounded PlanV1, optimizer integration, nested/cyclic frontiers",
+    "Multi-worker streaming, physical elasticity, HA, cloud/cross-host production deployment, more connectors"
+  ],
+  "roadmap_debt": ["Phase10 physical membership", "Phase12 production HA", "Phase13 production cloud", "Phase15 checkpoints/keyed state", "Phase16 adaptive state placement", "Phase17 exactly-once/savepoints", "Phase18 unified optimizer", "Phase21 broader connectors"]
+}

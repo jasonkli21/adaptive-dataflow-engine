@@ -18,6 +18,8 @@ benchmark substrate
 
 ## Current status
 
+**Phase 14 bounded streaming v1 is complete (`COMPLETE_BOUNDED_STREAMING_V1`).** The default-off `ade-stream/kafka` path reads a real Kafka-compatible broker with fixed explicit partitions/offsets, uses shared ADE-native Arrow filter/projection, and emits bounded NDJSON receipts with sink-confirmed cursors, watermarks/frontier and session-local timers. Sustained downstream blockage stops source demand within capped client queues; idle remains Pending. The local acceptance includes SASL/TLS, legal offset gaps, manual replay, cancellation and broker/sink faults. Trusted immutable uncompressed topic history is required. Checkpoints, keyed state, exactly-once, general streaming SQL and HA/cloud remain deferred. See the [streaming guide](docs/phase-14-streaming-guide.md), [ADR-0021](docs/adr/0021-unbounded-source-and-progress-v1.md), [report](docs/reports/phase-14-implementation-report.md) and [support matrix](docs/reports/phase-14-support.json). Batch defaults, PlanV1 and historical Phase10–13 evidence remain unchanged.
+
 **Phase 13 bounded remote v1 is complete (`COMPLETE_BOUNDED_REMOTE_V1`).** The default-off `remote-s3` feature and separate `ade-remote` API/CLI provide a dedicated static GroupBySum remote-object executor over a real S3-compatible service, immutable checked manifests, fresh reader processes after all producers exit, bounded I/O and exact-key quiesced cleanup. It is not a reusable remote exchange plugin or proof of physical elasticity. The local fixture proves compute/storage process separation; full cloud HA, cross-host/AZ durability, dynamic membership, serverless and remote `ade-batch` remain deferred. The independent-review remediation records post-cleanup lifecycle cost, redacted worker failure classes, and a bounded read-only orphan inventory. Source-bound local verification and the raw-evidence access limit are in the [remediation evidence](docs/reports/phase-13-review-remediation-evidence.json). See the [Phase 13 guide](docs/phase-13-operations-guide.md), [ADR-0020](docs/adr/0020-remote-disaggregated-shuffle-v1.md) and [report](docs/reports/phase-13-implementation-report.md). Existing defaults and historical evidence are preserved.
 
 **Phase 12 bounded v1 is complete.** The opt-in `ade-ops` / `ade-batch` path runs static distributed aggregates and bounded HashOnly inner joins on fixed, externally supervised 2–4 managed workers. It adds durable jobs/attempts, worker fencing and proved drain before whole-job retry, cancellation, checked runtime/output budgets and atomic no-clobber IPC publication. Ambiguous worker sessions require an operator; operator spill is disabled in operations. Full replicated/cross-host HA and worker replacement remain deferred. See the [operations guide](docs/phase-12-operations-guide.md), [ADR-0019](docs/adr/0019-durable-batch-operations.md) and [implementation report](docs/reports/phase-12-implementation-report.md). Existing query/benchmark defaults and historical Phase10 evidence retain their contracts.
@@ -39,7 +41,7 @@ Implementation work should use this order:
 1. [`AGENTS.md`](AGENTS.md) — repository working rules and handoff conventions.
 2. [`docs/product/prd.md`](docs/product/prd.md) — product/research thesis and long-term phases.
 3. [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — architectural boundaries and invariants.
-4. [`docs/plans/phase-13-implementation-plan.md`](docs/plans/phase-13-implementation-plan.md) — accepted bounded remote-object batch scope; Phase12 remains local bounded operations, Phase10 remains PARTIAL and historical evidence retains its source identity.
+4. [`docs/plans/phase-14-implementation-plan.md`](docs/plans/phase-14-implementation-plan.md) — accepted bounded Kafka source/progress foundation; prior phase boundaries and historical evidence retain their source identities.
 5. [`docs/adr/`](docs/adr/) — concrete accepted design decisions.
 6. [`docs/reports/`](docs/reports/) — implementation state and phase reports.
 
@@ -50,6 +52,7 @@ Implementation work should use this order:
 ├── AGENTS.md
 ├── Cargo.toml
 ├── crates/
+│   ├── ade-stream/             # opt-in Kafka source, progress, timers and bounded sink
 │   ├── ade-ops/                # partial durable operations, ade-batch CLI
 │   ├── ade-physical/           # strict versioned ADE graph contract
 │   ├── ade-frontend/           # SQL binder, Rust DataFrame, ade-query CLI

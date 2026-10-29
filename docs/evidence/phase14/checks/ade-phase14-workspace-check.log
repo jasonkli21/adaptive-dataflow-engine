@@ -1,0 +1,8 @@
+    Blocking waiting for file lock on build directory
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 38s

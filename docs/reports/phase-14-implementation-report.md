@@ -267,3 +267,19 @@ production cloud/durability; Phase15 keyed state/checkpoints; Phase16 state plac
 Phase17 exactly-once/savepoints/transactional sinks; Phase18 unified optimizer;
 consumer groups, more connectors and general streaming SQL. This phase does not
 silently authorize any of those outcomes.
+
+## Independent review remediation addendum — 2026-10-29
+
+The subsequent independent Sol High review accepted the bounded runtime with two
+P2 evidence qualifications: the candidate-7 missing-partition config was rejected
+as malformed JSON, and the offline verifier did not check negative-case semantics.
+Both are resolved by a fresh typed real-broker witness and strict shared live/offline
+case contracts. The original acceptance archive and manifest remain byte-for-byte
+unchanged and now verify only in qualified historical mode. The source-pinned
+disposition, exact hashes, commands, counts and remaining limits are recorded in
+[`phase-14-review-remediation-2026-10-29.md`](phase-14-review-remediation-2026-10-29.md).
+
+This addendum does not change the runtime contract or historical source identities.
+The accepted Phase 14 runtime input set remains the same 119 crate/Cargo files;
+there are no runtime source edits in the review fix. The fresh campaign supplies
+the strict current G0–G9 evidence. No timing campaign was rerun or promoted.

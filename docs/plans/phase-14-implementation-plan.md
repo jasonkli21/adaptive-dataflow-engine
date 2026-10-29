@@ -2,7 +2,7 @@
 
 ## Unbounded sources and progress: bounded Kafka-first streaming foundation v1
 
-**Status:** Implemented — `COMPLETE_BOUNDED_STREAMING_V1`, with all G0–G9 passing locally under the explicit 2026-10-28 user authorization. The implementation report preserves source-bound evidence and failed candidates. This does not claim full PRD streaming, checkpoints or exactly-once.  
+**Status:** Implemented — `COMPLETE_BOUNDED_STREAMING_V1`. The original candidate-7 archive remains immutable and is historical-qualified after independent review found two evidence P2s; a fresh source-bound 30-case campaign and strict portable verifier resolve both (see the 2026-10-29 remediation report). This does not claim full PRD streaming, checkpoints or exactly-once.
 **Prepared:** 2026-10-28 (America/Los_Angeles).  
 **Repository:** https://github.com/jasonkli21/adaptive-dataflow-engine  
 **Inspected main HEAD:** `9fc6e35643b2d758ed5a06d00c4d4896f8ab2601` (Phase 13 independent-review remediation).  

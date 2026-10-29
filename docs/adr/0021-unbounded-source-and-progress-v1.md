@@ -1,6 +1,6 @@
 # ADR-0021 — Fixed Kafka source and progress v1
 
-Status: Accepted for implementation, 2026-10-28 Pacific. Acceptance pending G0–G9.
+Status: Accepted; bounded v1 evidence revalidated after independent review remediation, 2026-10-29 Pacific.
 Baseline: 9fc6e35643b2d758ed5a06d00c4d4896f8ab2601.
 
 Refines architecture §§3.5,5.3,7–9,18,21–22 and INV1–10. The user's explicit

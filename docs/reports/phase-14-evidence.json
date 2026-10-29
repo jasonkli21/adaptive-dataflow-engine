@@ -90,5 +90,66 @@
     "Consumer groups and more connectors"
   ],
   "verdict": "COMPLETE_BOUNDED_STREAMING_V1",
+  "review_remediation": {
+    "date_pacific": "2026-10-29",
+    "reviewed_parent": "fbafd01e781a5e3a034896fbdef02cadf1adb532",
+    "handoff": "phase-14-independent-review-handoff.md",
+    "handoff_sha256": "63e4ce08d9bdb1313946562bfada7cc29831ebfea18d8e3a3001605b3bfb3ac6",
+    "disposition_report": "docs/reports/phase-14-review-remediation-2026-10-29.md",
+    "prior_disposition": "ACCEPT_WITH_P2_DEBT",
+    "current_disposition": "COMPLETE_BOUNDED_STREAMING_V1; F14-01 and F14-02 evidence defects remediated",
+    "findings": {
+      "F14-01": {
+        "status": "RESOLVED",
+        "proof": "Fresh typed explicit start for absent partition 3 reached source_identity_or_offset / assigned partition missing; empty output",
+        "regression": "Malformed offset object and parser-stage refusal are rejected"
+      },
+      "F14-02": {
+        "status": "RESOLVED",
+        "proof": "Shared live/offline negative contracts, checksum-consistent semantic forgery rejection, and raw backpressure snapshot validation",
+        "regressions": 9
+      }
+    },
+    "fresh_campaign": {
+      "root": "benchmarks/results/phase14/review-remediation-2026-10-29-campaign-2",
+      "status": "PASS",
+      "cases": 30,
+      "binary_sha256": "9614eedc385a69f04479c3feff63293c0056b3a98e8cad108cdda847ac05e2f6",
+      "source_inventory_files": 257,
+      "source_inventory_sha256": "b1dd696994ba7e16d7403f4ce22fc4d45c3892693f8786437480e53412d6fa99",
+      "source_archive_sha256": "8d862b47d8be55137d7c4244a0efed7a8de27b0ae1544fbc884558e8b8c4ead2",
+      "backpressure_blocked_seconds": 35.896684832999995,
+      "backpressure_queue_plateau_bytes": 7937
+    },
+    "portable_current_evidence": {
+      "archive": "docs/evidence/phase14-review-remediation/acceptance.tar.gz",
+      "archive_sha256": "4d9f31739631babf844b743b7a7a9b967572e9890ba8daeb83430a2446a54212",
+      "manifest": "docs/evidence/phase14-review-remediation/manifest.json",
+      "manifest_sha256": "135a6cf209b5348db111305405eb776297903db4f4803f772977ad0f9f94acfc",
+      "files": 159,
+      "strict_verifier": "PASS"
+    },
+    "historical_archive": {
+      "path": "docs/evidence/phase14/acceptance.tar.gz",
+      "sha256_unchanged": "d65c824568e092a8dbf8b632f3e420a79ea56dcc01b20399abc2d9338f1faad5",
+      "verifier_status": "PASS_HISTORICAL_WITH_F14_01_LIMIT"
+    },
+    "runtime_inputs": {
+      "files": 119,
+      "canonical_digest_unchanged": "b399925d7749060972412040e58c475f41f4c6d0af6401e881b0a751e52b3590"
+    },
+    "checks": {
+      "fmt": "PASS",
+      "workspace_check": "PASS",
+      "strict_clippy": "PASS",
+      "workspace_tests": {"passed": 263, "failed": 0, "ignored": 10},
+      "python_tests": {"passed": 35, "failed": 0, "phase14_focused": 9},
+      "smoke_correctness": "PASS; mixed-engine one-iteration comparisons are not performance evidence",
+      "archive_cryptographic_tamper": "REFUSED",
+      "optimized_python": "REFUSED",
+      "timing_campaigns": "NOT_RUN"
+    },
+    "failed_setup_attempt": "benchmarks/results/phase14/review-remediation-2026-10-29 (preserved locally; duplicate bootstrap wrapper argument, before fault cases)"
+  },
   "version": 1
 }

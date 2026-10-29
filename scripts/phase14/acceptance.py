@@ -3,6 +3,7 @@
 Requires an unpacked Apache Kafka 3.9.1 distribution and Java 17 (no Docker/cloud).
 """
 import argparse, base64, hashlib, json, os, pathlib, signal, socket, subprocess, tarfile, tempfile, time, uuid
+from evidence_contracts import build_descriptor, validate_backpressure, validate_case_contract
 
 if not __debug__:
     raise SystemExit('Evidence checks require Python assertions enabled; do not use -O/PYTHONOPTIMIZE.')
@@ -127,12 +128,9 @@ def produce(topic,items,mode='produce'):
     output=fixture(mode,topic,data)
     return [(int(p),int(off),json.loads(payload)) for p,off,payload in (line.split('\t',2) for line in output.decode().splitlines())] if mode=='produce' and all(isinstance(e,dict) for _,e in items) else []
 
-def descriptor(topic,starts=(0,0),**changes):
-    c=dict(version=1,bootstrap=address,expected_cluster_id=cluster,topic=topic,
-        starts=[dict(partition=p,offset=s) for p,s in enumerate(starts)],security=dict(mode='loopback_dev'),
-        key_less_than=10,allowance_ms=10,payload_bytes=4096,client_queue_kib=16,sink_stall_ms=90000,
-        timers=[dict(kind='processing',deadline_ms=0),dict(kind='processing',deadline_ms=0),dict(kind='event',deadline_ms=0),dict(kind='processing',deadline_ms=1000)])
-    c.update(changes);return c
+def descriptor(topic,offsets=(0,0),*,explicit_starts=None,**changes):
+    bootstrap=changes.pop('bootstrap',address)
+    return build_descriptor(topic,bootstrap,cluster,offsets=offsets,explicit_starts=explicit_starts,**changes)
 
 def launch(label,c,args=(),pipe=False):
     path=root/(label+'.config.json');path.write_text(json.dumps(c,sort_keys=True))
@@ -240,6 +238,7 @@ try:
     out,_=p.communicate(timeout=40);(root/'backpressure.output.jsonl').write_bytes(out)
     assert p.returncode==0;cases.append({'case':'backpressure','status':'PASS','pid':p.pid,'exit':0,'blocked_seconds':time.monotonic()-began,'plateau_bytes':max(peaks)})
     oracle('backpressure',bulk_ledger)
+    validate_backpressure(cases[-1],traces('backpressure'),out)
     # Cancellation during an idle poll and a blocked write; sink EPIPE.
     for label,conf,blocked in [('cancel-poll',descriptor(quiet,(1,0)),False),('cancel-stall',descriptor(pressure),True),('epipe',descriptor(pressure),True),('kill',descriptor(pressure),True)]:
         p=launch(label,conf,pipe=blocked)
@@ -281,7 +280,7 @@ try:
     cases.append({'case':'nested-unknown','status':'PASS','pid':proc.pid,'exit':1})
 
     # Admission and metadata faults before output, including no implicit topic creation.
-    for label,c in [('out-of-range',descriptor(native,(9999,0))),('missing-topic',descriptor(prefix+'-absent')),('missing-partition',descriptor(native,starts=[dict(partition=3,offset=0)])),('wrong-cluster',descriptor(native,expected_cluster_id='wrong')),('remote-plaintext',descriptor(native,bootstrap='192.0.2.1:9092')),('timer-cap',descriptor(native,timers=[dict(kind='event',deadline_ms=0)]*65)),('tls-refusal',descriptor(native,security=dict(mode='sasl_ssl',username_env='ADE_TEST_USER',password_env='ADE_TEST_PASSWORD',ca_path='/does/not/exist')))]:
+    for label,c in [('out-of-range',descriptor(native,(9999,0))),('missing-topic',descriptor(prefix+'-absent')),('missing-partition',descriptor(native,explicit_starts=[dict(partition=3,offset=0)])),('wrong-cluster',descriptor(native,expected_cluster_id='wrong')),('remote-plaintext',descriptor(native,bootstrap='192.0.2.1:9092')),('timer-cap',descriptor(native,timers=[dict(kind='event',deadline_ms=0)]*65)),('tls-refusal',descriptor(native,security=dict(mode='sasl_ssl',username_env='ADE_TEST_USER',password_env='ADE_TEST_PASSWORD',ca_path='/does/not/exist')))]:
         p=launch(label,c,['--test-stop-ms','2000']);wait(p,label,expected=1)
         assert not (root/(label+'.output.jsonl')).read_bytes()
         assert 'fixture-secret' not in (root/(label+'.trace.jsonl')).read_text()
@@ -301,7 +300,37 @@ try:
     wait(p,'broker-outage',expected=1,timeout=6)
     broker=start_broker('restart');time.sleep(2)
     p=launch('broker-restart-explicit',descriptor(native),['--test-stop-records','8']);wait(p,'broker-restart-explicit');oracle('broker-restart-explicit',ledger)
-    result={'status':'PASS','cases':cases,'cluster_id':cluster,'broker':'Apache Kafka 3.9.1','client':'rdkafka 0.39.0 / librdkafka 2.12.1','seed':'deterministic index formulas v1','commands':commands,'binary_sha256':hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest()}
+
+    # Recheck every negative case from its captured files, independent of the
+    # inline scenario assertions above. Pipe failures may truthfully retain a
+    # prefix; pre-admission and first-poison cases must have empty output.
+    negative_labels=['bad-credentials','cancel-poll','cancel-stall','epipe','kill','bad-schema','oversize','underflow',
+        'config-fifo','nested-unknown','out-of-range','missing-topic','missing-partition','wrong-cluster','remote-plaintext',
+        'timer-cap','tls-refusal','compression-refusal','retention-drift','partition-drift','compression-drift','broker-outage']
+    case_by_label={case['case']:case for case in cases}
+    for label in negative_labels:
+        config_path=root/(label+'.config.json')
+        config=json.loads(config_path.read_text()) if config_path.exists() else None
+        trace_path=root/(label+'.trace.jsonl')
+        if trace_path.exists():
+            trace_raw=trace_path.read_bytes()
+        elif label in ('config-fifo','nested-unknown'):
+            trace_raw=(root/(label+'.stderr')).read_bytes()
+        else:
+            trace_raw=None
+        output_path=root/(label+'.output.jsonl')
+        if output_path.exists():
+            output=output_path.read_bytes()
+        elif label in ('config-fifo','nested-unknown'):
+            output=(root/(label+'.stdout')).read_bytes()
+        else:
+            output=None
+        validate_case_contract(label,case_by_label[label],config,trace_raw,output)
+
+    source_inventory_bytes=(root/'source-inventory.json').read_bytes()
+    source_archive_bytes=(root/'source.tar.gz').read_bytes()
+    result={'status':'PASS','cases':cases,'cluster_id':cluster,'broker':'Apache Kafka 3.9.1','client':'rdkafka 0.39.0 / librdkafka 2.12.1','seed':'deterministic index formulas v1','commands':commands,'binary_sha256':hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest(),
+        'source_inventory_sha256':hashlib.sha256(source_inventory_bytes).hexdigest(),'source_archive_sha256':hashlib.sha256(source_archive_bytes).hexdigest()}
     (root/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps({'status':'PASS','cases':len(cases),'root':str(root)}),flush=True)
 finally:
     for p in children:

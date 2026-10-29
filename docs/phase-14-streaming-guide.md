@@ -193,3 +193,33 @@ The harness requires a new output directory and at least30 seconds for the block
 sink witness. Its Python oracle is independent of ADE's event parser/operators.
 Unit tests require no broker; the network campaign is a local correctness gate,
 not an historical release speedup or CI performance threshold.
+
+## Verify the preserved and reviewed evidence
+
+The original `docs/evidence/phase14/acceptance.tar.gz` bytes remain unchanged.
+Because its old missing-partition config is malformed, verify that archive only
+in qualified historical mode:
+
+```sh
+python3 scripts/phase14/verify_evidence.py --mode historical
+```
+
+For current acceptance, run the fresh campaign above, package its raw files with
+`scripts/phase14/package_evidence.py`, then use strict current mode:
+
+```sh
+python3 scripts/phase14/package_evidence.py \
+  --campaign benchmarks/results/phase14/fresh-run \
+  --destination docs/evidence/phase14-review-remediation
+python3 scripts/phase14/verify_evidence.py \
+  --archive docs/evidence/phase14-review-remediation/acceptance.tar.gz \
+  --manifest docs/evidence/phase14-review-remediation/manifest.json \
+  --mode current
+```
+
+Strict mode checks every named negative case's reached failure class and trace,
+poison-record cursors/output, and raw blocked-sink snapshots. It accepts bounded
+prefix output for sink cancellation, source drift and process kill, while requiring
+those sessions to remain failed or unreported rather than successful. Review
+disposition and the source-pinned 2026-10-29 campaign are recorded in
+`docs/reports/phase-14-review-remediation-2026-10-29.md`.

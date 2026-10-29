@@ -60,6 +60,19 @@ path; ambiguous/poisoned/changed workers require an operator. Full production HA
 replication, worker replacement and broader sinks remain deferred. No Phase 13
 authorization is inferred. Preserve the initial foundation evidence at fcffd77b
 and the separately measured completion source; do not relabel old timing evidence.
+On 2026-10-28 the user explicitly authorized Phase13 in this session, without
+subagents and with one final project commit. Phase13 is COMPLETE_BOUNDED_REMOTE_V1
+under ADR-0020 and docs/reports/phase-13-implementation-report.md after independent
+G0 safety proof at 474f8c9 and clean acceptance at ead9de6. The opt-in remote-s3
+path uses a separate S3-compatible service, static GroupBySum, fixed 2–4 logical
+producers/hash partitions and fresh stage-boundary reader processes. Its G0–G8
+proofs are local; preserve every failed/premeasurement candidate and all samples.
+Defaults, legacy wire/result/manifest v1 contracts and ade-batch local operations
+remain unchanged. Full cloud/HA/cross-host/AZ durability, in-flight membership,
+remote operations, general SQL/joins and serverless remain deferred. Phase10
+physical elasticity and Phase12 production HA remain separate debt. No Phase14
+authorization is inferred.
+
 The 2026-10-26 stabilization is recorded in docs/reports/repo-wide-readiness-2026-10-26.md:
 fcc325e passes correctness but fails all six timing guards. Continued source/scan
 and contribution remediation at ee9f8da passes all 62 children/49 measured samples,

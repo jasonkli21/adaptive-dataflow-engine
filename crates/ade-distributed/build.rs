@@ -35,6 +35,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     files.sort();
     let mut hash = blake3::Hasher::new();
     hash.update(b"ade-managed-native-source-v1");
+    hash.update(&[u8::from(
+        std::env::var_os("CARGO_FEATURE_REMOTE_S3").is_some(),
+    )]);
     for file in files {
         println!("cargo:rerun-if-changed={}", file.display());
         let name = file.strip_prefix(workspace)?.to_string_lossy();

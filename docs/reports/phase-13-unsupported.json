@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "phase": 13,
+  "status": "COMPLETE_BOUNDED_REMOTE_V1",
+  "full_prd_phase13_complete": false,
+  "feature": "ade-distributed/remote-s3",
+  "default_enabled": false,
+  "entrypoints": ["ade_distributed::remote::execute", "ade_distributed::remote::execute_observed", "ade-remote", "ade-worker --remote-stage"],
+  "supported": [
+    "static_original_group_sum_count_physical_ir_v1",
+    "verified_immutable_manifest_listed_local_parquet",
+    "fixed_2_to_4_logical_producers_and_hash1_partitions",
+    "explicit_s3_compatible_signed_provider_and_private_namespace",
+    "immutable_checked_segments_exact_terminal_set_and_global_manifest",
+    "producer_process_exit_before_fresh_reader_boot_and_scratch",
+    "predeclared_reader_width_1_to_N_on_unchanged_N_partitions",
+    "bounded_read_retries_and_poisoned_ambiguous_writes",
+    "full_gather_fingerprint_and_result_count_conservation",
+    "no_partial_success_on_worker_store_source_or_budget_failure",
+    "request_object_body_metadata_deadline_and_task_state_caps",
+    "tls_default_explicit_literal_loopback_development_http",
+    "no_redirect_no_ambient_proxy_no_anonymous_or_filesystem_fallback",
+    "quiescence_capability_exact_key_gc_dry_run_default",
+    "configured_placement_prices_and_measured_request_latency_bytes",
+    "same_data_independent_oracle_2_and_4_worker_measurements"
+  ],
+  "refused_or_deferred": [
+    "leased_static_projected_sampled_or_adaptive_execution",
+    "join_arbitrary_sql_projections_dags_and_remote_sources",
+    "operator_spill_in_remote_path",
+    "in_flight_physical_worker_replacement_or_membership_change",
+    "legacy_single_final_loss_recovery_or_cost_copy_restore",
+    "coordinator_restart_adoption_or_automatic_whole_job_retry",
+    "managed_ade_batch_remote_recipes_flags_or_publication",
+    "cross_host_az_durability_or_security_acceptance",
+    "production_s3_authentication_ha_or_service_slo_claim",
+    "replicated_metadata_and_external_transactional_sinks",
+    "automatic_cost_based_remote_local_selection_or_autoscaler",
+    "provider_billed_prices_or_observed_cross_az_networking",
+    "serverless_runtime_or_unbounded_streaming",
+    "process_rss_free_disk_or_physical_network_hard_cap",
+    "automatic_gc_of_failed_crashed_or_late_write_orphans",
+    "bucket_wide_prefix_list_gc_lifecycle_or_version_reclamation"
+  ],
+  "versions": {
+    "remote_pipe": "ADEOBJ01_v1",
+    "remote_manifest_and_receipt": 1,
+    "handoff_epoch": 1,
+    "attempt": 0,
+    "legacy_control": "unchanged_ADETCP12",
+    "managed_control": "unchanged_ADEOPS01",
+    "exchange": "unchanged_v2",
+    "hash": "unchanged_v1",
+    "physical_ir": "unchanged_v1",
+    "benchmark_manifest_result_and_child": "unchanged_v1"
+  },
+  "historical_phase_boundaries": {
+    "phase_10": "PARTIAL_fixed_physical_membership",
+    "phase_12": "COMPLETE_BOUNDED_V1_full_production_HA_deferred",
+    "phase_14": "NOT_AUTHORIZED"
+  }
+}

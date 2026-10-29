@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "phase": 13,
+  "verdict": "COMPLETE_BOUNDED_REMOTE_V1",
+  "full_prd_phase13_complete": false,
+  "baseline": "474f8c92ff13ffb59c63d8fd2edd3be4ce6019bb",
+  "source": {
+    "source_commit": "ead9de6c0bbd3494b88110e50aa825f651be58cc",
+    "source_tree": "dcdedb24c5b1ab1fd8c5d3ea791e64ab9df3f3f2",
+    "source_root": "/private/tmp/ade-phase13-source-2",
+    "baseline": "474f8c92ff13ffb59c63d8fd2edd3be4ce6019bb",
+    "snapshot_git_status": "",
+    "archive_sha256": "8d44f7d6ee580c041c0728b7a287a80afd7c0683a80813e2b091f770b993ad6c",
+    "inputs_sha256": "b39273ba3761397be8ae2047e6da35eb096a44c6ac61d2a799e9f96c7f53706e",
+    "inputs": 142,
+    "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\n"
+  },
+  "g0": {
+    "status": "PASS",
+    "baseline_native_runtime": "2eb78ca479e60813d2294ef527621ca8546f8d53291a9d8ae1c5f0a2827799ed",
+    "operations_tests": 44,
+    "stdout_sha256": "a211c05c5cbe60c3709470e2b8d9fc54e379008afd66f6e16cc143862388db73"
+  },
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS"
+  },
+  "commands": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 1.059,
+      "log": "benchmarks/results/phase13/source-2/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "check",
+      "argv": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--locked"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 23.938,
+      "log": "benchmarks/results/phase13/source-2/check.log",
+      "sha256": "d59a623cc1b0081909151dc1eb786d7cb2c2bb0b7e8ade0e29ba75f92765d04e"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 26.894,
+      "log": "benchmarks/results/phase13/source-2/clippy.log",
+      "sha256": "7819386a1b2e606332777532e711202b71171f29f1c5df0627cf42e331598955"
+    },
+    {
+      "name": "build",
+      "argv": [
+        "cargo",
+        "build",
+        "--workspace",
+        "--all-features",
+        "--locked"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 31.458,
+      "log": "benchmarks/results/phase13/source-2/build.log",
+      "sha256": "a5e772b46a52b31cc913535ac34a9329e7e5152df7af55d3d9e29a6ee43e156c"
+    },
+    {
+      "name": "workspace-tests",
+      "argv": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--all-features",
+        "--locked"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 290.35,
+      "log": "benchmarks/results/phase13/source-2/workspace-tests.log",
+      "sha256": "271eddbb4071110a3c9fd3a8cdcc83fbb12175ad8dad97e65b428556d2fd6246"
+    },
+    {
+      "name": "smoke",
+      "argv": [
+        "bash",
+        "scripts/smoke.sh"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 8.615,
+      "log": "benchmarks/results/phase13/source-2/smoke.log",
+      "sha256": "8a297e4a78b23a1aacdd6870f87cb0a512ec5ba43185594693a9f572d47bc37c"
+    },
+    {
+      "name": "python-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/tests",
+        "-p",
+        "test_*.py"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 0.422,
+      "log": "benchmarks/results/phase13/source-2/python-tests.log",
+      "sha256": "6dfa462c7bc032d0aae956a43e7282cc4fbc888b9c07dfd86bf17ae1e2f29092"
+    },
+    {
+      "name": "default-dependencies",
+      "argv": [
+        "cargo",
+        "tree",
+        "-p",
+        "ade-distributed",
+        "--no-default-features",
+        "--locked"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 0.303,
+      "log": "benchmarks/results/phase13/source-2/default-dependencies.log",
+      "sha256": "1c06d216772edc79413e6e09c3b8de175441aefbe47c97358393b0060e72fe44"
+    },
+    {
+      "name": "remote-process-tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "ade-distributed",
+        "--all-features",
+        "--locked",
+        "--test",
+        "remote",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1",
+        "--skip",
+        "zz_real_service_restart"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 59.073,
+      "log": "benchmarks/results/phase13/source-2/remote-process-tests.log",
+      "sha256": "1c4e4ec7dde595a5203ffd735ca6ec473f26cae3c0819ec2f52bf17a3e644959"
+    },
+    {
+      "name": "paired-campaign",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "ade-bench",
+        "--features",
+        "remote-s3",
+        "--locked",
+        "--test",
+        "phase13",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 319.823,
+      "log": "benchmarks/results/phase13/source-2/paired-campaign.log",
+      "sha256": "f6152b035ebb329cfa3c31c9d94dbbb3cd4962d88487dc484032a395c298cb9d"
+    },
+    {
+      "name": "campaign-verifier",
+      "argv": [
+        "python3",
+        "scripts/phase13-verify.py",
+        "/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase13/source-2/campaign/samples.json",
+        "/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase13/requests.jsonl",
+        "--native-verifier",
+        "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/ade-remote",
+        "--output",
+        "/Users/jasonkli/projects/adaptive-dataflow-engine/benchmarks/results/phase13/source-2/campaign/verification.json"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": 1.661,
+      "log": "benchmarks/results/phase13/source-2/campaign-verifier.log",
+      "sha256": "6a552c6621763d02bfb9852185e1b3c084cab3c64b80701ece0c6e95931a01d1"
+    },
+    {
+      "name": "service-restart",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "ade-distributed",
+        "--all-features",
+        "--locked",
+        "--test",
+        "remote",
+        "zz_real_service_restart_refuses_lost_intermediates",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "cwd": "/private/tmp/ade-phase13-source-2",
+      "returncode": 0,
+      "elapsed_s": null,
+      "test_execution_s": 5.24,
+      "log": "benchmarks/results/phase13/source-2/service-restart.log",
+      "sha256": "a755644f2c9212d028994446c486ba06cf8a7122246aafb9641d3f491c2717e2"
+    }
+  ],
+  "participants": {
+    "ade-worker": "1037efcf78404e3d25eb9f36410f0c3d17433b97f6ceff1f12953a70bb2709c6",
+    "ade-remote": "e28a64c09f9a2bc90a8e052edb280578551ae45a9ce7935f98b2a1720fadfe1e",
+    "ade-batch": "1427ce74e54460f09d4f9240e26a1e0c96894400b93026eb8bbef55c719f9831",
+    "ade-query": "1ee714681c6796aae2fb14a1f6a0fbc9fc4b03a4001b03c5f2e0a07f76cc1ad8",
+    "ade-bench": "40ffd47b65abd0b334cc9c8b25172a9749bfe9e68795824714b9524c14c70d5e",
+    "campaign-coordinator": {
+      "path": "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/deps/phase13-69eb5dfd38ca1e00",
+      "sha256": "0cf5580b030f3374c04f57dd0d1196a3270164c2b83d51ec0373116df481dc93"
+    },
+    "remote-test-coordinator": {
+      "path": "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/deps/remote-2910ceb02206cc56",
+      "sha256": "7081c37bc387d501c9bb65f99a2607ee41ff9e9c343c5800172bb23331e5e1d0"
+    },
+    "restart-test-coordinator": {
+      "path": "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/deps/remote-2910ceb02206cc56",
+      "sha256": "7081c37bc387d501c9bb65f99a2607ee41ff9e9c343c5800172bb23331e5e1d0"
+    }
+  },
+  "native_runtime": "d929d545da6da975a8dd95396b97d90029341078afc9a6738d0d23ca6fe829cb",
+  "versions": {
+    "remote_pipe": "ADEOBJ01_v1",
+    "remote_manifest_and_receipt": 1,
+    "handoff_epoch": 1,
+    "attempt": 0,
+    "legacy_control": "unchanged_ADETCP12",
+    "managed_control": "unchanged_ADEOPS01",
+    "exchange": "unchanged_v2",
+    "hash": "unchanged_v1",
+    "physical_ir": "unchanged_v1",
+    "benchmark_manifest_result_and_child": "unchanged_v1"
+  },
+  "results": {
+    "workspace_rust_passed": 251,
+    "workspace_failed": 0,
+    "workspace_ignored": 9,
+    "python_passed": 22,
+    "remote_unit_passed": 8,
+    "external_service_integration_passed": 7,
+    "campaign_total": 32,
+    "campaign_measured": 24,
+    "fresh_coordinator_pids": 32,
+    "copied_artifact_attacks_refused": 8
+  },
+  "service": {
+    "fixture": "Moto 5.1.16",
+    "python": "3.9",
+    "requests": "2.32.5",
+    "topology": "separate process, literal loopback HTTP explicitly enabled",
+    "durability": "worker-process survival observed; service/host/AZ durability not claimed",
+    "authentication": "client signed; fixture is not production authentication proof"
+  },
+  "all_measured_samples_and_cost": [
+    {
+      "distribution": "uniform",
+      "workers": 2,
+      "local_ns": {
+        "median": 481508458,
+        "min": 432729541,
+        "max": 618862792,
+        "all": [
+          432729541,
+          481508458,
+          618862792
+        ]
+      },
+      "remote_ns": {
+        "median": 2901534792,
+        "min": 2627371792,
+        "max": 2957454459,
+        "all": [
+          2957454459,
+          2901534792,
+          2627371792
+        ]
+      },
+      "remote_over_local": 6.02592694643798,
+      "estimated_nano_usd_all": [
+        600941,
+        600941,
+        600941
+      ],
+      "object_request_counts_all": [
+        {
+          "put": 23,
+          "head": 52,
+          "get": 52,
+          "delete": 1
+        },
+        {
+          "put": 23,
+          "head": 52,
+          "get": 52,
+          "delete": 1
+        },
+        {
+          "put": 23,
+          "head": 52,
+          "get": 52,
+          "delete": 1
+        }
+      ],
+      "object_read_bytes_all": [
+        444341,
+        444341,
+        444341
+      ],
+      "object_write_bytes_all": [
+        216884,
+        216884,
+        216884
+      ],
+      "cleanup_ns_all": [
+        250343458,
+        261580292,
+        324661875
+      ]
+    },
+    {
+      "distribution": "uniform",
+      "workers": 4,
+      "local_ns": {
+        "median": 445487917,
+        "min": 405025458,
+        "max": 467068833,
+        "all": [
+          467068833,
+          445487917,
+          405025458
+        ]
+      },
+      "remote_ns": {
+        "median": 3616287875,
+        "min": 3138577708,
+        "max": 5449218750,
+        "all": [
+          5449218750,
+          3616287875,
+          3138577708
+        ]
+      },
+      "remote_over_local": 8.117589135419806,
+      "estimated_nano_usd_all": [
+        1613303,
+        1613303,
+        1613303
+      ],
+      "object_request_counts_all": [
+        {
+          "put": 83,
+          "head": 230,
+          "get": 230,
+          "delete": 1
+        },
+        {
+          "put": 83,
+          "head": 230,
+          "get": 230,
+          "delete": 1
+        },
+        {
+          "put": 83,
+          "head": 230,
+          "get": 230,
+          "delete": 1
+        }
+      ],
+      "object_read_bytes_all": [
+        1014303,
+        1014303,
+        1014303
+      ],
+      "object_write_bytes_all": [
+        465192,
+        465192,
+        465192
+      ],
+      "cleanup_ns_all": [
+        643108000,
+        719313416,
+        444207791
+      ]
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 2,
+      "local_ns": {
+        "median": 327746875,
+        "min": 327714416,
+        "max": 343740334,
+        "all": [
+          327746875,
+          327714416,
+          343740334
+        ]
+      },
+      "remote_ns": {
+        "median": 2125989333,
+        "min": 2003298041,
+        "max": 2127917916,
+        "all": [
+          2003298041,
+          2127917916,
+          2125989333
+        ]
+      },
+      "remote_over_local": 6.486680713584225,
+      "estimated_nano_usd_all": [
+        145745,
+        145745,
+        145745
+      ],
+      "object_request_counts_all": [
+        {
+          "put": 11,
+          "head": 28,
+          "get": 28,
+          "delete": 1
+        },
+        {
+          "put": 11,
+          "head": 28,
+          "get": 28,
+          "delete": 1
+        },
+        {
+          "put": 11,
+          "head": 28,
+          "get": 28,
+          "delete": 1
+        }
+      ],
+      "object_read_bytes_all": [
+        68345,
+        68345,
+        68345
+      ],
+      "object_write_bytes_all": [
+        30292,
+        30292,
+        30292
+      ],
+      "cleanup_ns_all": [
+        202003875,
+        199667625,
+        201792083
+      ]
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 4,
+      "local_ns": {
+        "median": 314629834,
+        "min": 308028458,
+        "max": 316958042,
+        "all": [
+          316958042,
+          308028458,
+          314629834
+        ]
+      },
+      "remote_ns": {
+        "median": 2743270916,
+        "min": 2735343375,
+        "max": 3198059708,
+        "all": [
+          3198059708,
+          2735343375,
+          2743270916
+        ]
+      },
+      "remote_over_local": 8.719042568607781,
+      "estimated_nano_usd_all": [
+        448479,
+        448479,
+        448479
+      ],
+      "object_request_counts_all": [
+        {
+          "put": 35,
+          "head": 134,
+          "get": 134,
+          "delete": 1
+        },
+        {
+          "put": 35,
+          "head": 134,
+          "get": 134,
+          "delete": 1
+        },
+        {
+          "put": 35,
+          "head": 134,
+          "get": 134,
+          "delete": 1
+        }
+      ],
+      "object_read_bytes_all": [
+        166279,
+        166279,
+        166279
+      ],
+      "object_write_bytes_all": [
+        52364,
+        52364,
+        52364
+      ],
+      "cleanup_ns_all": [
+        293640375,
+        292191417,
+        285336292
+      ]
+    }
+  ],
+  "all_warmups": [
+    {
+      "distribution": "uniform",
+      "workers": 2,
+      "mode": "local_materialized",
+      "coordinator_pid": 46568,
+      "native_wall_ns": 517556583
+    },
+    {
+      "distribution": "uniform",
+      "workers": 2,
+      "mode": "remote_object",
+      "coordinator_pid": 46571,
+      "native_wall_ns": 2654842458
+    },
+    {
+      "distribution": "uniform",
+      "workers": 4,
+      "mode": "local_materialized",
+      "coordinator_pid": 46615,
+      "native_wall_ns": 413890583
+    },
+    {
+      "distribution": "uniform",
+      "workers": 4,
+      "mode": "remote_object",
+      "coordinator_pid": 46620,
+      "native_wall_ns": 5037135167
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 2,
+      "mode": "local_materialized",
+      "coordinator_pid": 46704,
+      "native_wall_ns": 328102500
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 2,
+      "mode": "remote_object",
+      "coordinator_pid": 46707,
+      "native_wall_ns": 2004541417
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 4,
+      "mode": "local_materialized",
+      "coordinator_pid": 46740,
+      "native_wall_ns": 304430750
+    },
+    {
+      "distribution": "hot-key",
+      "workers": 4,
+      "mode": "remote_object",
+      "coordinator_pid": 46745,
+      "native_wall_ns": 2863715167
+    }
+  ],
+  "evidence_attacks": [
+    {
+      "attack": "best-only",
+      "outcome": "REFUSED",
+      "reason": "all 32 warmup/measured executions required"
+    },
+    {
+      "attack": "duplicate-slot",
+      "outcome": "REFUSED",
+      "reason": "fresh coordinator per sample required"
+    },
+    {
+      "attack": "reused-coordinator",
+      "outcome": "REFUSED",
+      "reason": "fresh coordinator per sample required"
+    },
+    {
+      "attack": "oracle-disabled",
+      "outcome": "REFUSED",
+      "reason": "independent oracle required"
+    },
+    {
+      "attack": "wrong-source",
+      "outcome": "REFUSED",
+      "reason": "source/plan comparison mismatch"
+    },
+    {
+      "attack": "changed-price",
+      "outcome": "REFUSED",
+      "reason": "predeclared prices"
+    },
+    {
+      "attack": "counter-forgery",
+      "outcome": "REFUSED",
+      "reason": "actual HTTP attempt count"
+    },
+    {
+      "attack": "removed-traffic",
+      "outcome": "REFUSED",
+      "reason": "uncontrolled/faulted cost sample"
+    }
+  ],
+  "input_equivalence": {
+    "status": "PASS",
+    "files": 142,
+    "source": "ead9de6c0bbd3494b88110e50aa825f651be58cc",
+    "all_final_compiler_test_script_inputs_equal": true
+  },
+  "fixture_teardown": {
+    "status": "PASS",
+    "no_test_listeners": true,
+    "ports": [
+      18913,
+      18914
+    ],
+    "lsof_returncode": 1
+  },
+  "raw_bundle": {
+    "path": "benchmarks/results/phase13-bundle.tar.gz",
+    "sha256": "16ed3a08f7707e5fe4c6bda1629689e393b5aed7bf1d3e920ecd7775a0b269d2",
+    "bytes": 40649832,
+    "inner_inventory_path": "phase13/SHA256SUMS.json",
+    "inner_inventory_sha256": "1e1fee4bd87e4d048737fe7179886f786ef441d0b035863bb5c4675e822f4d7a"
+  },
+  "unverified": [
+    "Linux/CI and MSRV 1.94 execution",
+    "real authenticated TLS cloud service",
+    "cross-host/AZ survival",
+    "provider billing",
+    "independent host/day repeatability",
+    "media/power-loss durability",
+    "production security and HA",
+    "automatic failed-orphan cleanup"
+  ],
+  "historical_evidence_unchanged": true,
+  "subagents_used": false,
+  "pushed": false,
+  "finalization": {
+    "initial_cached_diff_check": {
+      "exit_code": 2,
+      "reason": "Four trailing-space Markdown lines in supplied plan (5-8), removed."
+    },
+    "compiler_inputs_unchanged": true,
+    "note": "Final staged check is rerun before commit; raw acceptance bundle remains immutable.",
+    "final_cached_diff_check": {
+      "exit_code": 0,
+      "log": "benchmarks/results/phase13-finalization/staged-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "archive_path_and_payload_check": {
+      "status": "PASS",
+      "portable_container": true,
+      "payload_files_verified": 142,
+      "initial_check_exit": 1,
+      "initial_reason": "macOS AppleDouble metadata entry ._phase13; no parent traversal or links. Removed from final container.",
+      "preserved_original_container": "benchmarks/results/phase13-bundle-with-macos-metadata.tar.gz",
+      "preserved_original_sha256": "92cf1f0eb14236abca3816b8c19559e96168d94725a98586fd3cc10fd47474c4"
+    }
+  }
+}

@@ -790,3 +790,47 @@ fn durable_cancel_interrupts_real_preflight_and_postflight_hash_reads() {
         eprintln!("ADE_NATIVE_CANCEL_HASH_WITNESS {stage}");
     }
 }
+
+#[test]
+fn independent_g0_changed_coordinator_never_replays_claimed_or_staged_attempt() {
+    for stage in ["prepared", "staged"] {
+        let (dir, mut recipe) = support::fixture(false);
+        let root = support::state_path(&dir);
+        let mut store = Store::init(&root, Limits::default()).unwrap();
+        let (_workers, endpoints) =
+            support::managed_workers(&dir.path().canonicalize().unwrap(), store.id(), 2);
+        recipe.workers = endpoints;
+        recipe.max_attempts = 3;
+        let job = store.submit("g0-active-drift", recipe).unwrap();
+        drop(store);
+        let mut child = coordinator(&root, job.id, Some(stage));
+        killed_at(&mut child, stage);
+        let before = support::open_store(&root).status(job.id).unwrap();
+        assert_eq!(before.attempt, 1);
+        let changed = Command::new(env!("CARGO_BIN_EXE_ade-batch"))
+            .arg("--state")
+            .arg(&root)
+            .arg("run")
+            .arg(job.id.to_string())
+            .env("ADE_OPS_COMPAT_OVERRIDE", "independent-g0-drift")
+            .output()
+            .unwrap();
+        assert!(!changed.status.success());
+        let after = support::open_store(&root).status(job.id).unwrap();
+        assert_eq!(after.state, JobState::NeedsOperator);
+        assert_eq!(after.attempt, before.attempt);
+        assert_eq!(after.engine_job, before.engine_job);
+        assert_eq!(after.instance, before.instance);
+        assert!(
+            !root
+                .join("jobs")
+                .join(job.id.to_string())
+                .join("COMMITTED.json")
+                .exists()
+        );
+        let again = runner::run(&root, job.id).unwrap();
+        assert_eq!(again.state, JobState::NeedsOperator);
+        assert_eq!(again.attempt, 1);
+        eprintln!("INDEPENDENT_G0 {stage} -> NEEDS_OPERATOR; attempt=1; no replay/output");
+    }
+}

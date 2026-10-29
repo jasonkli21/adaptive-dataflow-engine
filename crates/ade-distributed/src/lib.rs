@@ -26,6 +26,8 @@ pub mod partition;
 mod probe;
 pub mod protocol;
 pub mod recovery;
+#[cfg(feature = "remote-s3")]
+pub mod remote;
 pub mod scheduler;
 pub mod topology;
 pub mod worker;

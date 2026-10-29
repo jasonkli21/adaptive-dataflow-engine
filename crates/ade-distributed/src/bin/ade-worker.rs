@@ -7,6 +7,15 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "remote-s3")]
+    if args.len() == 3 && args[1] == "--remote-stage" {
+        ade_distributed::remote::serve(
+            std::path::Path::new(&args[2]),
+            &mut std::io::stdin().lock(),
+            &mut std::io::stdout().lock(),
+        )?;
+        return Ok(());
+    }
     if args.len() == 7 && args[1] == "--managed" {
         worker::serve_managed(
             WorkerId(args[2].parse()?),

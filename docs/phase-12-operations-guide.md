@@ -172,3 +172,12 @@ Build feature-matched worker binaries **before** process tests. Fault hooks are
 feature gated and off by default. Reached-stage witnesses distinguish real native
 fault tests from metadata/publication primitive fixtures. See the implementation
 report and ignored local `benchmarks/results/phase12-completion/` evidence bundle.
+
+## Phase 13 remains a separate execution surface
+
+The opt-in [remote-object path](phase-13-operations-guide.md) is a separate API/CLI.
+`ade-batch` does not accept remote provider/exchange fields or remote execution flags.
+Its local fencing, publication and supported recipes retain their existing contracts.
+Native runtime compatibility also pins the `remote-s3` build feature; pending or
+in-flight registrations require their matching builds. Do not toggle features to
+adopt old work. Valid committed-marker reconciliation retains its existing rules.

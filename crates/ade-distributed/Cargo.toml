@@ -7,6 +7,7 @@ publish = false
 [features]
 default = []
 research-hooks = []
+remote-s3 = ["object_store/aws", "object_store/tls-webpki-roots", "dep:url", "dep:reqwest", "dep:async-trait", "dep:http-body-util"]
 [lints]
 workspace = true
 [dependencies]
@@ -25,8 +26,16 @@ uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["rt", "time"] }
 futures = "0.3"
 rayon-core = "=1.13.0"
+url = { version = "2", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"], optional = true }
+async-trait = { version = "0.1", optional = true }
+http-body-util = { version = "0.1", optional = true }
 [dev-dependencies]
 async-trait = "0.1"
 tokio = { version = "1", features = ["sync"] }
 [build-dependencies]
 blake3 = "1"
+[[bin]]
+name = "ade-remote"
+path = "src/bin/ade-remote.rs"
+required-features = ["remote-s3"]

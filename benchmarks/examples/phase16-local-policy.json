@@ -1,0 +1,65 @@
+{
+  "constraints": {
+    "both_loss_ppm": 1,
+    "failure_ppm": 1000,
+    "local_loss_ppm": 100000,
+    "max_loss_ppm": 1000000,
+    "min_copies": 1,
+    "recovery_slo_ms": 86400000,
+    "remote_loss_ppm": 100,
+    "require_remote": false,
+    "retention_ms": 1000
+  },
+  "cooldown_ms": 1000,
+  "hysteresis_nano": 100,
+  "limits": {
+    "io_timeout_ms": 1000,
+    "object_bytes": 1048576,
+    "remote_objects": 8192,
+    "remote_write_bytes": 268435456,
+    "requests": 65536,
+    "response_bytes": 68719476736,
+    "trace_bytes": 67108864
+  },
+  "max_depth": 2,
+  "max_ms": 30000,
+  "max_records": 10000,
+  "min_ms": 1000,
+  "min_records": 1000,
+  "min_samples": 2,
+  "mode": "adaptive",
+  "placements": [
+    "local"
+  ],
+  "prices": {
+    "capacity_byte_ms": 0,
+    "compute_ms": 1,
+    "local_read_byte": 0,
+    "local_write_byte": 1,
+    "remote_read_byte": 0,
+    "remote_request": 3,
+    "remote_write_byte": 5,
+    "replay_record": 1
+  },
+  "recovery": {
+    "accept_duplicate_and_conflicting_outputs": false,
+    "allow_replay": false,
+    "original_starts": [
+      {
+        "partition": 0,
+        "offset": 0
+      },
+      {
+        "partition": 1,
+        "offset": 0
+      }
+    ],
+    "replay_certificate_blake3": null,
+    "replay_estimated_ms": 1000,
+    "restore_estimated_ms": 100,
+    "trusted_immutable_history": true
+  },
+  "remote": null,
+  "static_placement": "local",
+  "version": 1
+}

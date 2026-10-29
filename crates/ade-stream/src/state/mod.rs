@@ -180,6 +180,8 @@ pub struct State {
     input_pending: bool,
     pending_close: Option<Entry>,
     pub generation: Option<checkpoint::Pointer>,
+    #[cfg(feature = "adaptive-checkpoint")]
+    pub adaptive: Option<Box<crate::adaptive::Adaptive>>,
     last_records: u64,
     last_ms: u64,
     pub test_pause_at: Option<String>,
@@ -195,7 +197,20 @@ impl State {
         token: CancellationToken,
         restore: bool,
     ) -> Result<(Self, Option<Progress>)> {
+        Self::open_version(config, session, token, restore, false)
+    }
+    fn open_version(
+        config: Config,
+        session: Uuid,
+        token: CancellationToken,
+        restore: bool,
+        v2: bool,
+    ) -> Result<(Self, Option<Progress>)> {
         config.validate()?;
+        check(
+            v2 || !config.checkpoint_root.join("CURRENT2").exists(),
+            "v2 root requires adaptive mode",
+        )?;
         let lock = checkpoint::Lock::acquire(&config)?;
         let loaded = if restore {
             Some(checkpoint::load(&config, &token)?)
@@ -243,6 +258,8 @@ impl State {
                 input_pending: false,
                 pending_close: None,
                 generation,
+                #[cfg(feature = "adaptive-checkpoint")]
+                adaptive: None,
                 last_records,
                 last_ms: 0,
                 test_pause_at: None,
@@ -337,6 +354,13 @@ impl State {
     #[must_use]
     pub fn due(&self, p: &Progress, ms: u64) -> bool {
         let changed = p.forwarded_records != self.last_records;
+        #[cfg(feature = "adaptive-checkpoint")]
+        if let Some(a) = &self.adaptive {
+            return a.due(
+                p.forwarded_records.saturating_sub(self.last_records),
+                ms.saturating_sub(self.last_ms),
+            );
+        }
         changed
             && (p.forwarded_records.saturating_sub(self.last_records)
                 >= self.config.checkpoint_every_records
@@ -360,7 +384,20 @@ impl State {
                     .is_none(),
             "checkpoint requires quiescent cut",
         )?;
+        #[cfg(feature = "adaptive-checkpoint")]
+        if self.adaptive.is_some() {
+            check(p.forwarded_records > self.last_records, "v2 unchanged cut")?;
+        }
         self.failed = true;
+        #[cfg(feature = "adaptive-checkpoint")]
+        let pointer = if let Some(mut a) = self.adaptive.take() {
+            let result = crate::adaptive::snapshot::publish(self, &mut a, p, ms, hook);
+            self.adaptive = Some(a);
+            result?
+        } else {
+            checkpoint::publish(self, p, hook)?
+        };
+        #[cfg(not(feature = "adaptive-checkpoint"))]
         let pointer = checkpoint::publish(self, p, hook)?;
         self.failed = false;
         self.last_records = p.forwarded_records;
@@ -390,5 +427,203 @@ impl Engine {
         }
         engine.state = Some(state);
         Ok(engine)
+    }
+}
+
+#[cfg(feature = "adaptive-checkpoint")]
+impl Engine {
+    /// Open a new v2 job or explicitly recover a completely verified selected copy.
+    /// The CLI verifies live Kafka origin/restore ranges before assignment/output.
+    /// # Errors
+    /// Refuses mixed roots, unsafe policy, corrupt generations and unconsented replay.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::needless_pass_by_value,
+        reason = "Pre-output admission transaction"
+    )]
+    pub fn adaptive_stateful(
+        config: Config,
+        policy: crate::adaptive::Policy,
+        session: Uuid,
+        token: CancellationToken,
+        recover: bool,
+        from: crate::adaptive::policy::Placement,
+        certificate: Option<crate::adaptive::snapshot::Selector>,
+    ) -> Result<(Self, String)> {
+        use crate::adaptive::{
+            Adaptive,
+            policy::{Observation, Placement},
+            snapshot,
+        };
+        policy.validate_config(&config)?;
+        #[cfg(feature = "remote-checkpoint")]
+        if (!recover && policy.remote.is_some())
+            || (recover && from == crate::adaptive::policy::Placement::Remote)
+        {
+            crate::adaptive::remote::validate_environment()?;
+        }
+
+        check(
+            !config.checkpoint_root.join("CURRENT").exists(),
+            "v1/v2 mixed root refused",
+        )?;
+        let mut disk_loss =
+            certificate.is_some() && !config.checkpoint_root.join("CURRENT2").exists();
+        check(
+            recover || (!config.checkpoint_root.join("CURRENT2").exists() && certificate.is_none()),
+            "existing v2 cut requires explicit recovery",
+        )?;
+        let selector = if recover {
+            let selected = if let Some(s) = certificate {
+                check(
+                    s.version == 2
+                        && snapshot::hash(&snapshot::encode(&s.certificate)?)
+                            == s.certificate_blake3,
+                    "certificate hash/version",
+                )?;
+                if config.checkpoint_root.join("CURRENT2").exists() {
+                    check(
+                        snapshot::selection(&config)?.certificate_blake3 == s.certificate_blake3,
+                        "newer/different selected certificate",
+                    )?;
+                }
+                s
+            } else {
+                snapshot::selection(&config)?
+            };
+            Some(selected)
+        } else {
+            None
+        };
+        if selector
+            .as_ref()
+            .is_some_and(|s| s.certificate.placement.remote())
+            && !config.checkpoint_root.join("REMOTE-LEDGER").exists()
+        {
+            disk_loss = true;
+        }
+        let (state, _) = State::open_version(config.clone(), session, token.clone(), false, true)?;
+        let mut engine = Self::new(config.source.clone(), session)?;
+        engine.state = Some(state);
+        let mut a = Adaptive {
+            policy,
+            current: None,
+            current_hash: None,
+            decision: None,
+            observation: Observation::default(),
+            last_action: None,
+            last_metrics: snapshot::Metrics::default(),
+            disk_loss_restore: disk_loss,
+            selected_copy: from,
+            recovery_decision: None,
+            #[cfg(feature = "remote-checkpoint")]
+            client: None,
+        };
+        let mut recovery = "fresh".to_string();
+        if let Some(s) = selector {
+            #[cfg(feature = "remote-checkpoint")]
+            if from == Placement::Remote {
+                let remote = s
+                    .certificate
+                    .remote
+                    .as_ref()
+                    .ok_or(crate::Error::State("selected cut has no remote copy"))?;
+                a.client = Some(crate::adaptive::remote::Client::new(
+                    remote,
+                    &a.policy.limits,
+                    None,
+                    token.clone(),
+                )?);
+                let cert_bytes = snapshot::encode(&s.certificate)?;
+                a.client
+                    .as_mut()
+                    .ok_or(crate::Error::State("remote client"))?
+                    .fetch(
+                        &format!("{}/certificate.json", s.certificate.manifest.generation),
+                        cert_bytes.len() as u64,
+                        &s.certificate_blake3,
+                    )?;
+            }
+            let manifest = snapshot::verify(&mut a, &config, &s.certificate, from, &token)?;
+            let choice = crate::adaptive::policy::recovery(
+                &a.policy,
+                &s.certificate_blake3,
+                manifest.shards.iter().map(|s| s.bytes).sum(),
+                manifest.progress.forwarded_records,
+                from,
+            )?;
+            let replay = choice.chosen == "full_replay_explicit_conflict_consent";
+            a.recovery_decision = Some(choice);
+            if replay {
+                recovery = "full_replay_explicit_conflict_consent".into();
+            } else {
+                snapshot::hydrate(
+                    &mut a,
+                    engine.state.as_mut().ok_or(crate::Error::State("state"))?,
+                    &manifest,
+                    from,
+                )?;
+                let mut p = manifest.progress;
+                p.session = session;
+                for cursor in p.partitions.values_mut() {
+                    cursor.start = cursor.next_offset_suggestion;
+                    cursor.seen = cursor.forwarded;
+                }
+                let state = engine.state.as_mut().ok_or(crate::Error::State("state"))?;
+                state.last_records = p.forwarded_records;
+                state.closed_window_late = manifest.closed_window_late;
+                for start in &mut engine.config.starts {
+                    start.offset = p.partitions[&start.partition].next_offset_suggestion;
+                }
+                engine.progress = p;
+                recovery = "checkpoint_restore".into();
+            }
+            engine
+                .state
+                .as_mut()
+                .ok_or(crate::Error::State("state"))?
+                .generation = Some(checkpoint::Pointer {
+                version: 2,
+                generation: s.certificate.manifest.generation,
+                manifest_blake3: s.certificate.manifest.blake3.clone(),
+            });
+            a.current = Some(s.certificate);
+            a.current_hash = Some(s.certificate_blake3);
+            // A clean disk-loss root receives only the trusted selector, never local shard copies.
+            if disk_loss {
+                snapshot::install_certificate(
+                    &config,
+                    &snapshot::Selector {
+                        version: 2,
+                        certificate: a
+                            .current
+                            .clone()
+                            .ok_or(crate::Error::State("certificate"))?,
+                        certificate_blake3: a
+                            .current_hash
+                            .clone()
+                            .ok_or(crate::Error::State("certificate"))?,
+                    },
+                )?;
+            }
+        }
+        #[cfg(feature = "remote-checkpoint")]
+        if !recover && let Some(remote) = a.policy.remote.as_ref() {
+            let mut client = crate::adaptive::remote::Client::new(
+                remote,
+                &a.policy.limits,
+                Some(&config.checkpoint_root),
+                token,
+            )?;
+            client.probe()?;
+            a.client = Some(client);
+        }
+        engine
+            .state
+            .as_mut()
+            .ok_or(crate::Error::State("state"))?
+            .adaptive = Some(Box::new(a));
+        Ok((engine, recovery))
     }
 }

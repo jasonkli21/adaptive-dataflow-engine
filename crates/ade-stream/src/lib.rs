@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use uuid::Uuid;
 
+#[cfg(feature = "adaptive-checkpoint")]
+pub mod adaptive;
 #[cfg(feature = "kafka")]
 pub mod kafka;
 #[cfg(feature = "kafka")]

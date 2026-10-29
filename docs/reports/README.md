@@ -36,3 +36,9 @@ Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke 
 
 - [Phase 12](phase-12-implementation-report.md) — accepted local durable operations; production HA deferred.
 - [Phase 13](phase-13-implementation-report.md) — COMPLETE_BOUNDED_REMOTE_V1; dedicated remote-object aggregate executor, separate S3 fixture and process turnover. Review remediation and evidence-access limits are recorded in [the addendum](phase-13-review-remediation-evidence.json).
+
+## Bounded streaming state and adaptation
+
+- [Phase14](phase-14-implementation-report.md) — bounded Kafka progress and timers.
+- [Phase15](phase-15-implementation-report.md) and [review follow-up](phase-15-review-remediation-2026-10-29.md) — bounded keyed state, fixed local checkpoints and trace-relative replay semantics.
+- [Phase16](phase-16-implementation-report.md) — COMPLETE_BOUNDED_ADAPTIVE_STATE_V1; physical incremental snapshots, explicit verified S3 copies and guarded adaptive recovery.

@@ -20,7 +20,7 @@ fn stderr_sink() -> Result<Nonblocking<std::fs::File>> {
 fn execute() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     ade_stream::require(
-        !args.is_empty() && args.len() <= 8,
+        !args.is_empty() && args.len() <= 20,
         "usage: ade-state-stream CONFIG [--restore] [--test-stop-records N | --test-stop-ms N] [--test-pause-at POINT]",
     )?;
     let fd = rustix::fs::open(
@@ -44,12 +44,56 @@ fn execute() -> Result<()> {
         .read_to_end(&mut bytes)
         .map_err(|_| Error::Admission("config read"))?;
     let mut config = Config::parse(&bytes)?;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut policy_path = None;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut recover = false;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut copy = ade_stream::adaptive::policy::Placement::Local;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut copy_seen = false;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut certificate_path = None;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut certificate_hash = None;
     let mut restore = false;
     let mut stop = Stop::default();
     let mut pause = None;
     let mut index = 1;
     while index < args.len() {
         match args[index].as_str() {
+            #[cfg(feature = "adaptive-checkpoint")]
+            "--adaptive-policy" | "--certificate" | "--certificate-blake3" => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or(Error::Admission("adaptive CLI value"))?
+                    .clone();
+                let target = match args[index].as_str() {
+                    "--adaptive-policy" => &mut policy_path,
+                    "--certificate" => &mut certificate_path,
+                    _ => &mut certificate_hash,
+                };
+                ade_stream::require(target.is_none(), "duplicate adaptive option")?;
+                *target = Some(value);
+                index += 2;
+            }
+            #[cfg(feature = "adaptive-checkpoint")]
+            "--recover" => {
+                ade_stream::require(!recover, "duplicate recover")?;
+                recover = true;
+                index += 1;
+            }
+            #[cfg(feature = "adaptive-checkpoint")]
+            "--restore-copy" => {
+                ade_stream::require(!copy_seen, "duplicate restore copy")?;
+                copy_seen = true;
+                copy = match args.get(index + 1).map(String::as_str) {
+                    Some("local") => ade_stream::adaptive::policy::Placement::Local,
+                    Some("remote") => ade_stream::adaptive::policy::Placement::Remote,
+                    _ => return Err(Error::Admission("explicit restore copy")),
+                };
+                index += 2;
+            }
             "--restore" => {
                 ade_stream::require(!restore, "duplicate restore")?;
                 restore = true;
@@ -84,20 +128,101 @@ fn execute() -> Result<()> {
     ctrlc::set_handler(move || signal.cancel()).map_err(|_| Error::Admission("signal handler"))?;
     let clock = MonotonicClock::default();
     let session = uuid::Uuid::new_v4();
+    #[cfg(feature = "adaptive-checkpoint")]
+    let (mut engine, recovery) = if let Some(path) = policy_path {
+        ade_stream::require(!restore, "v2 uses --recover, never v1 --restore")?;
+        let policy = ade_stream::adaptive::Policy::parse(&read_adaptive_file(&path, 16384)?)?;
+        let certificate = if let Some(path) = certificate_path {
+            ade_stream::require(recover, "certificate requires recover")?;
+            let bytes = read_adaptive_file(&path, 32768)?;
+            let expected = certificate_hash.ok_or(Error::Admission(
+                "certificate requires operator-retained BLAKE3",
+            ))?;
+            ade_stream::require(
+                ade_stream::adaptive::snapshot::digest(&expected)
+                    && ade_stream::adaptive::snapshot::hash(&bytes) == expected,
+                "operator certificate BLAKE3",
+            )?;
+            let cert = ade_stream::adaptive::snapshot::json(&bytes)?;
+            Some(ade_stream::adaptive::snapshot::Selector {
+                version: 2,
+                certificate: cert,
+                certificate_blake3: expected,
+            })
+        } else {
+            ade_stream::require(
+                certificate_hash.is_none(),
+                "certificate hash requires certificate",
+            )?;
+            None
+        };
+        Engine::adaptive_stateful(
+            config.clone(),
+            policy,
+            session,
+            token.clone(),
+            recover,
+            copy,
+            certificate,
+        )?
+    } else {
+        ade_stream::require(
+            !recover
+                && certificate_path.is_none()
+                && certificate_hash.is_none()
+                && copy == ade_stream::adaptive::policy::Placement::Local,
+            "adaptive options require policy",
+        )?;
+        (
+            Engine::stateful(config.clone(), session, token.clone(), restore)?,
+            if restore { "legacy_restore" } else { "fresh" }.into(),
+        )
+    };
+    #[cfg(not(feature = "adaptive-checkpoint"))]
     let mut engine = Engine::stateful(config.clone(), session, token.clone(), restore)?;
-    if restore {
+    if restore || engine.progress.forwarded_records > 0 {
         for start in &mut config.source.starts {
             start.offset = engine.progress.partitions[&start.partition].next_offset_suggestion;
         }
     }
     engine.state.as_mut().expect("stateful").test_pause_at = pause;
-    let mut diagnostics = stderr_sink()?;
+    let diagnostics = stderr_sink()?;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let mut diagnostics = ade_stream::runtime::Limited {
+        inner: diagnostics,
+        remaining: engine
+            .state
+            .as_ref()
+            .and_then(|s| s.adaptive.as_ref())
+            .map_or(u64::MAX, |a| a.policy.limits.trace_bytes),
+    };
+    #[cfg(not(feature = "adaptive-checkpoint"))]
+    let mut diagnostics = diagnostics;
+    #[cfg(feature = "adaptive-checkpoint")]
+    let origin = engine
+        .state
+        .as_ref()
+        .and_then(|s| s.adaptive.as_ref())
+        .map(|a| a.policy.recovery.original_starts.clone());
     let mut source = KafkaSource::connect(config.source.clone(), session, &engine.progress)?;
     ade_stream::require(
         source.partition_inventory() == config.topic_partitions,
         "topic inventory differs",
     )?;
     source.enable_checkpoint_control()?;
+    #[cfg(feature = "adaptive-checkpoint")]
+    if let Some(origin) = origin
+        && recovery == "full_replay_explicit_conflict_consent"
+    {
+        source.verify_original_starts(&origin)?;
+    }
+    #[cfg(feature = "adaptive-checkpoint")]
+    if engine.state.as_ref().is_some_and(|s| s.adaptive.is_some()) {
+        trace(
+            &mut diagnostics,
+            &serde_json::json!({"type":"recovery_decision","version":1,"path":recovery,"session":session,"progress":engine.progress,"model":engine.state.as_ref().and_then(|s|s.adaptive.as_ref()).and_then(|a|a.recovery_decision.as_ref()),"estimated_inputs":engine.state.as_ref().and_then(|s|s.adaptive.as_ref()).map(|a|&a.policy.recovery),"certificate_blake3":engine.state.as_ref().and_then(|s|s.adaptive.as_ref()).and_then(|a|a.current_hash.as_ref())}),
+        )?;
+    }
     token.check().map_err(|_| Error::Cancelled)?;
     trace(
         &mut diagnostics,
@@ -152,4 +277,32 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(feature = "adaptive-checkpoint")]
+fn read_adaptive_file(path: &str, cap: u64) -> Result<Vec<u8>> {
+    use std::os::unix::fs::MetadataExt;
+    let fd = rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|_| Error::Admission("adaptive regular descriptor"))?;
+    let file = std::fs::File::from(fd);
+    let m = file
+        .metadata()
+        .map_err(|_| Error::Admission("descriptor metadata"))?;
+    ade_stream::require(
+        m.is_file() && m.nlink() == 1 && m.len() <= cap,
+        "adaptive descriptor size/link/type",
+    )?;
+    let mut bytes = Vec::new();
+    file.take(cap + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Error::Admission("descriptor read"))?;
+    ade_stream::require(bytes.len() as u64 <= cap, "descriptor cap")?;
+    Ok(bytes)
 }

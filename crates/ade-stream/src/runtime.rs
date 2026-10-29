@@ -10,6 +10,21 @@ pub trait Sink {
     /// Returns sink failure; Ok(0) means temporary backpressure.
     fn try_write(&mut self, remaining: &[u8]) -> Result<usize>;
 }
+/// Finite lifetime diagnostics budget for the opt-in adaptive runtime.
+pub struct Limited<S: Sink> {
+    pub inner: S,
+    pub remaining: u64,
+}
+impl<S: Sink> Sink for Limited<S> {
+    fn try_write(&mut self, b: &[u8]) -> Result<usize> {
+        if b.len() as u64 > self.remaining {
+            return Err(Error::Sink);
+        }
+        let n = self.inner.try_write(b)?;
+        self.remaining = self.remaining.checked_sub(n as u64).ok_or(Error::Sink)?;
+        Ok(n)
+    }
+}
 /// Safe nonblocking FD wrapper. Flags restored on teardown.
 pub struct Nonblocking<W: Write + std::os::fd::AsFd> {
     writer: W,
@@ -140,7 +155,7 @@ pub fn run(
                     source.verify(&engine.progress)?;
                     let pause = state.test_pause_at.clone();
                     let pointer = state.checkpoint(&engine.progress,clock.now_ms(), &mut |point| {
-                    if point=="generation_synced" {source.verify(&engine.progress)?;}
+                    if point=="generation_synced" || point=="before_selector" {source.verify(&engine.progress)?;}
                     trace(diagnostics,&serde_json::json!({"type":"checkpoint_step","point":point,"progress":engine.progress}))?;
                     if pause.as_deref()==Some(point) {
                         let mut last_pause=clock.now_ms();
@@ -155,6 +170,20 @@ pub fn run(
                     }
                     Ok(())
                 })?;
+                    #[cfg(feature = "adaptive-checkpoint")]
+                    if let Some(a) = &state.adaptive {
+                        trace(
+                            diagnostics,
+                            &serde_json::json!({"type":"adaptive_decision","decision":a.decision,"metrics":a.last_metrics,"certificate":a.current,"certificate_blake3":a.current_hash}),
+                        )?;
+                        #[cfg(feature = "remote-checkpoint")]
+                        if let Some(client) = &a.client {
+                            trace(
+                                diagnostics,
+                                &serde_json::json!({"type":"remote_accounting","ledger":client.ledger,"metrics":client.metrics}),
+                            )?;
+                        }
+                    }
                     trace(
                         diagnostics,
                         &serde_json::json!({"type":"checkpoint_success","pointer":pointer,"progress":engine.progress,"state":state.store.metrics}),
@@ -199,7 +228,16 @@ pub fn run(
                 }
                 Poll::Stopped => return Ok("STOPPED_BY_SOURCE_OPERATOR"),
                 Poll::Data(record) => {
+                    #[cfg(feature = "adaptive-checkpoint")]
+                    let prepare_start = std::time::Instant::now();
                     let receipt = engine.prepare(record)?;
+                    #[cfg(feature = "adaptive-checkpoint")]
+                    if let Some(a) = engine.state.as_mut().and_then(|s| s.adaptive.as_mut()) {
+                        a.observation.replay_ns_per_record =
+                            u64::try_from(prepare_start.elapsed().as_nanos())
+                                .map_err(|_| Error::Overflow("record sample"))?
+                                .max(1);
+                    }
                     #[cfg(feature = "stateful")]
                     let frame = if let Some(state) = &engine.state {
                         frame(

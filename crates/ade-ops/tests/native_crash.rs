@@ -228,11 +228,29 @@ fn concurrent_source_hashing_does_not_cancel_running_native_job() {
                 .arg(request);
         }
         let hash_started = std::time::Instant::now();
-        let output = command
+        command
             .env("ADE_OPS_HASH_STAGE", hash_stage)
-            .env("ADE_OPS_HASH_PAUSE_MS", "6000")
-            .output()
-            .unwrap();
+            .env("ADE_OPS_HASH_PAUSE_MS", "6000");
+        // OWNER_BUSY is an existing retryable metadata-admission response. Only
+        // retry that pre-hash refusal; the same idempotency key/recipe is reused.
+        // Bound startup to2s, inside the unchanged8s prepared-stage pause, so
+        // the actual >=5s hashing witness must still overlap the running job.
+        let output = loop {
+            let output = command.output().unwrap();
+            let owner_busy = serde_json::from_slice::<serde_json::Value>(&output.stderr)
+                .is_ok_and(|value| value["code"] == "OWNER_BUSY");
+            if !output.status.success()
+                && owner_busy
+                && hash_started.elapsed() < Duration::from_secs(2)
+            {
+                eprintln!(
+                    "ADE_METADATA_HASH_ADMISSION retryable_owner_busy=true operation={operation}"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            break output;
+        };
         let hash_elapsed = hash_started.elapsed();
         assert!(
             output.status.success(),

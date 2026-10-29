@@ -1,0 +1,1 @@
+{"checkpoint-semantic-forgery": {"reason": "canonical v2 state differs from producer-ledger prefix", "refused": true}, "one-byte-archive": {"reason": "archive checksum", "refused": true}, "policy-cost-forgery": {"reason": "independent policy arithmetic/rejection mismatch", "refused": true}, "receipt-semantic-forgery": {"reason": "native transform mismatch", "refused": true}}

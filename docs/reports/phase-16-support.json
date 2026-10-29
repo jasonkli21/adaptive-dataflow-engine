@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "phase": 16,
+  "status": "COMPLETE_BOUNDED_ADAPTIVE_STATE_V1",
+  "features": {
+    "adaptive-checkpoint": "local v2",
+    "remote-checkpoint": "signed S3 v2",
+    "default": []
+  },
+  "entry": "ade-state-stream CONFIG --adaptive-policy POLICY.json [--recover --restore-copy local|remote]",
+  "formats": {
+    "fixed_legacy": 1,
+    "adaptive_checkpoint": 2,
+    "policy": 1,
+    "implicit_migration": false
+  },
+  "decisions": [
+    "bounded cadence",
+    "physical full/changed-shard incremental",
+    "local/remote/both",
+    "verified one/two copies",
+    "guarded clean full replay/verified restore"
+  ],
+  "mechanism": "single Phase15 native Arrow demand owner and sink-confirmed quiescent state/progress cut",
+  "virtual_shards": 32,
+  "owners": [
+    1,
+    2,
+    4
+  ],
+  "ancestor_edges_max": 4,
+  "remote_object_bytes_max": 1048576,
+  "manifest_bytes_max": 32768,
+  "checkpoint_bytes_min": 262144,
+  "remote_objects_max": 8192,
+  "remote_attempted_write_bytes_max": 268435456,
+  "remote_requests_max": 65536,
+  "remote_response_reservation_bytes_max": 68719476736,
+  "trace_bytes_max": 67108864,
+  "remote_cut_deadline_ms": 120000,
+  "observations": "one last sample and one prior action; checked lifetime counters; no in-memory history queue",
+  "publication": "all required closures verified before immutable remote certificate and fsynced atomic CURRENT2",
+  "restore": "explicit copy, no fallback, all ancestors/state/progress verified before Kafka; retained operator certificate/hash permits clean-scratch remote-only restore",
+  "replay": "complete original starts, trusted immutable history, exact selected-certificate and duplicate/conflict consent, empty new state/session; live source range veto before assignment/output",
+  "delivery": "trace-relative at least once; compare payload_fingerprint for repeated output_id; conflicting payloads require external reconciliation",
+  "remote_accounting": "synced persistent reservation ledger before effects; ambiguous/orphan writes charged, no refund; read-only recovery has separate finite session quota; ledger loss/rollback requires fresh writer namespace",
+  "policy_prices_and_risk": "configured integer proxies",
+  "policy_throughput_and_prepare": "measured, source-bound; fallback explicitly estimated1000B/s and1ms/record",
+  "policy_recovery_and_scores": "estimated, not provider billing or hard real-time guarantees",
+  "process_rss_cap": false,
+  "failure_domain": "local fsync and real separately running same-host S3 service; no cross-host/AZ/disk-loss guarantee",
+  "refused_or_deferred": [
+    "default enablement",
+    "v1/v2 mixed roots or implicit migration",
+    "unbounded ancestry or GC",
+    "LIST/latest discovery",
+    "ambiguous write retry/adoption",
+    "silent replication degradation or corrupt-copy fallback",
+    "replay without exact consent/history",
+    "physical distributed rescale",
+    "automatic recovery",
+    "cross-host HA",
+    "exactly-once/transactions/savepoints",
+    "general streaming SQL",
+    "topic UUID attestation"
+  ],
+  "historical_contracts": "Phase10 physical elasticity remains partial; Phase12 production HA, Phase13 cloud/HA and Phase15 physical rescale remain deferred; legacy defaults/wire/result/PlanV1/StreamConfigV1 and historical evidence are preserved",
+  "acceptance": {
+    "cases": 117,
+    "sessions": 104,
+    "matched_cuts": 136,
+    "workspace_tests_passed": 291,
+    "python_tests_passed": 48,
+    "gates": "G0-G12 PASS",
+    "evidence": "docs/evidence/phase16/manifest.json"
+  }
+}

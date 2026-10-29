@@ -240,3 +240,20 @@ boundary. Preserve failed experiments. Preserve Phase 7 decision provenance, com
 predeclared empirical criteria. Do not broaden recovery or hide Phase10 tuning in Phase11 cleanup. The current
 Phase10 remediation is separately authorized; its dated readiness report must
 distinguish new-source evidence from historical phase acceptance.
+
+## Phase16 authorization — 2026-10-29
+
+The user explicitly authorized Phase16 adaptive checkpoint/state placement in this
+session, without subagents and with one local commit. Follow ADR-0023 and the
+Phase16 plan/report. Keep the fixed v1/default paths and all earlier evidence;
+completion requires all G0–G12 on a matched runtime/executable with a real separate
+S3 service. No Phase17 authorization, production HA, physical rescale, automatic
+recovery/GC or exactly-once is inferred. Source replay remains trace-relative;
+remote budget ledger loss/rollback requires a fresh namespace before new writes.
+
+Phase16 is COMPLETE_BOUNDED_ADAPTIVE_STATE_V1 under ADR-0023 and
+`docs/reports/phase-16-implementation-report.md`:117 real Kafka/MinIO cases,
+136 matched cuts, bounded policy/full/incremental/local/remote/two-copy and
+explicit guarded replay/restore. Preserve candidate5 runtime/executable identities
+and all four failed predecessors. Static defaults and v1 remain; same-host service
+proof is not physical HA. No Phase17 authorization is inferred.

@@ -483,3 +483,11 @@ file imbalance without changing logical rows. Weight count must equal `--files`.
 Omitting the option preserves historical serialization and equal file ranges.
 Timing gates in `scripts/phase10-acceptance.py` are local release evidence only;
 normal CI checks correctness. Protocol is ADETCP12, exchange wire2, result schema1.
+
+Phase16's opt-in adaptive state checkpoint path is described in the
+[adaptive checkpoint guide](docs/phase-16-adaptive-checkpoint-guide.md),
+[ADR-0023](docs/adr/0023-adaptive-checkpoint-placement-v1.md), and
+[source-bound implementation report](docs/reports/phase-16-implementation-report.md).
+The default and fixed Phase15 v1 paths remain supported. V2 adds bounded adaptive
+cadence, physical shard incrementals, verified local/S3 copies and explicit
+trace-relative at-least-once replay/restore; production HA and exactly-once remain deferred.

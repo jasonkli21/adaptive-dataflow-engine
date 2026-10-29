@@ -88,7 +88,7 @@ fn pointer(position: &Pointer) -> Result<()> {
         "pointer identity/version",
     )
 }
-fn validate_progress(config: &Config, position: &Progress) -> Result<()> {
+pub(crate) fn validate_progress(config: &Config, position: &Progress) -> Result<()> {
     check(
         !position.session.is_nil()
             && position.partitions.len() == config.source.starts.len()

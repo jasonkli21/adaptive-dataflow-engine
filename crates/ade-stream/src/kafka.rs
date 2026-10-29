@@ -316,6 +316,26 @@ impl KafkaSource {
                 .collect(),
         }
     }
+    /// Verify the complete original replay range before any output. The trusted
+    /// immutable-topic attestation remains necessary; no public topic UUID claim.
+    /// # Errors
+    /// Refuses original history loss, topic identity drift or inventory mismatch.
+    #[cfg(feature = "adaptive-checkpoint")]
+    pub fn verify_original_starts(&mut self, starts: &[crate::Start]) -> Result<()> {
+        for start in starts {
+            let (low, high) = self
+                .consumer
+                .fetch_watermarks(&self.config.topic, start.partition, RPC)
+                .map_err(|_| Error::Broker)?;
+            crate::require(
+                self.partition_inventory.contains(&start.partition)
+                    && low <= start.offset
+                    && start.offset <= high,
+                "complete replay origin no longer retained",
+            )?;
+        }
+        self.healthy()
+    }
     fn control(&self) -> Result<()> {
         #[cfg(feature = "stateful")]
         if let Some((_, handle)) = &self.checkpoint_control {

@@ -1,0 +1,35 @@
+{
+  "files": {
+    "acceptance.tar.gz": "3b47fda4ad766c5577e7c3ab14bf3ec71007f8cae048142136ee6978dc411214",
+    "clippy-closure.log": "c3890828b647c599a996209cd61a1ecc13aabae8335145392099e88bd347aabf",
+    "final-source-inventory.json": "df30b5f753b55a388b7f858ef30424fa0b3da0dbe512acef9da4930e0a72b786",
+    "final-source.tar.gz": "f4b90797b49ed3e9a7c7233cfc1fb5be405d75150327c3662e54d93a3e90389e",
+    "fmt-closure.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "live-verifier.log": "fe7ae7ba7f6379e46af23bf534024b37d81b89d77ed76e71aba2f9f6df002475",
+    "local-feature-check.log": "f52a2909df4b3832b50d08999391b22ee1e4dcaf83a41efb5c17519f602b8e6c",
+    "manifest.json": "953a50602d90b2d8b6d765f2a224fa710bcc0a91698f639da1c0c3d9e4ee187d",
+    "offline.log": "fe7ae7ba7f6379e46af23bf534024b37d81b89d77ed76e71aba2f9f6df002475",
+    "package.log": "0ea9d904cf22a471ee6d1e6fd8239d848a352612fa724ecf0e0e0a3c5f9799e1",
+    "python-release.log": "77b28f8c675ad920caf622d8c3673e7bf6c75b9c9e2a2567068da1e73276357f",
+    "symlink-attacks.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "tamper.log": "6743a34d8e93218e93fd4d2db8b6e31a450ad290fecc81616a31e5f722c6d5dd",
+    "workspace-release.log": "a7e9576b216020e3e3cfc8f58cf1ad19370e27bba77fa89ed9102ef14ba9f6c3"
+  },
+  "final_source_files": 296,
+  "frozen_runtime_sha256": "1250d01ad67549d806204dbb562c40b4dc3f4fd9f2a4a973694785a6311d8a9d",
+  "qualification": "The immutable measured archive is unchanged. Closure source adds verifier optimization, stronger matched-trace tests, lint-only cleanup and final documentation; all product inputs match the frozen source.",
+  "runtime_drift": [],
+  "runtime_files": 107,
+  "status": "COMPLETE_BOUNDED_ADAPTIVE_STATE_V1",
+  "tool_sources": {
+    "scripts/phase16/acceptance.py": "8707b4f4cad1722a11d809379cb8de8b06ba3b06e287563ece7601badfba61db",
+    "scripts/phase16/oracle.py": "de77b6009a735143622fb3da61d8bba6b990492c74339a4a1dcc10c8ba47cefe",
+    "scripts/phase16/package_evidence.py": "696e8e0d015a8facdafd35c5a1e42443062ac5eb0c7ec168178db1693d5481b0",
+    "scripts/phase16/package_legacy_regression.py": "631ddfbcfdace1d6cd1ef836ec1b37b9b8e70e95bf5c4d7a8503c82dbde3c1eb",
+    "scripts/phase16/service.py": "7d070daebe4e63b643a38f43cfc37c3e64e5347bfb9ce76a1f1f69fff212fa5c",
+    "scripts/phase16/tamper_checks.py": "b655d4fcc2b7cc75fbe5d37bc051689281a2e304d3be7e05d9f6eb3fc377c3c1",
+    "scripts/phase16/verify_evidence.py": "3ddb68db6d2bc0364a62c5f126604298cb6e5468070e60a27912d96fcf98ddad",
+    "scripts/phase16/verify_legacy_regression.py": "818461939b42373fb85efae2ab09723c6207dd22828f4a50809ea8ed195b7cc3"
+  },
+  "version": 1
+}

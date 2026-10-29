@@ -57,3 +57,5 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0020: Bounded remote disaggregated shuffle v1](0020-remote-disaggregated-shuffle-v1.md) — opt-in signed S3 exchange, immutable manifests, fresh reader stages and scoped quiesced GC.
 
 - [ADR-0022: Bounded keyed state and local checkpoints v1](0022-keyed-state-and-checkpoints-v1.md) — strict stateful admission, tiering, quiescent cuts and logical restore rescale.
+
+- [ADR-0023: Bounded adaptive checkpoints and placement v1](0023-adaptive-checkpoint-placement-v1.md) — opt-in v2, immutable incremental shards, explicit verified S3 copies and guarded replay/restore.

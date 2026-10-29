@@ -1,0 +1,38 @@
+[
+  {
+    "accepted": false,
+    "archive_sha256": "b877535fa33e0f78333a697a8118b1868888f5afe78627c9c803560b4d084205",
+    "binary_sha256": "a28b73a3ee28912f0d12b60a0cbe44ce965d44d2e78cd37560f83bb043af301b",
+    "candidate": 1,
+    "cases": 16,
+    "last_case": "wrong-topic",
+    "source_archive_sha256": "2a42494e8d7ad1b9548bdd33e748192a47cd9e4783742d9510101bf65a7cd4d9"
+  },
+  {
+    "accepted": false,
+    "archive_sha256": "111b60a55ed8ae09250a727708ae907a1f0e5b7e087369fbd92427d819e1f2f1",
+    "binary_sha256": "6896acc4f6831bf23ed2c9f950da227e240eb2cacce86cc3834c875f2f085992",
+    "candidate": 2,
+    "cases": 66,
+    "last_case": "remote-put-shard",
+    "source_archive_sha256": "58b0a1c812b2e3533e60bc1b5b437c1e816005e1fa243957583ad74720e9ee98"
+  },
+  {
+    "accepted": false,
+    "archive_sha256": "4f556bf21d952131d83a0e3ee5c3c980cba24d50a311802e6762f66789b7b990",
+    "binary_sha256": "b9585e3fc9703e61553c40de16c8b96036e138639d0c6c4a4d4cdba93609b631",
+    "candidate": 3,
+    "cases": 48,
+    "last_case": "kill-generation_synced",
+    "source_archive_sha256": "2c307825bb27d37bfbe94685a899a85ebd61f12a042dfcf339e313d4ecc73dc7"
+  },
+  {
+    "accepted": false,
+    "archive_sha256": "286e70d7a98940a957fb73875362fa8df0c25c49f48f6c82ded33dd39cc5efae",
+    "binary_sha256": "94ca98e931c6def67f88db3259c69bb26b90365af996cb392d567110cc563656",
+    "candidate": 4,
+    "cases": 6,
+    "last_case": "local-adaptive-2",
+    "source_archive_sha256": "eaaa745a3b9fbfbe15f69631a02d317345f6c2c94435393223860f2b7cf0d344"
+  }
+]

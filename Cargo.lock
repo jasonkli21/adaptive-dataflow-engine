@@ -120,14 +120,22 @@ version = "0.1.0"
 dependencies = [
  "ade-exec",
  "arrow",
+ "async-trait",
  "blake3",
+ "bytes",
  "ctrlc",
+ "futures",
  "futures-executor",
+ "http-body-util",
+ "object_store",
  "rdkafka",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
+ "url",
  "uuid",
 ]
 

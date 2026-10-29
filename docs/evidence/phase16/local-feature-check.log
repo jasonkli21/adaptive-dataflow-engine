@@ -1,0 +1,23 @@
+    Checking rdkafka-sys v4.10.0+2.12.1
+    Checking rdkafka v0.39.0
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+warning: unused import: `Placement`
+   --> crates/ade-stream/src/state/mod.rs:456:35
+    |
+456 |             policy::{Observation, Placement},
+    |                                   ^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ade-stream` (lib test) generated 1 warning (run `cargo fix --lib -p ade-stream --tests` to apply 1 suggestion)
+warning: `ade-stream` (lib) generated 1 warning (1 duplicate)
+warning: unused import: `Placement`
+   --> crates/ade-stream/tests/adaptive_checkpoint.rs:516:59
+    |
+516 |     use ade_stream::adaptive::policy::{self, Observation, Placement};
+    |                                                           ^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ade-stream` (test "adaptive_checkpoint") generated 1 warning (run `cargo fix --test "adaptive_checkpoint" -p ade-stream` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.38s

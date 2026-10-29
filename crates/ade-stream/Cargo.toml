@@ -11,9 +11,18 @@ workspace = true
 [features]
 default = []
 stateful = ["kafka"]
+adaptive-checkpoint = ["stateful"]
+remote-checkpoint = ["adaptive-checkpoint", "dep:object_store", "dep:url", "dep:reqwest", "dep:async-trait", "dep:http-body-util", "dep:tokio", "dep:futures"]
 kafka = ["dep:rdkafka", "dep:ctrlc", "dep:rustix", "dep:futures-executor"]
 
 [dependencies]
+object_store = { version = "0.13.2", default-features = false, features = ["aws", "tls-webpki-roots"], optional = true }
+url = { version = "2", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"], optional = true }
+async-trait = { version = "0.1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+tokio = { version = "1", features = ["rt", "time"], optional = true }
+futures = { version = "0.3", optional = true }
 ade-exec = { path = "../ade-exec" }
 arrow.workspace = true
 serde = { version = "1", features = ["derive"] }
@@ -35,3 +44,6 @@ required-features = ["kafka"]
 name = "ade-state-stream"
 path = "src/bin/ade-state-stream.rs"
 required-features = ["stateful"]
+
+[dev-dependencies]
+bytes = "1"

@@ -41,4 +41,4 @@ Reports should include scope, deviations, ADRs, commands/tests, benchmark smoke 
 
 - [Phase14](phase-14-implementation-report.md) — bounded Kafka progress and timers.
 - [Phase15](phase-15-implementation-report.md) and [review follow-up](phase-15-review-remediation-2026-10-29.md) — bounded keyed state, fixed local checkpoints and trace-relative replay semantics.
-- [Phase16](phase-16-implementation-report.md) — COMPLETE_BOUNDED_ADAPTIVE_STATE_V1; physical incremental snapshots, explicit verified S3 copies and guarded adaptive recovery.
+- [Phase16](phase-16-implementation-report.md) — COMPLETE_BOUNDED_ADAPTIVE_STATE_V1; physical incremental snapshots, explicit verified S3 copies and guarded adaptive recovery. The [2026-10-30 independent review follow-up](phase-16-review-remediation-2026-10-30.md) records two code remediations with partial verification pending a fresh Kafka/MinIO campaign.

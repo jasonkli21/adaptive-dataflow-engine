@@ -73,5 +73,17 @@
     "python_tests_passed": 48,
     "gates": "G0-G12 PASS",
     "evidence": "docs/evidence/phase16/manifest.json"
+  },
+  "review_follow_up": {
+    "date": "2026-10-30",
+    "status": "PARTIAL_VERIFICATION",
+    "report": "docs/reports/phase-16-review-remediation-2026-10-30.md",
+    "findings": {
+      "F16-01": "eligibility-first recovery selection implemented; fresh Kafka deleteRecords campaign not rerun",
+      "F16-02": "effective format admission and pre-effect full-capacity checks implemented; fresh remote placement campaign not rerun"
+    },
+    "additional_guard": "first cut after full replay is forced self-contained even after replay exceeds previous record count",
+    "verification": "focused Rust and Python oracle regressions; historical acceptance archive replay is baseline only",
+    "independent_reacceptance": false
   }
 }

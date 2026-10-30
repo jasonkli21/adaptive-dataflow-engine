@@ -104,6 +104,10 @@ pub struct Decision {
     pub chosen: Action,
     pub reason: String,
     pub candidates: Vec<Candidate>,
+    /// Placements for which a verified prior immutable closure is reusable.
+    /// Incremental candidates outside this set are non-executable.
+    #[serde(default)]
+    pub incremental_placements: Vec<Placement>,
 }
 fn add(a: u64, b: u64) -> Result<u64> {
     a.checked_add(b).ok_or(crate::Error::Overflow("policy add"))
@@ -261,6 +265,25 @@ pub fn decide(
     previous: Option<(&Action, u64)>,
     now: u64,
 ) -> Result<Decision> {
+    decide_with_incremental_placements(p, o, previous, now, &p.placements)
+}
+
+/// Rank only actions whose physical format is executable under the current
+/// checkpoint ancestry and placement. A forced full action is admitted and
+/// scored as full before any staging or remote probe occurs.
+/// # Errors
+/// Refuses unsafe controls, all-inadmissible candidate sets and arithmetic overflow.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the complete pure candidate enumeration auditable"
+)]
+pub fn decide_with_incremental_placements(
+    p: &super::Policy,
+    o: &Observation,
+    previous: Option<(&Action, u64)>,
+    now: u64,
+    incremental_placements: &[Placement],
+) -> Result<Decision> {
     p.validate()?;
     let calibrated = o.samples >= p.min_samples
         && o.scan_bytes_per_second > 0
@@ -306,22 +329,29 @@ pub fn decide(
             }
             .into(),
             candidates: vec![candidate],
+            incremental_placements: Vec::new(),
         });
     }
     let mut candidates = Vec::with_capacity(12);
     for placement in [Placement::Local, Placement::Remote, Placement::Both] {
         for format in [Format::Full, Format::Incremental] {
             for (records, ms) in [(p.min_records, p.min_ms), (p.max_records, p.max_ms)] {
-                candidates.push(evaluate(
-                    p,
-                    o,
-                    Action {
-                        format,
-                        placement,
-                        records,
-                        ms,
-                    },
-                )?);
+                let action = Action {
+                    format,
+                    placement,
+                    records,
+                    ms,
+                };
+                let mut candidate = evaluate(p, o, action)?;
+                if format == Format::Incremental
+                    && candidate.rejection.is_none()
+                    && !incremental_placements.contains(&placement)
+                {
+                    candidate.score = None;
+                    candidate.recovery_ms = None;
+                    candidate.rejection = Some("self_contained_required".into());
+                }
+                candidates.push(candidate);
             }
         }
     }
@@ -357,12 +387,39 @@ pub fn decide(
         chosen,
         reason: reason.into(),
         candidates,
+        incremental_placements: incremental_placements.to_vec(),
     })
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ObservedOffsetRange {
+    pub partition: i32,
+    pub requested_offset: i64,
+    pub low: i64,
+    pub high: i64,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct CandidateEligibility {
+    pub eligible: bool,
+    pub reason: Option<&'static str>,
+    pub ranges: Vec<ObservedOffsetRange>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct RecoverySources {
+    pub cluster_id: String,
+    pub partition_inventory: Vec<i32>,
+    pub replay: CandidateEligibility,
+    pub restore: CandidateEligibility,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct RecoveryDecision {
     pub chosen: String,
+    pub chosen_reason: &'static str,
+    pub replay_eligible: bool,
+    pub replay_refusal: Option<&'static str>,
+    pub restore_eligible: bool,
+    pub restore_refusal: Option<&'static str>,
+    pub sources: RecoverySources,
     pub logical_bytes: u64,
     pub confirmed_records: u64,
     pub replay_cost_nano: Option<u64>,
@@ -371,16 +428,22 @@ pub struct RecoveryDecision {
     pub restore_estimated_ms: u64,
     pub provenance: String,
 }
-/// Pure preflight ranking, after complete checkpoint verification. Kafka retains
-/// final veto before assignment/output; invalid origin/consent never resets state.
+/// Pure preflight ranking after full checkpoint verification and read-only live
+/// range checks of both source vectors. Kafka retains a final veto before
+/// assignment/output.
 /// # Errors
-/// Refuses mismatched consent, SLO failure or arithmetic overflow.
+/// Refuses mismatched consent, no eligible candidate, SLO failure or overflow.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep eligibility and cost ranking in one pure recovery decision"
+)]
 pub fn recovery(
     p: &super::Policy,
     certificate_hash: &str,
     logical_bytes: u64,
     records: u64,
     from: Placement,
+    sources: RecoverySources,
 ) -> Result<RecoveryDecision> {
     let r = &p.recovery;
     if r.allow_replay {
@@ -405,11 +468,27 @@ pub fn recovery(
             },
         )?,
     )?;
-    let replay = if r.allow_replay
-        && r.accept_duplicate_and_conflicting_outputs
-        && r.trusted_immutable_history
-        && r.replay_estimated_ms <= p.constraints.recovery_slo_ms
-    {
+    let replay_refusal = if !r.allow_replay {
+        Some("replay_ineligible_not_enabled")
+    } else if !r.accept_duplicate_and_conflicting_outputs {
+        Some("replay_ineligible_conflict_consent")
+    } else if !r.trusted_immutable_history {
+        Some("replay_ineligible_history_untrusted")
+    } else if !sources.replay.eligible {
+        Some(match sources.replay.reason {
+            Some("origin_retention") => "replay_ineligible_origin_retention",
+            Some("offset_outside_range") => "replay_ineligible_offset_outside_range",
+            Some("watermark_unavailable") => "replay_ineligible_watermark_unavailable",
+            Some("partition_inventory") => "replay_ineligible_partition_inventory",
+            Some("invalid_watermark") => "replay_ineligible_invalid_watermark",
+            _ => "replay_ineligible_source_range",
+        })
+    } else if r.replay_estimated_ms > p.constraints.recovery_slo_ms {
+        Some("replay_ineligible_slo")
+    } else {
+        None
+    };
+    let replay = if replay_refusal.is_none() {
         Some(add(
             mul(r.replay_estimated_ms, p.prices.compute_ms)?,
             mul(records, p.prices.replay_record)?,
@@ -417,10 +496,58 @@ pub fn recovery(
     } else {
         None
     };
-    let choose_replay = replay.is_some_and(|cost| cost < restore_cost);
-    check(
-        choose_replay || r.restore_estimated_ms <= p.constraints.recovery_slo_ms,
-        "restore estimated SLO",
-    )?;
-    Ok(RecoveryDecision{chosen:if choose_replay{"full_replay_explicit_conflict_consent"}else{"checkpoint_restore"}.into(),logical_bytes,confirmed_records:records,replay_cost_nano:replay,restore_cost_nano:restore_cost,replay_estimated_ms:r.replay_estimated_ms,restore_estimated_ms:r.restore_estimated_ms,provenance:"verified selected logical bytes/records; configured read/request/compute prices and recovery latency estimates; single-state-image GET proxy; Kafka live retention veto before assignment".into()})
+    let restore_refusal = if !sources.restore.eligible {
+        Some(match sources.restore.reason {
+            Some("saved_offset_retention") => "restore_ineligible_saved_offset_retention",
+            Some("offset_outside_range") => "restore_ineligible_offset_outside_range",
+            Some("watermark_unavailable") => "restore_ineligible_watermark_unavailable",
+            Some("partition_inventory") => "restore_ineligible_partition_inventory",
+            Some("invalid_watermark") => "restore_ineligible_invalid_watermark",
+            _ => "restore_ineligible_source_range",
+        })
+    } else if r.restore_estimated_ms > p.constraints.recovery_slo_ms {
+        Some("restore_ineligible_slo")
+    } else {
+        None
+    };
+    let restore_eligible = restore_refusal.is_none();
+    let replay_eligible = replay_refusal.is_none();
+    if !replay_eligible && !restore_eligible {
+        return Err(crate::Error::RecoveryUnavailable {
+            replay: replay_refusal.unwrap_or("replay_ineligible"),
+            restore: restore_refusal.unwrap_or("restore_ineligible"),
+        });
+    }
+    let choose_replay = match (replay_eligible, restore_eligible) {
+        (true, true) => replay.is_some_and(|cost| cost < restore_cost),
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) => unreachable!("both recovery paths checked above"),
+    };
+    let chosen_reason = if choose_replay {
+        restore_refusal.unwrap_or("minimum_estimated_cost")
+    } else {
+        replay_refusal.unwrap_or("minimum_estimated_cost")
+    };
+    Ok(RecoveryDecision {
+        chosen: if choose_replay {
+            "full_replay_explicit_conflict_consent"
+        } else {
+            "checkpoint_restore"
+        }
+        .into(),
+        chosen_reason,
+        replay_eligible,
+        replay_refusal,
+        restore_eligible,
+        restore_refusal,
+        sources,
+        logical_bytes,
+        confirmed_records: records,
+        replay_cost_nano: replay,
+        restore_cost_nano: restore_cost,
+        replay_estimated_ms: r.replay_estimated_ms,
+        restore_estimated_ms: r.restore_estimated_ms,
+        provenance: "verified selected logical bytes/records; configured read/request/compute prices and recovery latency estimates; live read-only source ranges for both candidates; final Kafka veto before assignment".into(),
+    })
 }

@@ -38,7 +38,7 @@ remote PUT/HEAD/GET proxy (3 per new shard plus6 manifest/certificate), and logi
 bytes * copies * configured retention_ms * capacity price. Score =
 ceil(write*1000000/cadence_records) + failure_ppm *
 (ceil(cadence_records/2)*replay_record_price + estimated_restore_ms*compute_ms_price).
-Hard copy/remote/risk/SLO and measured remaining capacity predicates reject candidates before ranking. Remote candidates conservatively reserve payload plus65560 metadata/probe bytes, changed-or32 shard objects plus4, and PUT/HEAD/GET/full-ancestry request/response envelopes before ranking; mechanism quotas independently veto every operation. Ties use
+Hard copy/remote/risk/SLO and measured remaining capacity predicates reject candidates before ranking. The runtime determines whether the verified prior closure is reusable at each placement first; a required full snapshot is scored and capacity-checked as full before any staging or remote probe. Remote candidates conservatively reserve payload plus65560 metadata/probe bytes, changed-or32 shard objects plus4, and PUT/HEAD/GET/full-ancestry request/response envelopes before ranking; mechanism quotas independently veto every operation. Ties use
 stable enumeration. Cooldown/hysteresis can retain an admissible previous action.
 Invalid/insufficient calibration uses the declared static full control with
 **estimated**1000B/s and1ms/record inputs, never fabricated measurements. Arithmetic
@@ -115,13 +115,20 @@ metadata and is deferred.
 
 Recovery policy pins original_starts and trusted_immutable_history. Full replay
 also requires allow_replay, accept_duplicate_and_conflicting_outputs and exact
-replay_certificate_blake3 consent to the currently selected cut. Both recovery
-estimates are explicitly configured. Verified logical bytes and confirmed records combine with configured read/request/compute/replay prices in a disclosed single-image recovery proxy. Replay only wins with lower estimated cost
-and admissible SLO; it starts completely empty state at original offsets, preserving
-old selection until a new full cut. Missing original retention or a wrong topic,
-cluster, inventory, selector, origin or consent fails before output. To restore a
-valid newer cut when original history expired, disable replay and use saved offsets.
-There is no group recovery or hidden offset reset. Topic incarnation and immutable
+replay_certificate_blake3 consent to the currently selected cut. After the selected
+copy is fully verified, a read-only preflight checks both the original and saved
+offset vectors against the live cluster, topic inventory and low/high watermarks
+before comparing eligible-path costs. Expired replay origins are excluded; if the
+saved vector is retained and within SLO, the decision selects checkpoint restore
+with reason `replay_ineligible_origin_retention`. If neither vector is usable, the
+run refuses before assignment or output and reports both reasons. Both recovery
+estimates are explicitly configured. Verified logical bytes and confirmed records
+combine with configured read/request/compute/replay prices in a disclosed
+single-image recovery proxy. Replay only wins with lower estimated cost among
+eligible paths; it starts completely empty state at original offsets, preserving
+old selection until a new full cut. The selected vector is checked again immediately
+before final assignment; a changed range fails closed without a fallback. There is
+no group recovery or hidden offset reset. Topic incarnation and immutable
 uncompressed<=32KiB history remain trusted operator assumptions; current metadata
 cannot prove a topic UUID or undetected truncate-and-regrow.
 

@@ -3,12 +3,16 @@
 Only Python stdlib. Checksums alone are insufficient; no authored PASS is trusted.
 """
 import argparse, copy, hashlib, io, json, pathlib, tarfile, tempfile
-from oracle import Model, check_decision, check_snapshot, require, rows
+from oracle import Model, check_decision, check_recovery, check_snapshot, require, rows
 POINTS=['policy_decided','stage_created','shard_write','shard_synced','remote_shard_put','remote_shard_verified','manifest_write','manifest_synced','remote_manifest_put','remote_manifest_verified','stage_synced','generation_renamed','generation_synced','copies_verified','remote_certificate_put','remote_certificate_verified','certificate_synced','before_selector','selector_synced','selector_renamed','selector_durable']
 REMOTE_FAILURES=['put-shard','head-shard','get-shard','put-manifest','put-certificate','ambiguous-shard','ambiguous-certificate','redirect','oversize-error','timeout']
 BASE=[f'local-{m}-{i}' for i in range(3) for m in ['static','adaptive']]+['remote-adaptive-0','both-adaptive-0']
-NEGATIVE=['wrong-consent','no-consent','untrusted-history','wrong-topic','wrong-origin','weaken-copies','corrupt-selector','slow-control','remote-objects','requests','response-budget','trace-budget','generation-budget','retention-lost','service-outage','missing-credentials','wrong-credentials','capability-unavailable','disk-loss-reuse-refused','checkpoint-byte-budget','cold-budget']
-EXPECTED=set(BASE+['cadence-low-risk','cadence-high-risk','adaptive-placement','restore-local','restore-remote','clean-scratch','full-replay','fault-seed','retention-seed','outage-local-copy','window-a-seed','window-a','window-b-seed','window-b','clean-scratch-resume','remote-rebuild-local-copy']+NEGATIVE+['kill-'+p+s for p in POINTS for s in ('','-restore')]+['remote-'+p+s for p in REMOTE_FAILURES for s in ('','-injected','-restore')])
+NEGATIVE=['wrong-consent','no-consent','untrusted-history','wrong-topic','wrong-origin','weaken-copies','corrupt-selector','slow-control','remote-objects','requests','response-budget','trace-budget','generation-budget','retention-lost','retention-both-lost','service-outage','missing-credentials','wrong-credentials','capability-unavailable','disk-loss-reuse-refused','checkpoint-byte-budget','cold-budget']
+_COMMON_NEGATIVE=[name for name in NEGATIVE if name not in ('retention-lost','retention-both-lost')]
+_COMMON=['cadence-low-risk','cadence-high-risk','adaptive-placement','restore-local','restore-remote','clean-scratch','full-replay','fault-seed','retention-seed','outage-local-copy','window-a-seed','window-a','window-b-seed','window-b','clean-scratch-resume','remote-rebuild-local-copy']
+_TAIL=['kill-'+p+s for p in POINTS for s in ('','-restore')]+['remote-'+p+s for p in REMOTE_FAILURES for s in ('','-injected','-restore')]
+EXPECTED=set(BASE+_COMMON+_COMMON_NEGATIVE+['retention-lost']+_TAIL)
+REMEDIATED_EXPECTED=(EXPECTED-{'retention-lost'})|{'retention-both-lost','retention-restore-after-expiry'}
 
 def load(p):return json.loads(pathlib.Path(p).read_text())
 def identity(c,p):return (c['job_id'],c['source']['topic'],p['forwarded_records'],tuple((k,v['next_offset_suggestion']) for k,v in sorted(p['partitions'].items())))
@@ -70,7 +74,11 @@ def ancestry(c,latest,get,known,states):
 
 def verify(root):
     root=pathlib.Path(root);cases=load(root/'cases.json');names=[c['name'] for c in cases]
-    require(len(names)==len(set(names)) and set(names)==EXPECTED,'missing/extra mandatory process contracts')
+    require(len(names)==len(set(names)),'duplicate process contract')
+    case_names=set(names)
+    if case_names==EXPECTED:remediated=False
+    elif case_names==REMEDIATED_EXPECTED:remediated=True
+    else:require(False,'missing/extra mandatory process contracts')
     env=load(root/'environment.json');outcome=load(root/'outcome.json');require(env['binary_sha256']==outcome['binary_sha256'],'executable changed during campaign')
     service=load(root/'service.json');require(service['kind']=='real-minio-source-build' and 'MinIO' in (root/'minio.log').read_text(),'real separate MinIO absent')
     inventory=load(root/'source-inventory.json')
@@ -89,19 +97,21 @@ def verify(root):
             require(any(t['type']=='checkpoint_step' and t['point']==name[5:] for t in ts),'crash boundary not reached')
         elif negative:
             require(case['exit']==1 and fails and not any(t['status']=='STOPPED' for t in terms),'negative case false success')
-            if name in ['wrong-consent','no-consent','untrusted-history','wrong-topic','wrong-origin','weaken-copies','corrupt-selector','retention-lost','missing-credentials','wrong-credentials','capability-unavailable','service-outage']:
+            if name in ['wrong-consent','no-consent','untrusted-history','wrong-topic','wrong-origin','weaken-copies','corrupt-selector','retention-lost','retention-both-lost','missing-credentials','wrong-credentials','capability-unavailable','service-outage']:
                 require(not admits and not frames,'identity/consent/source refusal was after output')
         else:require(case['exit']==0 and len(terms)==1 and terms[0]['status']=='STOPPED' and not fails,'positive case incomplete')
         for recovery in [r for r in ts if r['type']=='recovery_decision' and r.get('model')]:
-            model=recovery['model']
-            # The typed trace records measured logical bytes/records; source/copy
-            # choice is also bound by exact CLI argv, not inferred from a label.
+            # Source/copy choice is bound by exact CLI argv, not inferred by label.
             argv=next(t for t in load(root/'commands.json') if t['label']==name)['argv'];remote_copy='--restore-copy' in argv and argv[argv.index('--restore-copy')+1]=='remote'
-            read_price=p['prices']['remote_read_byte'] if remote_copy else p['prices']['local_read_byte']
-            restore=model['restore_estimated_ms']*p['prices']['compute_ms']+model['logical_bytes']*read_price+(66*p['prices']['remote_request'] if remote_copy else 0)
-            replay=model['replay_estimated_ms']*p['prices']['compute_ms']+model['confirmed_records']*p['prices']['replay_record'] if p['recovery']['allow_replay'] else None
-            require(model['restore_cost_nano']==restore and model['replay_cost_nano']==replay,'recovery cost proxy mismatch')
-            chosen='full_replay_explicit_conflict_consent' if replay is not None and replay<restore else 'checkpoint_restore';require(model['chosen']==chosen==recovery['path'],'recovery policy recommendation was not executed')
+            selected_offsets=None
+            selector_path=root/(name+'.checkpoints/CURRENT2')
+            if selector_path.is_file():
+                selected=load(selector_path);generation=selected['certificate']['manifest']['generation']
+                manifest_path=root/(name+'.checkpoints')/generation/'manifest.json'
+                if manifest_path.is_file():
+                    selected_manifest=load(manifest_path)
+                    selected_offsets={int(k):v['next_offset_suggestion'] for k,v in selected_manifest['progress']['partitions'].items()}
+            check_recovery(p,recovery,c,remote_copy,selected_offsets)
         if not admits:continue
         require(len(admits)==1,'multiple admissions');admit=admits[0];sessions.append(admit['session'])
         if admit['progress']['forwarded_records']==0:m=Model(c)
@@ -167,6 +177,13 @@ def verify(root):
     for n in ['restore-local','restore-remote','clean-scratch']:
         rec=next(t for t in rows(root/(n+'.trace.jsonl')) if t['type']=='recovery_decision');require(rec['path']=='checkpoint_restore' and rec['progress']['forwarded_records']==240,'restore was only a recommendation')
     replay=next(t for t in rows(root/'full-replay.trace.jsonl') if t['type']=='recovery_decision');require(replay['path']=='full_replay_explicit_conflict_consent' and replay['progress']['forwarded_records']==0,'full replay path not executed')
+    if remediated:
+        restored=next(t for t in rows(root/'retention-restore-after-expiry.trace.jsonl') if t['type']=='recovery_decision')
+        require(restored['path']=='checkpoint_restore' and restored['progress']['forwarded_records']==40,'retained checkpoint was not restored after replay-origin expiry')
+        require(restored['model']['chosen_reason']=='replay_ineligible_origin_retention' and restored['model']['restore_eligible'] and not restored['model']['replay_eligible'],'recovery did not record eligibility-first fallback')
+        require(not output(root,'retention-restore-after-expiry'),'retention fallback replayed or emitted duplicate output')
+        decisions_in_transition=[r['decision'] for r in rows(root/'adaptive-placement.trace.jsonl') if r['type']=='adaptive_decision']
+        require(any(d['chosen']['format']=='full' and d['chosen']['placement']=='local' and 'local' not in d['incremental_placements'] and any(c['action']['format']=='incremental' and c['action']['placement']=='local' and c['rejection']=='self_contained_required' for c in d['candidates']) for d in decisions_in_transition),'placement transition did not score an executable self-contained action')
     require(not list((root/'clean-scratch.checkpoints').rglob('shard-*')),'clean remote scratch retained local state shards')
     slow=[t for t in rows(root/'slow-control.trace.jsonl') if t['type']=='checkpoint_blocked'];require(len(slow)>=4 and all(t['progress']==slow[0]['progress'] for t in slow),'source data advanced during cut')
     require(slow[-1]['source']['checkpoint_control']['stats_callbacks']>slow[0]['source']['checkpoint_control']['stats_callbacks'],'control pump stopped during I/O')

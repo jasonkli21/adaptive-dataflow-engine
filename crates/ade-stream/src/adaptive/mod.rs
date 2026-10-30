@@ -282,6 +282,12 @@ pub struct Adaptive {
     pub disk_loss_restore: bool,
     pub selected_copy: Placement,
     pub recovery_decision: Option<policy::RecoveryDecision>,
+    /// A selected generation is fully verified before live source eligibility
+    /// is checked and a recovery path is committed.
+    pub pending_recovery: Option<snapshot::Manifest>,
+    /// Full replay starts from empty state; its first published cut must be
+    /// self-contained even after replay has passed the old record count.
+    pub force_full_next: bool,
 }
 impl Adaptive {
     #[must_use]

@@ -1,7 +1,7 @@
 //! Phase15 opt-in stateful composition; local working state is never a checkpoint.
 pub mod checkpoint;
 pub mod store;
-use crate::{Engine, Error, Progress, Receipt, Result, StreamConfigV1};
+use crate::{Engine, Error, Progress, Receipt, Result, Start, StreamConfigV1};
 use ade_exec::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -517,6 +517,8 @@ impl Engine {
             disk_loss_restore: disk_loss,
             selected_copy: from,
             recovery_decision: None,
+            pending_recovery: None,
+            force_full_next: false,
             #[cfg(feature = "remote-checkpoint")]
             client: None,
         };
@@ -546,67 +548,10 @@ impl Engine {
                     )?;
             }
             let manifest = snapshot::verify(&mut a, &config, &s.certificate, from, &token)?;
-            let choice = crate::adaptive::policy::recovery(
-                &a.policy,
-                &s.certificate_blake3,
-                manifest.shards.iter().map(|s| s.bytes).sum(),
-                manifest.progress.forwarded_records,
-                from,
-            )?;
-            let replay = choice.chosen == "full_replay_explicit_conflict_consent";
-            a.recovery_decision = Some(choice);
-            if replay {
-                recovery = "full_replay_explicit_conflict_consent".into();
-            } else {
-                snapshot::hydrate(
-                    &mut a,
-                    engine.state.as_mut().ok_or(crate::Error::State("state"))?,
-                    &manifest,
-                    from,
-                )?;
-                let mut p = manifest.progress;
-                p.session = session;
-                for cursor in p.partitions.values_mut() {
-                    cursor.start = cursor.next_offset_suggestion;
-                    cursor.seen = cursor.forwarded;
-                }
-                let state = engine.state.as_mut().ok_or(crate::Error::State("state"))?;
-                state.last_records = p.forwarded_records;
-                state.closed_window_late = manifest.closed_window_late;
-                for start in &mut engine.config.starts {
-                    start.offset = p.partitions[&start.partition].next_offset_suggestion;
-                }
-                engine.progress = p;
-                recovery = "checkpoint_restore".into();
-            }
-            engine
-                .state
-                .as_mut()
-                .ok_or(crate::Error::State("state"))?
-                .generation = Some(checkpoint::Pointer {
-                version: 2,
-                generation: s.certificate.manifest.generation,
-                manifest_blake3: s.certificate.manifest.blake3.clone(),
-            });
             a.current = Some(s.certificate);
             a.current_hash = Some(s.certificate_blake3);
-            // A clean disk-loss root receives only the trusted selector, never local shard copies.
-            if disk_loss {
-                snapshot::install_certificate(
-                    &config,
-                    &snapshot::Selector {
-                        version: 2,
-                        certificate: a
-                            .current
-                            .clone()
-                            .ok_or(crate::Error::State("certificate"))?,
-                        certificate_blake3: a
-                            .current_hash
-                            .clone()
-                            .ok_or(crate::Error::State("certificate"))?,
-                    },
-                )?;
-            }
+            a.pending_recovery = Some(manifest);
+            recovery = "recovery_pending".into();
         }
         #[cfg(feature = "remote-checkpoint")]
         if !recover && let Some(remote) = a.policy.remote.as_ref() {
@@ -625,5 +570,119 @@ impl Engine {
             .ok_or(crate::Error::State("state"))?
             .adaptive = Some(Box::new(a));
         Ok((engine, recovery))
+    }
+
+    /// Run read-only live metadata and offset checks after the selected copy has
+    /// been fully verified, but before recovery cost ranking or assignment.
+    /// # Errors
+    /// Refuses source identity drift or broker metadata failures.
+    pub fn adaptive_recovery_preflight(&self) -> Result<crate::adaptive::policy::RecoverySources> {
+        let state = self.state.as_ref().ok_or(crate::Error::State("state"))?;
+        let adaptive = state
+            .adaptive
+            .as_ref()
+            .ok_or(crate::Error::State("adaptive state"))?;
+        let manifest = adaptive
+            .pending_recovery
+            .as_ref()
+            .ok_or(crate::Error::State("recovery is not pending"))?;
+        let restore_starts = manifest
+            .progress
+            .partitions
+            .iter()
+            .map(|(partition, cursor)| Start {
+                partition: *partition,
+                offset: cursor.next_offset_suggestion,
+            })
+            .collect::<Vec<_>>();
+        crate::kafka::KafkaSource::preflight_recovery(
+            state.config.source.clone(),
+            self.progress.session,
+            &adaptive.policy.recovery.original_starts,
+            &restore_starts,
+        )
+    }
+
+    /// Commit a recovery choice from live preflight evidence. The caller must
+    /// still connect with `KafkaSource::connect`, which rechecks the selected
+    /// vector immediately before assignment.
+    /// # Errors
+    /// Refuses an unavailable candidate, stale/invalid consent or failed restore.
+    pub fn finish_adaptive_recovery(
+        &mut self,
+        sources: crate::adaptive::policy::RecoverySources,
+    ) -> Result<String> {
+        use crate::adaptive::snapshot::{self, Selector};
+
+        let state = self.state.as_mut().ok_or(crate::Error::State("state"))?;
+        let mut adaptive = *state
+            .adaptive
+            .take()
+            .ok_or(crate::Error::State("adaptive state"))?;
+        let manifest = adaptive
+            .pending_recovery
+            .take()
+            .ok_or(crate::Error::State("recovery is not pending"))?;
+        let certificate = adaptive
+            .current
+            .clone()
+            .ok_or(crate::Error::State("selected certificate"))?;
+        let certificate_hash = adaptive
+            .current_hash
+            .clone()
+            .ok_or(crate::Error::State("selected certificate hash"))?;
+        let logical_bytes = manifest.shards.iter().try_fold(0u64, |total, shard| {
+            total
+                .checked_add(shard.bytes)
+                .ok_or(crate::Error::Overflow("recovery logical bytes"))
+        })?;
+        let choice = crate::adaptive::policy::recovery(
+            &adaptive.policy,
+            &certificate_hash,
+            logical_bytes,
+            manifest.progress.forwarded_records,
+            adaptive.selected_copy,
+            sources,
+        )?;
+        let replay = choice.chosen == "full_replay_explicit_conflict_consent";
+        adaptive.recovery_decision = Some(choice);
+        adaptive.force_full_next = replay;
+        let from = adaptive.selected_copy;
+        let recovery = if replay {
+            "full_replay_explicit_conflict_consent".to_string()
+        } else {
+            snapshot::hydrate(&mut adaptive, state, &manifest, from)?;
+            let closed_window_late = manifest.closed_window_late;
+            let mut progress = manifest.progress;
+            progress.session = self.progress.session;
+            for cursor in progress.partitions.values_mut() {
+                cursor.start = cursor.next_offset_suggestion;
+                cursor.seen = cursor.forwarded;
+            }
+            state.last_records = progress.forwarded_records;
+            state.closed_window_late = closed_window_late;
+            for start in &mut self.config.starts {
+                start.offset = progress.partitions[&start.partition].next_offset_suggestion;
+            }
+            self.progress = progress;
+            "checkpoint_restore".to_string()
+        };
+        state.generation = Some(checkpoint::Pointer {
+            version: 2,
+            generation: certificate.manifest.generation,
+            manifest_blake3: certificate.manifest.blake3.clone(),
+        });
+        if adaptive.disk_loss_restore {
+            snapshot::install_certificate(
+                &state.config,
+                &Selector {
+                    version: 2,
+                    certificate,
+                    certificate_blake3: certificate_hash,
+                },
+            )?;
+        }
+        state.adaptive = Some(Box::new(adaptive));
+        Ok(recovery)
     }
 }

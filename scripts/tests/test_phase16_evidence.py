@@ -25,6 +25,64 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNone(oracle.evaluate(p,o,a)['rejection']);p['constraints']['recovery_slo_ms']=1
         self.assertEqual(oracle.evaluate(p,o,a)['rejection'],'recovery_slo');p['constraints']['recovery_slo_ms']=10000
         a['format']='incremental';o['depth']=2;self.assertEqual(oracle.evaluate(p,o,a)['rejection'],'full_required')
+    def test_effective_full_action_is_independently_scored_before_admission(self):
+        p,o,_=inputs();p['placements']=['local','remote'];p['min_samples']=2
+        p['prices'].update(local_write_byte=100000000,remote_write_byte=0,remote_request=0)
+        o.update(logical_bytes=6400,changed_bytes=64,changed_shards=1,depth=1,
+                 local_available_bytes=10000,remote_available_bytes=66000)
+        candidates=[]
+        for placement in ('local','remote'):
+            for fmt in ('full','incremental'):
+                action=dict(format=fmt,placement=placement,records=1,ms=100)
+                candidate=oracle.evaluate(p,o,action)
+                if fmt=='incremental':
+                    candidate=dict(action=action,score=None,recovery_ms=None,
+                                   rejection='self_contained_required')
+                candidates.append(candidate)
+        scored=[c for c in candidates if c['score'] is not None]
+        chosen=min(scored,key=lambda c:c['score'])['action']
+        d=dict(version=1,observation=o,model_inputs=o,input_provenance='test',
+               chosen=chosen,reason='minimum_configured_expected_cost',
+               candidates=candidates,incremental_placements=[])
+        oracle.check_decision(p,d)
+        self.assertEqual(chosen,dict(format='full',placement='local',records=1,ms=100))
+        d['chosen']=dict(format='incremental',placement='remote',records=1,ms=100)
+        with self.assertRaisesRegex(ValueError,'policy did not execute'):
+            oracle.check_decision(p,d)
+    def test_recovery_chooses_only_source_eligible_path(self):
+        self.assertEqual(
+            oracle.choose_recovery(False,None,True,10000),
+            'checkpoint_restore',
+        )
+        self.assertEqual(
+            oracle.choose_recovery(True,1,False,10000),
+            'full_replay_explicit_conflict_consent',
+        )
+        self.assertIsNone(oracle.choose_recovery(False,None,False,10000))
+    def test_recovery_trace_proves_expired_origin_falls_back_to_saved_vector(self):
+        p=dict(recovery=dict(allow_replay=True,accept_duplicate_and_conflicting_outputs=True,
+                             trusted_immutable_history=True,original_starts=[dict(partition=0,offset=0),dict(partition=1,offset=0)],
+                             replay_estimated_ms=1,restore_estimated_ms=10000),
+               prices=dict(compute_ms=1,replay_record=1,local_read_byte=0,remote_read_byte=0,remote_request=3),
+               constraints=dict(recovery_slo_ms=20000))
+        def row(partition,requested,low):
+            return dict(partition=partition,requested_offset=requested,low=low,high=40)
+        model=dict(chosen='checkpoint_restore',chosen_reason='replay_ineligible_origin_retention',
+                   replay_eligible=False,replay_refusal='replay_ineligible_origin_retention',
+                   restore_eligible=True,restore_refusal=None,logical_bytes=6400,confirmed_records=40,
+                   replay_cost_nano=None,restore_cost_nano=10000,replay_estimated_ms=1,
+                   restore_estimated_ms=10000,
+                   sources=dict(cluster_id='test-cluster',partition_inventory=[0,1],
+                                replay=dict(eligible=False,reason='origin_retention',ranges=[row(0,0,20),row(1,0,0)]),
+                                restore=dict(eligible=True,reason=None,ranges=[row(0,20,20),row(1,20,0)])))
+        record=dict(model=model,path='checkpoint_restore',progress=dict(partitions={'0':dict(start=20),'1':dict(start=20)}))
+        config=dict(topic_partitions=[0,1],source=dict(expected_cluster_id='test-cluster'))
+        oracle.check_recovery(p,record,config,saved_offsets={0:20,1:20})
+        with self.assertRaisesRegex(ValueError,'selected manifest vector'):
+            oracle.check_recovery(p,record,config,saved_offsets={0:19,1:20})
+        model['replay_cost_nano']=1
+        with self.assertRaisesRegex(ValueError,'recovery cost proxy mismatch'):
+            oracle.check_recovery(p,record,config)
     def test_checksum_consistent_state_semantic_forgery(self):
         config=dict(source=dict(starts=[dict(partition=0,offset=0)],allowance_ms=10,key_less_than=1000),window_ms=100,job_id='job')
         m=oracle.Model(config);m.state={(0,1):(5,2)};m.maxima={0:0};m.offsets={0:2};m.frontier=-10;m.total=2

@@ -152,3 +152,21 @@ No v1 migration or automatic destructive GC is implemented. The independent revi
 is a later fresh session; this session performs self-review and independent Python
 producer-ledger/state/cost checks without claiming a separate reviewing agent.
 Final gate status and immutable source/candidate identities belong to the report.
+
+## 8. Independent review follow-up — 2026-10-30
+
+The review of the accepted implementation identified that live replay retention
+was checked only after cost selection and that placement changes could rewrite a
+scored incremental choice to full after admission. The remediation performs
+selected-checkpoint verification, then read-only eligibility checks for both
+replay-origin and saved-checkpoint offsets before ranking; the final connection
+rechecks its selected vector before assignment. A failed source preflight does not
+assign or emit output. Snapshot planning now filters incremental actions by exact
+verified ancestry/placement/floor compatibility before scoring, so full capacity
+and SLO constraints are checked before staging or remote probes. A replayed
+session's first published cut remains full regardless of its record count.
+
+These changes preserve v1/default behavior and historical source-bound evidence.
+The additive remediation report is authoritative for post-review status. Until a
+new isolated Kafka/MinIO campaign is run on the remedied source, the historical
+G0–G12 archive remains baseline evidence and independent reacceptance is partial.

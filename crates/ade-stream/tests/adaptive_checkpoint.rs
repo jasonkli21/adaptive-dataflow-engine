@@ -137,7 +137,7 @@ fn policy() -> ade_stream::adaptive::Policy {
     })).unwrap()
 }
 fn adaptive(c: Config, p: ade_stream::adaptive::Policy, recover: bool) -> Engine {
-    Engine::adaptive_stateful(
+    let (mut engine, recovery) = Engine::adaptive_stateful(
         c,
         p,
         Uuid::new_v4(),
@@ -146,8 +146,33 @@ fn adaptive(c: Config, p: ade_stream::adaptive::Policy, recover: bool) -> Engine
         ade_stream::adaptive::policy::Placement::Local,
         None,
     )
-    .unwrap()
-    .0
+    .unwrap();
+    if recovery == "recovery_pending" {
+        engine
+            .finish_adaptive_recovery(test_recovery_sources(true, true))
+            .unwrap();
+    }
+    engine
+}
+fn test_recovery_sources(
+    replay_eligible: bool,
+    restore_eligible: bool,
+) -> ade_stream::adaptive::policy::RecoverySources {
+    use ade_stream::adaptive::policy::{CandidateEligibility, RecoverySources};
+    RecoverySources {
+        cluster_id: "test".into(),
+        partition_inventory: vec![0, 1],
+        replay: CandidateEligibility {
+            eligible: replay_eligible,
+            reason: (!replay_eligible).then_some("origin_retention"),
+            ranges: Vec::new(),
+        },
+        restore: CandidateEligibility {
+            eligible: restore_eligible,
+            reason: (!restore_eligible).then_some("saved_offset_retention"),
+            ranges: Vec::new(),
+        },
+    }
 }
 fn calibrated(e: &mut Engine) {
     use ade_stream::adaptive::policy::Observation;
@@ -482,7 +507,7 @@ fn executed_replay_requires_exact_selected_consent_and_empty_state() {
     p.recovery.replay_certificate_blake3 = Some(selected.certificate_blake3);
     p.recovery.replay_estimated_ms = 1;
     p.recovery.restore_estimated_ms = 100;
-    let (e, reason) = Engine::adaptive_stateful(
+    let (mut e, recovery) = Engine::adaptive_stateful(
         c.clone(),
         p.clone(),
         Uuid::new_v4(),
@@ -492,23 +517,180 @@ fn executed_replay_requires_exact_selected_consent_and_empty_state() {
         None,
     )
     .unwrap();
+    assert_eq!(recovery, "recovery_pending");
+    let reason = e
+        .finish_adaptive_recovery(test_recovery_sources(true, true))
+        .unwrap();
     assert!(reason.contains("replay"));
     assert_eq!(e.progress.forwarded_records, 0);
     assert_eq!(entries(&e), []);
+    // Exceed the old cut's scalar record count before the replay's first cut.
+    // Replay history is trace-relative, so ancestry from the older state is not
+    // a valid substitute even when one shard happens to match byte-for-byte.
+    deliver(&mut e, 0, 0, 1, 9, 0);
+    deliver(&mut e, 0, 1, 2, 4, 0);
+    cut(&mut e).unwrap();
+    let adaptive = e.state.as_ref().unwrap().adaptive.as_ref().unwrap();
+    assert_eq!(adaptive.last_metrics.physical_shard_objects, 32);
+    let generation = adaptive.current.as_ref().unwrap().manifest.generation;
+    let manifest: snapshot::Manifest = serde_json::from_slice(
+        &fs::read(
+            c.checkpoint_root
+                .join(generation.to_string())
+                .join("manifest.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.depth, 0);
+    assert!(manifest.prior.is_none());
     drop(e);
     p.recovery.replay_certificate_blake3 = Some("a".repeat(64));
+    let (mut e, recovery) = Engine::adaptive_stateful(
+        c,
+        p,
+        Uuid::new_v4(),
+        CancellationToken::default(),
+        true,
+        ade_stream::adaptive::policy::Placement::Local,
+        None,
+    )
+    .unwrap();
+    assert_eq!(recovery, "recovery_pending");
     assert!(
-        Engine::adaptive_stateful(
-            c,
-            p,
-            Uuid::new_v4(),
-            CancellationToken::default(),
-            true,
-            ade_stream::adaptive::policy::Placement::Local,
-            None
-        )
-        .is_err()
+        e.finish_adaptive_recovery(test_recovery_sources(true, true))
+            .is_err()
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "One regression covers eligible, fallback and total-refusal recovery paths"
+)]
+fn recovery_costs_only_eligible_candidates_and_restores_at_retained_cut() {
+    use ade_stream::adaptive::policy::{
+        CandidateEligibility, ObservedOffsetRange, RecoverySources, recovery,
+    };
+    let mut p = policy();
+    let certificate = "c".repeat(64);
+    p.recovery.allow_replay = true;
+    p.recovery.accept_duplicate_and_conflicting_outputs = true;
+    p.recovery.replay_certificate_blake3 = Some(certificate.clone());
+    p.recovery.replay_estimated_ms = 1;
+    p.recovery.restore_estimated_ms = 10_000;
+
+    // deleteRecords before 20 removes the replay origin but leaves the
+    // selected checkpoint's exact 20/20 vector at each low watermark.
+    let sources = RecoverySources {
+        cluster_id: "fixture-cluster".into(),
+        partition_inventory: vec![0, 1],
+        replay: CandidateEligibility {
+            eligible: false,
+            reason: Some("origin_retention"),
+            ranges: vec![
+                ObservedOffsetRange {
+                    partition: 0,
+                    requested_offset: 0,
+                    low: 20,
+                    high: 40,
+                },
+                ObservedOffsetRange {
+                    partition: 1,
+                    requested_offset: 0,
+                    low: 0,
+                    high: 40,
+                },
+            ],
+        },
+        restore: CandidateEligibility {
+            eligible: true,
+            reason: None,
+            ranges: vec![
+                ObservedOffsetRange {
+                    partition: 0,
+                    requested_offset: 20,
+                    low: 20,
+                    high: 40,
+                },
+                ObservedOffsetRange {
+                    partition: 1,
+                    requested_offset: 20,
+                    low: 0,
+                    high: 40,
+                },
+            ],
+        },
+    };
+    let decision = recovery(
+        &p,
+        &certificate,
+        6_400,
+        40,
+        ade_stream::adaptive::policy::Placement::Local,
+        sources,
+    )
+    .unwrap();
+    assert_eq!(decision.chosen, "checkpoint_restore");
+    assert_eq!(decision.chosen_reason, "replay_ineligible_origin_retention");
+    assert!(!decision.replay_eligible);
+    assert!(decision.restore_eligible);
+    assert_eq!(decision.replay_cost_nano, None);
+
+    let replay_only = RecoverySources {
+        cluster_id: "fixture-cluster".into(),
+        partition_inventory: vec![0, 1],
+        replay: CandidateEligibility {
+            eligible: true,
+            reason: None,
+            ranges: Vec::new(),
+        },
+        restore: CandidateEligibility {
+            eligible: false,
+            reason: Some("saved_offset_retention"),
+            ranges: Vec::new(),
+        },
+    };
+    let decision = recovery(
+        &p,
+        &certificate,
+        6_400,
+        40,
+        ade_stream::adaptive::policy::Placement::Local,
+        replay_only,
+    )
+    .unwrap();
+    assert_eq!(decision.chosen, "full_replay_explicit_conflict_consent");
+    assert_eq!(
+        decision.chosen_reason,
+        "restore_ineligible_saved_offset_retention"
+    );
+
+    let neither = RecoverySources {
+        cluster_id: "fixture-cluster".into(),
+        partition_inventory: vec![0, 1],
+        replay: CandidateEligibility {
+            eligible: false,
+            reason: Some("origin_retention"),
+            ranges: Vec::new(),
+        },
+        restore: CandidateEligibility {
+            eligible: false,
+            reason: Some("saved_offset_retention"),
+            ranges: Vec::new(),
+        },
+    };
+    assert!(matches!(
+        recovery(
+            &p,
+            &certificate,
+            6_400,
+            40,
+            ade_stream::adaptive::policy::Placement::Local,
+            neither,
+        ),
+        Err(Error::RecoveryUnavailable { .. })
+    ));
 }
 
 #[test]
@@ -594,6 +776,80 @@ fn policy_changes_cadence_placement_replication_and_preserves_floors() {
         }
     }
 }
+#[test]
+#[cfg(feature = "remote-checkpoint")]
+fn forced_full_placement_transition_is_ranked_before_remote_capacity_effects() {
+    use ade_stream::adaptive::policy::{self, Action, Format, Observation, Placement};
+    let mut p = policy();
+    p.placements = vec![Placement::Local, Placement::Remote];
+    p.static_placement = Placement::Local;
+    p.remote = Some(ade_stream::adaptive::Remote {
+        endpoint: "http://127.0.0.1:1".into(),
+        bucket: "fixture".into(),
+        region: "us-east-1".into(),
+        prefix: "private".into(),
+        namespace: Uuid::new_v4(),
+        dev_allow_http: true,
+    });
+    p.prices.local_write_byte = 100_000_000;
+    p.prices.remote_write_byte = 0;
+    p.prices.remote_request = 0;
+    let observation = Observation {
+        samples: 2,
+        logical_bytes: 6_400,
+        changed_bytes: 64,
+        changed_shards: 1,
+        scan_bytes_per_second: 1_000,
+        local_bytes_per_second: 1_000,
+        remote_bytes_per_second: 1_000,
+        replay_ns_per_record: 10_000,
+        depth: 1,
+        local_available_bytes: 10_000,
+        // Incremental remote fits (64 + fixed reservation); full remote does not.
+        remote_available_bytes: 66_000,
+        remote_available_objects: 8_192,
+        remaining_requests: 65_536,
+        remaining_response_bytes: 68_719_476_736,
+    };
+    // The verified prior was `both`; neither local nor remote can extend its
+    // ancestry. Full/local remains executable while full/remote exceeds quota.
+    let previous = Action {
+        format: Format::Incremental,
+        placement: Placement::Both,
+        records: 1,
+        ms: 100,
+    };
+    let decision = policy::decide_with_incremental_placements(
+        &p,
+        &observation,
+        Some((&previous, 0)),
+        1_000,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(decision.chosen.format, Format::Full);
+    assert_eq!(decision.chosen.placement, Placement::Local);
+    assert!(
+        decision
+            .candidates
+            .iter()
+            .filter(|c| {
+                c.action.format == Format::Incremental && p.placements.contains(&c.action.placement)
+            })
+            .all(|c| c.rejection.as_deref() == Some("self_contained_required"))
+    );
+    assert!(decision.candidates.iter().any(|c| {
+        c.action.format == Format::Full
+            && c.action.placement == Placement::Remote
+            && c.rejection.as_deref() == Some("capacity_floor")
+    }));
+    assert!(decision.candidates.iter().any(|c| {
+        c.action.format == Format::Full
+            && c.action.placement == Placement::Local
+            && c.rejection.is_none()
+    }));
+}
+
 #[test]
 fn v2_quota_cancel_duplicate_progress_and_policy_floor_attacks() {
     use ade_stream::adaptive::snapshot;

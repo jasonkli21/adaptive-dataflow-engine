@@ -50,3 +50,30 @@ pre-hash refusal for at most2s with the same idempotency key/recipe. The8s prepa
 pause, >=5s actual hash witness, overlap and succeeded/not-cancelled assertions
 remain. Production operations code and contracts are unchanged; the failed runs
 are retained, and no historical result is reclassified or HA debt closed.
+
+## Independent review follow-up — 2026-10-30
+
+The independent review of `2662c8d` identified two bounded contract gaps. Recovery
+now fully verifies the selected checkpoint first, then obtains read-only live
+metadata and low/high checks for both the original replay offsets and the saved
+checkpoint offsets before cost ranking. An expired replay origin is excluded from
+the candidate set; an eligible saved vector can select restore with an explicit
+refusal reason for replay. If neither path is eligible, recovery fails before
+assignment/output and reports both candidate reasons. `KafkaSource::connect`
+rechecks the chosen vector immediately before assignment. These metadata checks
+do not attest topic UUID or immutable history; the operator attestation remains
+required.
+
+Snapshot policy now determines exact placement/ancestry reuse eligibility before
+enumeration. Only executable full/incremental actions receive scores. A placement
+or durability-floor transition that requires full state is evaluated and capacity
+checked as full before local staging or remote capability probes. The decision
+trace records the reusable-placement set and candidates rejected because a
+self-contained generation is required. The first successful cut after replay is
+also forced full even if replay has already advanced beyond the previous record
+count.
+
+The original Phase16 acceptance archive, source inventory, failed candidates and
+measurements remain immutable evidence for `2662c8d`. The additive review report
+records this source's local verification and the live-service gates that were not
+rerun; the prior archive is not post-fix acceptance evidence.

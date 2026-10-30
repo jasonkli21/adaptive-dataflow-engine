@@ -33,6 +33,11 @@ pub enum Error {
     #[cfg(feature = "stateful")]
     #[error("state/checkpoint: {0}")]
     State(&'static str),
+    #[error("recovery unavailable (replay: {replay}, restore: {restore})")]
+    RecoveryUnavailable {
+        replay: &'static str,
+        restore: &'static str,
+    },
     #[error("broker failure (details redacted)")]
     Broker,
     #[error("sink failure (details redacted)")]
@@ -57,6 +62,7 @@ impl Error {
             Self::Timer(_) => "timer_capacity_or_identity",
             #[cfg(feature = "stateful")]
             Self::State(_) => "state_or_checkpoint",
+            Self::RecoveryUnavailable { .. } => "recovery_unavailable",
             Self::Broker => "broker",
             Self::Sink => "sink_or_diagnostics",
             Self::PartialFrame { .. } => "partial_output_frame",

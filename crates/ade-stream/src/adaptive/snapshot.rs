@@ -615,31 +615,38 @@ pub fn publish(
             .remaining_response_bytes
             .saturating_sub(ledger.reserved_response_bytes);
     }
-    let mut decision = policy::decide(
+    // Incremental is executable only when this exact placement can reuse the
+    // verified previous closure with an unchanged durability floor. Filter
+    // infeasible incremental variants before their costs are ranked; the
+    // eventual physical writer must never transform a scored incremental
+    // action into a full one after admission.
+    let incremental_placements = [Placement::Local, Placement::Remote, Placement::Both]
+        .into_iter()
+        .filter(|placement| {
+            !a.force_full_next
+                && old.as_ref().is_some_and(|m| {
+                    m.placement == *placement
+                        && m.remote
+                            == if placement.remote() {
+                                a.policy.remote.clone()
+                            } else {
+                                None
+                            }
+                        && m.depth < a.policy.max_depth
+                        && m.min_copies == a.policy.constraints.min_copies
+                        && m.require_remote == a.policy.constraints.require_remote
+                        && m.max_loss_ppm == a.policy.constraints.max_loss_ppm
+                        && m.progress.forwarded_records < p.forwarded_records
+                })
+        })
+        .collect::<Vec<_>>();
+    let decision = policy::decide_with_incremental_placements(
         &a.policy,
         &observation,
         a.last_action.as_ref().map(|(x, t)| (x, *t)),
         ms,
+        &incremental_placements,
     )?;
-    // A restarted replay moves progress backwards: a full self-contained cut is mandatory.
-    let reuse = old.as_ref().is_some_and(|m| {
-        m.placement == decision.chosen.placement
-            && m.remote
-                == if decision.chosen.placement.remote() {
-                    a.policy.remote.clone()
-                } else {
-                    None
-                }
-            && m.depth < a.policy.max_depth
-            && m.min_copies == a.policy.constraints.min_copies
-            && m.require_remote == a.policy.constraints.require_remote
-            && m.max_loss_ppm == a.policy.constraints.max_loss_ppm
-            && m.progress.forwarded_records < p.forwarded_records
-    });
-    if !reuse {
-        decision.chosen.format = Format::Full;
-        decision.reason.push_str(";self_contained_required");
-    }
     if a.disk_loss_restore && decision.chosen.placement.remote() {
         check(
             a.current.as_ref().and_then(|c| c.remote.as_ref()) != a.policy.remote.as_ref(),
@@ -845,6 +852,7 @@ pub fn publish(
     a.current_hash = Some(h);
     a.last_action = Some((decision.chosen, ms));
     a.disk_loss_restore = false;
+    a.force_full_next = false;
     Ok(Pointer {
         version: 2,
         generation: id,

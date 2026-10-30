@@ -300,10 +300,14 @@ s.create_bucket(Bucket='ade-phase16')
     minio.terminate();minio.wait(10)
     d=fork_config(seed,'service-outage-roots');run('service-outage',d,seed_policy,240,True,['--restore-copy','remote'],expected=1,reason='remote operation')
     d=fork_config(seed,'outage-local-copy-roots');run('outage-local-copy',d,seed_policy,240,True,['--restore-copy','local'])
-    # Full Kafka retention loss: replay consent cannot manufacture missing origin.
+    # Expiring the replay origin must leave the verified 20/20 checkpoint usable.
     retention_topic=topic('retention',2);rc=descriptor(retention_topic,'retention-roots',partitions=2);rr=policy(rc);produce(retention_topic,[(i%2,event(1,1,0)) for i in range(40)]);run('retention-seed',rc,rr,40)
     retained=selected(rc);rr['recovery'].update(allow_replay=True,accept_duplicate_and_conflicting_outputs=True,replay_certificate_blake3=retained['certificate_blake3'],replay_estimated_ms=1,restore_estimated_ms=10000)
-    fixture('retain',retention_topic,extra=[0,20]);run('retention-lost',rc,rr,40,True,expected=1,reason=('offset range/retention','complete replay origin'))
+    fixture('retain',retention_topic,extra=[0,20]);d=fork_config(rc,'retention-expired-roots')
+    run('retention-restore-after-expiry',d,rr,40,True,['--restore-copy','local'])
+    # If the saved vector is also expired, both candidates must be refused before admission/output.
+    fixture('retain',retention_topic,extra=[0,21]);d=fork_config(rc,'retention-both-lost-roots')
+    run('retention-both-lost',d,rr,40,True,['--restore-copy','local'],expected=1,reason=('recovery unavailable','replay_ineligible_origin_retention','restore_ineligible_saved_offset_retention'))
     dump(root/'outcome.json',dict(status='CAMPAIGN_FINISHED',cases=len(cases),criteria='predeclared exact gates; no speedup threshold',binary_sha256=hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest()))
 finally:
     dump(root/'cases.json',cases);dump(root/'commands.json',commands);dump(root/'ledgers.json',ledgers)

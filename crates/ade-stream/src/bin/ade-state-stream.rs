@@ -129,7 +129,7 @@ fn execute() -> Result<()> {
     let clock = MonotonicClock::default();
     let session = uuid::Uuid::new_v4();
     #[cfg(feature = "adaptive-checkpoint")]
-    let (mut engine, recovery) = if let Some(path) = policy_path {
+    let (mut engine, mut recovery) = if let Some(path) = policy_path {
         ade_stream::require(!restore, "v2 uses --recover, never v1 --restore")?;
         let policy = ade_stream::adaptive::Policy::parse(&read_adaptive_file(&path, 16384)?)?;
         let certificate = if let Some(path) = certificate_path {
@@ -178,6 +178,11 @@ fn execute() -> Result<()> {
             if restore { "legacy_restore" } else { "fresh" }.into(),
         )
     };
+    #[cfg(feature = "adaptive-checkpoint")]
+    if recovery == "recovery_pending" {
+        let sources = engine.adaptive_recovery_preflight()?;
+        recovery = engine.finish_adaptive_recovery(sources)?;
+    }
     #[cfg(not(feature = "adaptive-checkpoint"))]
     let mut engine = Engine::stateful(config.clone(), session, token.clone(), restore)?;
     if restore || engine.progress.forwarded_records > 0 {

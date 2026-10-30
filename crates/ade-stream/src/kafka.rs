@@ -105,6 +105,7 @@ pub struct KafkaSource {
     session: Uuid,
     assignment: TopicPartitionList,
     partition_inventory: Vec<i32>,
+    cluster_id: Option<String>,
     high: BTreeMap<i32, i64>,
     paused: bool,
     #[cfg(feature = "stateful")]
@@ -118,6 +119,52 @@ impl KafkaSource {
         reason = "Explicit client security, fetch and assignment admission in one transition"
     )]
     pub fn connect(config: StreamConfigV1, session: Uuid, progress: &Progress) -> Result<Self> {
+        let mut source = Self::unassigned(config, session)?;
+        source.verify(progress)?;
+        source.assign()?;
+        Ok(source)
+    }
+
+    /// Check source identity and both recovery offset vectors without assigning
+    /// partitions or polling data. `connect` repeats the selected-vector check
+    /// immediately before the final assignment.
+    /// # Errors
+    /// Refuses source identity drift, broker metadata failures or invalid config.
+    #[cfg(feature = "adaptive-checkpoint")]
+    pub fn preflight_recovery(
+        config: StreamConfigV1,
+        session: Uuid,
+        replay_starts: &[crate::Start],
+        restore_starts: &[crate::Start],
+    ) -> Result<crate::adaptive::policy::RecoverySources> {
+        let mut source = Self::unassigned(config, session)?;
+        source.verify_identity()?;
+        let mut expected = source
+            .config
+            .starts
+            .iter()
+            .map(|s| s.partition)
+            .collect::<Vec<_>>();
+        expected.sort_unstable();
+        let replay = source.candidate_ranges(replay_starts, &expected, "origin_retention");
+        let restore = source.candidate_ranges(restore_starts, &expected, "saved_offset_retention");
+        source.healthy()?;
+        Ok(crate::adaptive::policy::RecoverySources {
+            cluster_id: source
+                .cluster_id
+                .clone()
+                .ok_or(Error::Source("missing cluster ID"))?,
+            partition_inventory: source.partition_inventory.clone(),
+            replay,
+            restore,
+        })
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Explicit client security and bounded unassigned metadata setup"
+    )]
+    fn unassigned(config: StreamConfigV1, session: Uuid) -> Result<Self> {
         config.validate()?;
         let counters = Arc::new(Counters::default());
         let mut client = ClientConfig::new();
@@ -194,7 +241,7 @@ impl KafkaSource {
         let consumer: BaseConsumer<Context> = client
             .create_with_context(Context(counters.clone()))
             .map_err(|_| Error::Broker)?;
-        let mut source = Self {
+        let source = Self {
             consumer: Arc::new(consumer),
             queues: Vec::new(),
             admin,
@@ -204,36 +251,143 @@ impl KafkaSource {
             session,
             assignment: TopicPartitionList::new(),
             partition_inventory: Vec::new(),
+            cluster_id: None,
             high: BTreeMap::new(),
             paused: false,
             #[cfg(feature = "stateful")]
             checkpoint_control: None,
         };
-        source.verify(progress)?;
-        for start in &source.config.starts {
-            source
-                .assignment
+        Ok(source)
+    }
+
+    fn assign(&mut self) -> Result<()> {
+        for start in &self.config.starts {
+            self.assignment
                 .add_partition_offset(
-                    &source.config.topic,
+                    &self.config.topic,
                     start.partition,
                     Offset::Offset(start.offset),
                 )
                 .map_err(|_| Error::Broker)?;
         }
-        source
-            .consumer
-            .assign(&source.assignment)
+        self.consumer
+            .assign(&self.assignment)
             .map_err(|_| Error::Broker)?;
-        for start in &source.config.starts {
-            source.queues.push(
-                source
-                    .consumer
-                    .split_partition_queue(&source.config.topic, start.partition)
+        for start in &self.config.starts {
+            self.queues.push(
+                self.consumer
+                    .split_partition_queue(&self.config.topic, start.partition)
                     .ok_or(Error::Source("partition queue"))?,
             );
         }
-        Ok(source)
+        Ok(())
     }
+
+    #[cfg(feature = "adaptive-checkpoint")]
+    fn candidate_ranges(
+        &self,
+        starts: &[crate::Start],
+        expected: &[i32],
+        expired_reason: &'static str,
+    ) -> crate::adaptive::policy::CandidateEligibility {
+        classify_candidate_ranges(starts, expected, expired_reason, |partition| {
+            if !self.partition_inventory.contains(&partition) {
+                return Err(());
+            }
+            self.consumer
+                .fetch_watermarks(&self.config.topic, partition, RPC)
+                .map_err(|_| ())
+        })
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Single bounded source identity and immutable-topic verification"
+    )]
+    fn verify_identity(&mut self) -> Result<()> {
+        if self.assignment.count() > 0 {
+            self.control()?;
+        } else {
+            self.healthy()?;
+        }
+        let metadata = self
+            .consumer
+            .fetch_metadata(Some(&self.config.topic), RPC)
+            .map_err(|_| Error::Broker)?;
+        if metadata.brokers().is_empty() || metadata.brokers().len() > 4 {
+            return Err(Error::Source("broker inventory cap"));
+        }
+        if matches!(self.config.security, Security::LoopbackDev {}) {
+            for broker in metadata.brokers() {
+                let loopback = broker.host() == "localhost"
+                    || broker
+                        .host()
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|ip| ip.is_loopback());
+                if !loopback {
+                    return Err(Error::Source("non-loopback advertised broker"));
+                }
+            }
+        }
+        let cluster = self
+            .consumer
+            .client()
+            .fetch_cluster_id(RPC)
+            .ok_or(Error::Source("missing cluster ID"))?;
+        if cluster != self.config.expected_cluster_id {
+            return Err(Error::Source("cluster ID changed"));
+        }
+        self.cluster_id = Some(cluster);
+        let options = AdminOptions::new().request_timeout(Some(RPC));
+        let resources = futures_executor::block_on(
+            self.admin
+                .describe_configs(&[ResourceSpecifier::Topic(&self.config.topic)], &options),
+        )
+        .map_err(|_| Error::Broker)?;
+        if resources.len() != 1 {
+            return Err(Error::Source("topic config inventory"));
+        }
+        let resource = resources[0].as_ref().map_err(|_| Error::Broker)?;
+        let compression = resource
+            .get("compression.type")
+            .and_then(|entry| entry.value.as_deref());
+        let message_cap = resource
+            .get("max.message.bytes")
+            .and_then(|entry| entry.value.as_deref())
+            .and_then(|value| value.parse::<u64>().ok());
+        if compression != Some("uncompressed")
+            || !message_cap.is_some_and(|bytes| bytes <= 32768 && bytes > 0)
+        {
+            return Err(Error::Source(
+                "topic requires immutable uncompressed <=32KiB batches",
+            ));
+        }
+        let topics = metadata.topics();
+        if topics.len() != 1 || topics[0].name() != self.config.topic || topics[0].error().is_some()
+        {
+            return Err(Error::Source("topic metadata"));
+        }
+        let topic = &topics[0];
+        let mut inventory = topic
+            .partitions()
+            .iter()
+            .map(rdkafka::metadata::MetadataPartition::id)
+            .collect::<Vec<_>>();
+        inventory.sort_unstable();
+        if inventory.is_empty()
+            || inventory.len() > 4
+            || topic
+                .partitions()
+                .iter()
+                .any(|p| p.error().is_some() || p.leader() < 0)
+            || (!self.partition_inventory.is_empty() && inventory != self.partition_inventory)
+        {
+            return Err(Error::Source("partition inventory/leader"));
+        }
+        self.partition_inventory = inventory;
+        Ok(())
+    }
+
     #[cfg(feature = "stateful")]
     #[must_use]
     pub fn partition_inventory(&self) -> &[i32] {
@@ -419,85 +573,7 @@ impl Source for KafkaSource {
         reason = "Single bounded metadata/config/range verification pass"
     )]
     fn verify(&mut self, progress: &Progress) -> Result<()> {
-        if self.assignment.count() > 0 {
-            self.control()?;
-        } else {
-            self.healthy()?;
-        }
-        let metadata = self
-            .consumer
-            .fetch_metadata(Some(&self.config.topic), RPC)
-            .map_err(|_| Error::Broker)?;
-        if metadata.brokers().is_empty() || metadata.brokers().len() > 4 {
-            return Err(Error::Source("broker inventory cap"));
-        }
-        if matches!(self.config.security, Security::LoopbackDev {}) {
-            for broker in metadata.brokers() {
-                let loopback = broker.host() == "localhost"
-                    || broker
-                        .host()
-                        .parse::<std::net::IpAddr>()
-                        .is_ok_and(|ip| ip.is_loopback());
-                if !loopback {
-                    return Err(Error::Source("non-loopback advertised broker"));
-                }
-            }
-        }
-        let cluster = self
-            .consumer
-            .client()
-            .fetch_cluster_id(RPC)
-            .ok_or(Error::Source("missing cluster ID"))?;
-        if cluster != self.config.expected_cluster_id {
-            return Err(Error::Source("cluster ID changed"));
-        }
-        let options = AdminOptions::new().request_timeout(Some(RPC));
-        let resources = futures_executor::block_on(
-            self.admin
-                .describe_configs(&[ResourceSpecifier::Topic(&self.config.topic)], &options),
-        )
-        .map_err(|_| Error::Broker)?;
-        if resources.len() != 1 {
-            return Err(Error::Source("topic config inventory"));
-        }
-        let resource = resources[0].as_ref().map_err(|_| Error::Broker)?;
-        let compression = resource
-            .get("compression.type")
-            .and_then(|entry| entry.value.as_deref());
-        let message_cap = resource
-            .get("max.message.bytes")
-            .and_then(|entry| entry.value.as_deref())
-            .and_then(|value| value.parse::<u64>().ok());
-        if compression != Some("uncompressed")
-            || !message_cap.is_some_and(|bytes| bytes <= 32768 && bytes > 0)
-        {
-            return Err(Error::Source(
-                "topic requires immutable uncompressed <=32KiB batches",
-            ));
-        }
-        let topics = metadata.topics();
-        if topics.len() != 1 || topics[0].name() != self.config.topic || topics[0].error().is_some()
-        {
-            return Err(Error::Source("topic metadata"));
-        }
-        let topic = &topics[0];
-        let mut inventory = topic
-            .partitions()
-            .iter()
-            .map(rdkafka::metadata::MetadataPartition::id)
-            .collect::<Vec<_>>();
-        inventory.sort_unstable();
-        if inventory.is_empty()
-            || inventory.len() > 4
-            || topic
-                .partitions()
-                .iter()
-                .any(|p| p.error().is_some() || p.leader() < 0)
-            || (!self.partition_inventory.is_empty() && inventory != self.partition_inventory)
-        {
-            return Err(Error::Source("partition inventory/leader"));
-        }
-        self.partition_inventory = inventory;
+        self.verify_identity()?;
         for start in &self.config.starts {
             if !self.partition_inventory.contains(&start.partition) {
                 return Err(Error::Source("assigned partition missing"));
@@ -542,6 +618,102 @@ impl Source for KafkaSource {
         Ok(())
     }
 }
+
+#[cfg(feature = "adaptive-checkpoint")]
+fn classify_candidate_ranges(
+    starts: &[crate::Start],
+    expected: &[i32],
+    expired_reason: &'static str,
+    mut watermarks: impl FnMut(i32) -> std::result::Result<(i64, i64), ()>,
+) -> crate::adaptive::policy::CandidateEligibility {
+    use crate::adaptive::policy::{CandidateEligibility, ObservedOffsetRange};
+
+    let mut partitions = starts.iter().map(|s| s.partition).collect::<Vec<_>>();
+    partitions.sort_unstable();
+    if partitions != expected
+        || starts.iter().any(|s| s.offset < 0)
+        || partitions.windows(2).any(|w| w[0] == w[1])
+    {
+        return CandidateEligibility {
+            eligible: false,
+            reason: Some("partition_inventory"),
+            ranges: Vec::new(),
+        };
+    }
+    let mut ranges = Vec::with_capacity(starts.len());
+    let mut reason = None;
+    for start in starts {
+        let Ok((low, high)) = watermarks(start.partition) else {
+            reason.get_or_insert("watermark_unavailable");
+            continue;
+        };
+        ranges.push(ObservedOffsetRange {
+            partition: start.partition,
+            requested_offset: start.offset,
+            low,
+            high,
+        });
+        if low < 0 || high < low {
+            reason.get_or_insert("invalid_watermark");
+        } else if low > start.offset {
+            reason.get_or_insert(expired_reason);
+        } else if start.offset > high {
+            reason.get_or_insert("offset_outside_range");
+        }
+    }
+    CandidateEligibility {
+        eligible: reason.is_none() && ranges.len() == starts.len(),
+        reason,
+        ranges,
+    }
+}
+
+#[cfg(all(test, feature = "adaptive-checkpoint"))]
+mod recovery_preflight_tests {
+    use super::classify_candidate_ranges;
+    use crate::Start;
+
+    #[test]
+    fn retained_checkpoint_vector_survives_expired_replay_origin() {
+        let original = [
+            Start {
+                partition: 0,
+                offset: 0,
+            },
+            Start {
+                partition: 1,
+                offset: 0,
+            },
+        ];
+        let saved = [
+            Start {
+                partition: 0,
+                offset: 20,
+            },
+            Start {
+                partition: 1,
+                offset: 20,
+            },
+        ];
+        let replay = classify_candidate_ranges(&original, &[0, 1], "origin_retention", |p| {
+            Ok(if p == 0 { (20, 40) } else { (0, 40) })
+        });
+        let restore = classify_candidate_ranges(&saved, &[0, 1], "saved_offset_retention", |p| {
+            Ok(if p == 0 { (20, 40) } else { (0, 40) })
+        });
+        assert!(!replay.eligible);
+        assert_eq!(replay.reason, Some("origin_retention"));
+        assert!(restore.eligible);
+        assert_eq!(restore.ranges[0].requested_offset, 20);
+
+        let neither = classify_candidate_ranges(&saved, &[0, 1], "saved_offset_retention", |p| {
+            Ok(if p == 0 { (21, 40) } else { (0, 40) })
+        });
+        assert!(!neither.eligible);
+        assert_eq!(neither.reason, Some("saved_offset_retention"));
+    }
+}
+
 impl Drop for KafkaSource {
     fn drop(&mut self) {
         #[cfg(feature = "stateful")]

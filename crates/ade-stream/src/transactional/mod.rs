@@ -95,6 +95,7 @@ pub struct Transaction {
     outputs: Vec<sink::Output>,
     output_bytes: u64,
     poisoned: bool,
+    paused: bool,
 }
 impl Transaction {
     /// # Errors
@@ -132,6 +133,7 @@ impl Transaction {
             outputs: Vec::new(),
             output_bytes: 0,
             poisoned: false,
+            paused: false,
         })
     }
     /// # Errors
@@ -169,8 +171,8 @@ impl Transaction {
     }
     fn live(&self) -> Result<()> {
         check(
-            !self.poisoned,
-            "poisoned v3 attempt; reopen authoritative CURRENT3",
+            !self.poisoned && !self.paused,
+            "poisoned or terminal PAUSED v3 handle; reopen authoritative CURRENT3",
         )
     }
     #[must_use]
@@ -180,6 +182,26 @@ impl Transaction {
     /// # Errors
     /// Sole state+output visibility transition. Any error requires a fresh handle.
     pub fn commit(
+        &mut self,
+        operation: epoch::Operation,
+        hook: &mut dyn FnMut(&str) -> Result<()>,
+    ) -> Result<epoch::Pointer> {
+        if self.paused {
+            return if operation == epoch::Operation::Paused {
+                self.confirm_paused()
+            } else {
+                Err(Error::State(
+                    "PAUSED is terminal for this transaction handle",
+                ))
+            };
+        }
+        check(
+            operation != epoch::Operation::Transition,
+            "use Transaction::transition for codec/owner changes",
+        )?;
+        self.commit_inner(operation, hook)
+    }
+    fn commit_inner(
         &mut self,
         operation: epoch::Operation,
         hook: &mut dyn FnMut(&str) -> Result<()>,
@@ -202,10 +224,9 @@ impl Transaction {
                 .last()
                 .ok_or(Error::State("pause lineage"))?
                 .manifest;
-            if prior.operation == epoch::Operation::Paused
-                && prior.progress.forwarded_records == self.engine.progress.forwarded_records
-            {
+            if prior.operation == epoch::Operation::Paused && self.matches_selected_state(prior)? {
                 self.poisoned = false;
+                self.paused = true;
                 return Ok(selected.clone());
             }
         }
@@ -222,7 +243,56 @@ impl Transaction {
         self.outputs.clear();
         self.output_bytes = 0;
         self.poisoned = false;
+        self.paused = operation == epoch::Operation::Paused;
         Ok(pointer)
+    }
+    fn matches_selected_state(&self, prior: &epoch::Manifest) -> Result<bool> {
+        let Some(state) = &self.engine.state else {
+            return Ok(false);
+        };
+        if self.engine.has_unconfirmed_input()
+            || state.has_pending_close()
+            || state
+                .store
+                .first_closed(self.engine.progress.frontier, self.config.state.window_ms)?
+                .is_some()
+            || !epoch::same_progress(&prior.progress, &self.engine.progress)
+            || prior.closed_window_late != state.closed_window_late
+        {
+            return Ok(false);
+        }
+        let mut digest = blake3::Hasher::new();
+        for shard in 0..32 {
+            state.store.visit_shard(shard, |entry| {
+                digest.update(&state::store::encode(entry));
+                Ok(())
+            })?;
+        }
+        Ok(digest.finalize().to_hex().as_str() == prior.state_blake3)
+    }
+    fn confirm_paused(&self) -> Result<epoch::Pointer> {
+        check(
+            !self.poisoned && self.outputs.is_empty(),
+            "paused transaction changed after selection",
+        )?;
+        let selected = self
+            .selected
+            .as_ref()
+            .ok_or(Error::State("paused selection missing"))?;
+        check(
+            epoch::selection(&self.config.state.checkpoint_root)?.as_ref() == Some(selected),
+            "paused selected pointer changed",
+        )?;
+        let closure = epoch::verify(&self.config, selected)?;
+        let prior = &closure
+            .last()
+            .ok_or(Error::State("paused lineage missing"))?
+            .manifest;
+        check(
+            prior.operation == epoch::Operation::Paused && self.matches_selected_state(prior)?,
+            "paused transaction changed after selection",
+        )?;
+        Ok(selected.clone())
     }
     /// # Errors
     /// Only compatible codec1→2 and logical owner changes are admitted, in one epoch.
@@ -269,6 +339,6 @@ impl Transaction {
             next.closed_window_late = late;
             txn.engine.state = Some(next);
         }
-        txn.commit(epoch::Operation::Transition, hook)
+        txn.commit_inner(epoch::Operation::Transition, hook)
     }
 }

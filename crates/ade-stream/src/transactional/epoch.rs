@@ -77,6 +77,13 @@ struct Root {
     job: Uuid,
     fingerprint: String,
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Activation {
+    version: u32,
+    job: Uuid,
+    fingerprint: String,
+}
 /// Permanent inode: never unlink/recreate a lock to recover a crashed writer.
 pub struct Lease {
     file: File,
@@ -133,6 +140,10 @@ impl Lease {
             sync_dir(root)?;
         }
         root_identity(c)?;
+        // A missing selector is safe only on an initialized, never-activated root.
+        // This check runs under the permanent writer lock before any caller can
+        // assign Kafka partitions or start a fresh lineage.
+        let _ = selection(root)?;
         occupied(root, c.limits.root_bytes)?;
         let lease = Self {
             file,
@@ -169,7 +180,44 @@ pub fn root_identity(c: &Config) -> Result<()> {
             && r.job == c.state.job_id
             && r.fingerprint == c.fingerprint()?,
         "foreign/cloned root identity",
+    )?;
+    match fs::symlink_metadata(c.state.checkpoint_root.join("ACTIVATED3")) {
+        Ok(_) => activation_identity(c),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(Error::State("activation marker metadata")),
+    }
+}
+
+fn activation_identity(c: &Config) -> Result<()> {
+    let marker: Activation = json(&bytes(&c.state.checkpoint_root.join("ACTIVATED3"), 4096)?)?;
+    check(
+        marker.version == 3
+            && marker.job == c.state.job_id
+            && marker.fingerprint == c.fingerprint()?,
+        "foreign activation marker",
     )
+}
+
+/// Persist a monotonic activation witness before first publication. This file is
+/// never used to select an epoch; it only prevents an absent selector from being
+/// mistaken for a fresh root after a commit/import was started.
+/// # Errors
+/// Refuses an invalid marker or filesystem failure.
+pub(crate) fn mark_activated(c: &Config) -> Result<()> {
+    let marker = Activation {
+        version: 3,
+        job: c.state.job_id,
+        fingerprint: c.fingerprint()?,
+    };
+    let path = c.state.checkpoint_root.join("ACTIVATED3");
+    match fs::symlink_metadata(&path) {
+        Ok(_) => activation_identity(c),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            write(&path, &encode(&marker)?)?;
+            sync_dir(&c.state.checkpoint_root)
+        }
+        Err(_) => Err(Error::State("activation marker metadata")),
+    }
 }
 /// # Errors
 /// Bounded strict JSON parsing.
@@ -206,6 +254,41 @@ pub(crate) fn directory(p: &Path) -> Result<()> {
 /// # Errors
 /// Malformed authoritative selector is fatal; absence never triggers discovery.
 pub fn selection(root: &Path) -> Result<Option<Pointer>> {
+    let selected = raw_selection(root)?;
+    if selected.is_some() {
+        return Ok(selected);
+    }
+    // CURRENT3 is the only visibility pointer. ACTIVATED3 and retained objects
+    // are evidence that the root crossed (or attempted) its first publication
+    // boundary, never alternate selection sources.
+    check(
+        fs::symlink_metadata(root.join("ACTIVATED3"))
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
+        "CURRENT3 missing on activated root",
+    )?;
+    let _ = regular(&root.join("ROOT3"), 4096)?;
+    let _ = regular(&root.join("WRITER3"), 512)?;
+    let mut seen_root = false;
+    let mut seen_writer = false;
+    let mut count = 0usize;
+    for item in io(fs::read_dir(root))? {
+        let item = io(item)?;
+        count += 1;
+        check(count <= 3, "selector-less root inventory cap")?;
+        match item.file_name().to_str() {
+            Some("ROOT3") => seen_root = true,
+            Some("WRITER3") => seen_writer = true,
+            _ => return Err(Error::State("CURRENT3 missing on nonfresh root")),
+        }
+    }
+    check(
+        seen_root && seen_writer && count == 2,
+        "uninitialized v3 root",
+    )?;
+    Ok(None)
+}
+
+fn raw_selection(root: &Path) -> Result<Option<Pointer>> {
     private(root)?;
     match fs::symlink_metadata(root.join("CURRENT3")) {
         Ok(_) => {
@@ -404,7 +487,7 @@ pub(crate) fn verify_codec(c: &Config, p: &Pointer, enforce_codec: bool) -> Resu
     }
     Ok(chain)
 }
-fn same_progress(a: &Progress, b: &Progress) -> bool {
+pub(crate) fn same_progress(a: &Progress, b: &Progress) -> bool {
     a.frontier == b.frontier
         && a.forwarded_records == b.forwarded_records
         && a.late_records == b.late_records
@@ -702,9 +785,10 @@ pub fn publish(
     hook("epoch_verified")?;
     lease.fence()?;
     check(
-        selection(root)?.as_ref() == parent,
+        raw_selection(root)?.as_ref() == parent,
         "parent changed before selector",
     )?;
+    mark_activated(c)?;
     let tmp = root.join(format!("select-{}", lease.writer));
     let mut f = store::create_file(&tmp)?;
     let b = encode(&p)?;

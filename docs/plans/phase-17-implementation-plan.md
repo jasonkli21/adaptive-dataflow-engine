@@ -5,7 +5,7 @@
 **Prepared:** 2026-10-30 (America/Los_Angeles)
 **Repository:** https://github.com/jasonkli21/adaptive-dataflow-engine
 **Inspected `main`:** [`46a976d41d8642d54fe0829bd7944c9a1ddd39d1`](https://github.com/jasonkli21/adaptive-dataflow-engine/commit/46a976d41d8642d54fe0829bd7944c9a1ddd39d1), “Fix Phase 16 recovery and admission review findings.” Recheck HEAD, worktree, relevant docs and any subsequent changes before implementation.
-**Status:** **COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1**. Explicitly authorized by the user's submitted implementation request; qualified local G0–G14 evidence is recorded in the implementation report. A planning document alone supplies no authorization.
+**Status:** **PARTIAL_VERIFICATION** after independent review. The original candidate5 G0–G14 evidence remains frozen and source-bound as documented; current remediation is not accepted until the new G15 paths and matched final-source regressions are witnessed. Phase 17 implementation and review remediation were explicitly authorized by the user. A planning document alone supplies no authorization.
 **Authority:** PRD product outcome > architecture invariants > reconciled active plan > accepted ADRs > reports/current code; follow `AGENTS.md` for procedure. Record any intentional refinement in an ADR, and reconcile the plan rather than silently changing product scope.
 
 ## 0. Executive decision and rationale
@@ -170,5 +170,37 @@ supplement close the remaining source/storage gates. Real lifecycle SIGKILL test
 codec transformation and logical owner-store redistribution are included. All
 four predecessors and earlier phase archives remain preserved. The full PRD's
 external-sink/physical-rescale/HA aspirations remain explicitly outside this bounded
-product; they are not silently claimed complete. Final verification/documentation
-strengthening does not change any of the139 matched runtime/Cargo inputs.
+product; they are not silently claimed complete. This is historical candidate5
+evidence only. The independent review found a missing-selector lineage reset and
+lifecycle/API gaps; the additive remediation report controls current status.
+
+## 9. Independent review remediation — 2026-10-30
+
+Current status is `PARTIAL_VERIFICATION` until fresh, matched evidence covers the
+following:
+
+- **F17-01 / G15:** a missing selector on a committed, empty-PAUSED, or interrupted
+  import root refuses `read`, `run`, and `resume` without selector recreation,
+  source assignment, stdout output, or other root mutation. Restoring the exact
+  selector restores the exact prior state/progress/output prefix.
+- **F17-02 / A8:** continuation import requires the exact authoritative head
+  digest of the retired predecessor. A stale savepoint plus the newer source head
+  refuses before target effects. This is operator-attested, not global fencing;
+  independently running filesystem roots remain separate lineages and may not be
+  merged as one job.
+- **F17-03:** PAUSED is terminal for the current public handle; an unchanged
+  repeated PAUSED call is idempotent; `accept`/other commit refuse; transition
+  commits are reachable only through the validated transition API; fresh-process
+  resume remains supported.
+- **F17-04:** savepoint publication uses atomic no-replace rename. A destination
+  created after friendly preflight is preserved and the export fails.
+- **F17-05:** retain candidate5 identities and its seven-file source-inventory
+  difference as historical facts. The new remediation source/runtime inventory,
+  executable and any fresh service run must be recorded separately. Offline replay
+  of candidate5 is not a fresh acceptance run.
+
+The new declared `scripts/phase17/criteria.json` adds G15 and A1–A3 plus stale-head
+refusal. The old campaign archive, manifests, four failed predecessors and all
+Phase16/earlier evidence remain byte-for-byte unchanged. If fresh Kafka/MinIO or a
+matched final executable is unavailable, report `PARTIAL_VERIFICATION`; do not
+promote historical G0–G14 to current-source acceptance.

@@ -9,7 +9,7 @@ use ade_stream::{
         savepoint, sink,
     },
 };
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 use uuid::Uuid;
 struct Temp(PathBuf);
 impl Temp {
@@ -128,6 +128,38 @@ fn close(tx: &mut Transaction) {
     event(tx, 0, 20, 9999, 0, 200);
     event(tx, 1, 20, 9999, 0, 200);
 }
+fn head(c: &Config) -> String {
+    epoch::selection(&c.state.checkpoint_root)
+        .unwrap()
+        .unwrap()
+        .blake3
+}
+fn tree_snapshot(root: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    fn visit(
+        root: &std::path::Path,
+        path: &std::path::Path,
+        out: &mut std::collections::BTreeMap<String, String>,
+    ) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            let child = entry.path();
+            let rel = child
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if child.is_dir() {
+                out.insert(format!("{rel}/"), "directory".into());
+                visit(root, &child, out);
+            } else {
+                out.insert(rel, epoch::hash(&fs::read(child).unwrap()));
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    visit(root, root, &mut out);
+    out
+}
 const POINTS: &[&str] = &[
     "before_stage",
     "stage_created",
@@ -179,6 +211,116 @@ fn every_failure_selects_whole_old_or_new_and_poison() {
         );
     }
 }
+
+#[test]
+fn missing_selector_on_committed_root_fails_closed_and_restores_exact_prefix() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    seed(&c);
+    let mut tx = open(&c, true);
+    close(&mut tx);
+    tx.commit(Operation::Commit, &mut |_| Ok(())).unwrap();
+    drop(tx);
+    assert_eq!(sink::read(&c).unwrap().len(), 40);
+    let expected = fs::read(c.state.checkpoint_root.join("CURRENT3")).unwrap();
+    let backup = temp.0.join("saved-CURRENT3");
+    fs::rename(c.state.checkpoint_root.join("CURRENT3"), &backup).unwrap();
+    let missing_root = tree_snapshot(&c.state.checkpoint_root);
+
+    assert!(sink::read(&c).is_err());
+    assert!(Transaction::open(c.clone(), false, CancellationToken::default()).is_err());
+    assert!(Transaction::open(c.clone(), true, CancellationToken::default()).is_err());
+    assert!(!c.state.checkpoint_root.join("CURRENT3").exists());
+    assert_eq!(tree_snapshot(&c.state.checkpoint_root), missing_root);
+
+    assert_eq!(fs::read(&backup).unwrap(), expected);
+    fs::rename(&backup, c.state.checkpoint_root.join("CURRENT3")).unwrap();
+    assert_eq!(sink::read(&c).unwrap().len(), 40);
+    let resumed = open(&c, true);
+    assert_eq!(resumed.engine.progress.forwarded_records, 42);
+    assert_eq!(
+        resumed.engine.progress.partitions[&0].next_offset_suggestion,
+        21
+    );
+    assert_eq!(
+        resumed.engine.progress.partitions[&1].next_offset_suggestion,
+        21
+    );
+}
+
+#[test]
+fn missing_selector_on_empty_paused_root_is_not_a_fresh_lineage() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    let mut tx = open(&c, false);
+    tx.commit(Operation::Paused, &mut |_| Ok(())).unwrap();
+    drop(tx);
+    assert_eq!(sink::read(&c).unwrap(), []);
+    let current = c.state.checkpoint_root.join("CURRENT3");
+    let saved = temp.0.join("empty-CURRENT3");
+    let bytes = fs::read(&current).unwrap();
+    fs::rename(&current, &saved).unwrap();
+    assert!(sink::read(&c).is_err());
+    assert!(Transaction::open(c.clone(), false, CancellationToken::default()).is_err());
+    assert!(Transaction::open(c.clone(), true, CancellationToken::default()).is_err());
+    assert!(!current.exists());
+    fs::rename(&saved, &current).unwrap();
+    assert_eq!(fs::read(&current).unwrap(), bytes);
+    assert_eq!(sink::read(&c).unwrap(), []);
+}
+
+#[test]
+fn missing_selector_cli_refuses_before_output_or_source_assignment() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    seed(&c);
+    let mut tx = open(&c, true);
+    close(&mut tx);
+    tx.commit(Operation::Commit, &mut |_| Ok(())).unwrap();
+    drop(tx);
+    let config_path = temp.0.join("cli.config3.json");
+    fs::write(&config_path, serde_json::to_vec(&c).unwrap()).unwrap();
+    let current = c.state.checkpoint_root.join("CURRENT3");
+    let selector = fs::read(&current).unwrap();
+    let backup = temp.0.join("cli-CURRENT3");
+    fs::rename(&current, &backup).unwrap();
+    let inventory = tree_snapshot(&c.state.checkpoint_root);
+
+    for command in ["read", "run", "resume"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_ade-state-stream-txn"))
+            .arg(&config_path)
+            .arg(command)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1), "{command}");
+        assert!(result.stdout.is_empty(), "{command}");
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert!(stderr.contains("CURRENT3 missing"), "{command}: {stderr}");
+        assert!(!stderr.contains("source_assigned"), "{command}: {stderr}");
+        assert_eq!(
+            tree_snapshot(&c.state.checkpoint_root),
+            inventory,
+            "{command}"
+        );
+    }
+
+    fs::rename(&backup, &current).unwrap();
+    assert_eq!(fs::read(&current).unwrap(), selector);
+    let result = Command::new(env!("CARGO_BIN_EXE_ade-state-stream-txn"))
+        .arg(&config_path)
+        .arg("read")
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert_eq!(
+        result
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .count(),
+        40
+    );
+}
 #[test]
 fn savepoint_codec_and_owners_round_trip_preserves_full_state_output_and_progress() {
     let temp = Temp::new();
@@ -186,6 +328,7 @@ fn savepoint_codec_and_owners_round_trip_preserves_full_state_output_and_progres
     seed(&c);
     let (path, digest) =
         savepoint::export(&c, &temp.0.join("exports"), "safe", &mut |_| Ok(())).unwrap();
+    let saved_head = head(&c);
     assert!(savepoint::export(&c, &temp.0.join("exports"), "safe", &mut |_| Ok(())).is_err());
     assert!(savepoint::export(&c, &temp.0.join("exports"), "../escape", &mut |_| Ok(())).is_err());
     let old = epoch::selection(&c.state.checkpoint_root).unwrap().unwrap();
@@ -220,19 +363,97 @@ fn savepoint_codec_and_owners_round_trip_preserves_full_state_output_and_progres
     txn.commit(Operation::Paused, &mut |_| Ok(())).unwrap();
     drop(txn);
     assert_eq!(sink::read(&c).unwrap().len(), 40);
-    // Import an old savepoint only to a new independent root; no rollback of current.
+    // A stale snapshot cannot continue while its source lineage has a newer head.
     mkdir(&temp.0.join("import"));
     let mut imported = c.clone();
     imported.codec = 1;
     imported.state.owners = 1;
     imported.state.checkpoint_root = temp.0.join("import");
-    savepoint::import(&imported, &path, &digest, &mut |_| Ok(())).unwrap();
+    assert_ne!(saved_head, head(&c));
+    assert!(savepoint::import(&imported, &path, &digest, &head(&c), &mut |_| Ok(())).is_err());
+    // Import the current authoritative head as an explicit retired predecessor.
+    let (latest_path, latest_digest) =
+        savepoint::export(&c, &temp.0.join("exports"), "latest", &mut |_| Ok(())).unwrap();
+    let latest_head = head(&c);
+    imported.codec = c.codec;
+    imported.state.owners = c.state.owners;
+    savepoint::import(
+        &imported,
+        &latest_path,
+        &latest_digest,
+        &latest_head,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
     let tx = open(&imported, true);
-    assert_eq!(tx.engine.progress.forwarded_records, 40);
+    assert_eq!(tx.engine.progress.forwarded_records, 42);
     drop(tx);
-    assert!(savepoint::import(&c, &path, &digest, &mut |_| Ok(())).is_err());
+    assert!(
+        savepoint::import(&c, &latest_path, &latest_digest, &latest_head, &mut |_| Ok(
+            ()
+        ))
+        .is_err()
+    );
     fs::write(path.join("SAVEPOINT3"), b"{}").unwrap();
     assert!(savepoint::verify(&imported, &path, &digest).is_err());
+}
+
+#[test]
+fn interrupted_first_import_is_not_admitted_as_an_empty_root() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    seed(&c);
+    let (path, digest) =
+        savepoint::export(&c, &temp.0.join("exports"), "seed", &mut |_| Ok(())).unwrap();
+    let retired_head = head(&c);
+    mkdir(&temp.0.join("import-check"));
+    let mut imported = c.clone();
+    imported.state.checkpoint_root = temp.0.join("import-check");
+    assert!(
+        savepoint::import(
+            &imported,
+            &path,
+            &digest,
+            &retired_head,
+            &mut |point| if point == "import_before_selector" {
+                Err(ade_stream::Error::State("simulated interrupted import"))
+            } else {
+                Ok(())
+            }
+        )
+        .is_err()
+    );
+    assert!(sink::read(&imported).is_err());
+    assert!(Transaction::open(imported.clone(), false, CancellationToken::default()).is_err());
+    assert!(Transaction::open(imported, true, CancellationToken::default()).is_err());
+    assert!(path.join("SAVEPOINT3").exists());
+}
+
+#[test]
+fn savepoint_export_no_replace_refuses_a_destination_created_after_preflight() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    seed(&c);
+    let parent = temp.0.join("exports");
+    let destination = parent.join("raced");
+    assert!(
+        savepoint::export(&c, &parent, "raced", &mut |point| {
+            if point == "export_before_publish" {
+                mkdir(&destination);
+            }
+            Ok(())
+        })
+        .is_err()
+    );
+    assert!(destination.is_dir());
+    assert!(fs::read_dir(destination).unwrap().next().is_none());
+    assert!(fs::read_dir(&parent).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("export-")
+    }));
 }
 #[test]
 fn competing_writer_paths_hash_consistent_semantic_corruption_and_resource_refusals() {
@@ -398,6 +619,26 @@ fn clean_pause_replay_is_idempotent_and_partial_migration_never_activates() {
     let c = config(&temp);
     let mut tx = open(&c, false);
     let first = tx.commit(Operation::Paused, &mut |_| Ok(())).unwrap();
+    assert_eq!(
+        tx.commit(Operation::Paused, &mut |_| Ok(())).unwrap(),
+        first
+    );
+    assert!(tx.commit(Operation::Commit, &mut |_| Ok(())).is_err());
+    assert!(
+        tx.accept(RawRecord {
+            session: tx.engine.progress.session,
+            partition: 0,
+            offset: 0,
+            payload: serde_json::to_vec(&EventV1 {
+                version: 1,
+                key: 1,
+                value_i64: 1,
+                event_time_ms: 0,
+            })
+            .unwrap(),
+        })
+        .is_err()
+    );
     drop(tx);
     let mut tx = open(&c, true);
     assert_eq!(
@@ -427,4 +668,17 @@ fn clean_pause_replay_is_idempotent_and_partial_migration_never_activates() {
     let checksum = blake3::hash(&bytes[..48]);
     bytes[48..].copy_from_slice(checksum.as_bytes());
     assert!(ade_stream::transactional::migration::read(&mut bytes.as_slice(), 2, 100).is_err());
+}
+
+#[test]
+fn public_transaction_cannot_publish_transition_without_transition_preconditions() {
+    let temp = Temp::new();
+    let c = config(&temp);
+    let mut tx = open(&c, false);
+    assert!(tx.commit(Operation::Transition, &mut |_| Ok(())).is_err());
+    assert!(
+        epoch::selection(&c.state.checkpoint_root)
+            .unwrap()
+            .is_none()
+    );
 }

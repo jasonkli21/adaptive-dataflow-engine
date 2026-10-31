@@ -1,7 +1,7 @@
 {
-  "version": 3,
+  "version": 4,
   "status_on_success": "COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1",
-  "starting_head": "46a976d41d8642d54fe0829bd7944c9a1ddd39d1",
+  "starting_head": "bd5d1b911305a0271ff199208eb4799931a41acd",
   "gates": [
     "G0",
     "G1",
@@ -17,7 +17,8 @@
     "G11",
     "G12",
     "G13",
-    "G14"
+    "G14",
+    "G15"
   ],
   "crash_points": [
     "before_stage",
@@ -91,8 +92,25 @@
     "failed-migration",
     "failed-export",
     "import-kill-replay-refused",
+    "import-kill-run-refused",
+    "import-kill-resume-refused",
+    "missing-selector-read",
+    "missing-selector-run",
+    "missing-selector-resume",
+    "empty-selector-read",
+    "empty-selector-run",
+    "empty-selector-resume",
+    "stale-continuation-refused",
     "file-size-io-failure"
   ],
+  "selector_loss_contract": {
+    "fresh_root_only_names": ["ROOT3", "WRITER3"],
+    "activated_marker": "ACTIVATED3",
+    "missing_selector_cases": ["missing-selector-read", "missing-selector-run", "missing-selector-resume"],
+    "empty_paused_cases": ["empty-selector-read", "empty-selector-run", "empty-selector-resume"],
+    "interrupted_import_cases": ["import-kill-reader", "import-kill-run-refused", "import-kill-resume-refused", "import-kill-replay-refused"],
+    "stale_savepoint_case": "stale-continuation-refused"
+  },
   "ordered_repeats": 2,
   "static_txn_samples": 3
 }

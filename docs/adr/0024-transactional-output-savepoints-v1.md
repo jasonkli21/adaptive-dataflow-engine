@@ -32,3 +32,35 @@ Phase16 post-fix live reacceptance is mandatory and separately source-bound. Pri
 independent Python source/output arithmetic replace no independent reviewer.
 All G0–G14 are required before completion; PRD external-sink/physical rescale and
 Phase10–16 broader debt remain deferred.
+
+## Review remediation amendment — 2026-10-30
+
+The independent review found that a missing `CURRENT3` could be interpreted as a
+fresh lineage. `ACTIVATED3` is now written and directory-synced before the first
+selector publication or savepoint import. It is a monotonic refusal witness only;
+it never selects state or output. With no selector, admission is allowed only for
+an initialized root containing exactly `ROOT3` and `WRITER3`, with no activation
+marker. Any staged object, import artifact, selector temporary or other entry is
+a hard error. `CURRENT3` remains the sole visibility/commit point. Historical
+roots without `ACTIVATED3` still fail closed when selector absence is accompanied
+by their retained epoch objects.
+
+The public `Transaction` handle treats a committed `PAUSED` operation as terminal.
+Only an unchanged repeated PAUSED call is idempotent; data and other commits
+require a fresh `open(..., resume=true)`. Public callers cannot request a
+`Transition` commit directly; codec/owner changes use the validated transition
+entry point.
+
+Savepoint import now requires the operator to provide the retired predecessor's
+authoritative head digest, which must equal the selected head embedded in the
+savepoint. This detects an honestly supplied newer source head and makes
+continuation intent explicit. The digest is an operator attestation, not a
+cross-root lease or cryptographic proof that the predecessor is retired. Separate
+roots still require one active continuation and must not be merged as one lineage.
+Named export publishes with the platform no-replace rename (`RENAME_EXCL` on
+macOS, `RENAME_NOREPLACE` on Linux); unsupported atomic semantics fail closed.
+
+The follow-up criteria add G15 for selector loss, empty PAUSED roots, interrupted
+imports and stale savepoints. The candidate5 G0–G14 evidence remains historical;
+it is not evidence for these remediation changes. Current acceptance requires a
+matched rebuild/regression and a fresh source-bound service campaign.

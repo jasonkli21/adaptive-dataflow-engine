@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use serde::{Deserialize, Serialize};
+use std::fs::File;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -136,7 +137,22 @@ pub fn export(
         fs::symlink_metadata(parent.join(label)).is_err(),
         "savepoint collision",
     )?;
-    io(fs::rename(&stage, parent.join(label)))?;
+    hook("export_before_publish")?;
+    let parent_fd = io(File::open(parent))?;
+    let stage_name = stage
+        .file_name()
+        .ok_or(Error::State("savepoint stage name"))?;
+    // renameatx_np(RENAME_EXCL) on macOS and renameat2(RENAME_NOREPLACE)
+    // on Linux make admission atomic even if another actor creates an empty
+    // destination after our friendly preflight check.
+    rustix::fs::renameat_with(
+        &parent_fd,
+        stage_name,
+        &parent_fd,
+        label,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|_| Error::State("savepoint atomic no-replace publish"))?;
     sync_dir(parent)?;
     hook("export_durable")?;
     Ok((parent.join(label), hash(&top)))
@@ -183,11 +199,16 @@ pub fn import(
     c: &Config,
     path: &Path,
     digest: &str,
+    retired_head_digest: &str,
     hook: &mut dyn FnMut(&str) -> Result<()>,
 ) -> Result<Pointer> {
     c.validate()?;
     separate(c, path)?;
     let manifest = verify(c, path, digest)?;
+    check(
+        retired_head_digest == manifest.selected.blake3,
+        "retired predecessor authoritative head attestation",
+    )?;
     let mut source_config = c.clone();
     source_config.state.checkpoint_root = path.to_path_buf();
     let closure = epoch::verify(&source_config, &manifest.selected)?;
@@ -211,6 +232,9 @@ pub fn import(
             <= c.limits.root_bytes,
         "import root quota",
     )?;
+    // Any interrupted import is no longer admissible as a fresh empty lineage.
+    // This witness never selects data; CURRENT3 remains the sole commit point.
+    epoch::mark_activated(c)?;
     for f in &manifest.files {
         let dir = c.state.checkpoint_root.join(
             f.path

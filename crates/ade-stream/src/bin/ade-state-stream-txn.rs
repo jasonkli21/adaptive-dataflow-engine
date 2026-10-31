@@ -115,6 +115,7 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
         "export_object",
         "export_synced",
         "export_durable",
+        "export_before_publish",
         "import_object",
         "import_before_selector",
         "import_durable",
@@ -166,10 +167,13 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
             )?;
         }
         "import" => {
-            let [path, digest] = op_args.as_slice() else {
-                return Err(Error::Admission("import SAVEPOINT EXACT_DIGEST"));
+            let [path, digest, retired_head] = op_args.as_slice() else {
+                return Err(Error::Admission(
+                    "import SAVEPOINT EXACT_DIGEST RETIRED_PREDECESSOR_HEAD_BLAKE3",
+                ));
             };
-            let pointer = savepoint::import(&config, Path::new(path), digest, &mut hook)?;
+            let pointer =
+                savepoint::import(&config, Path::new(path), digest, retired_head, &mut hook)?;
             runtime::trace(
                 &mut *diagnostics.borrow_mut(),
                 &serde_json::json!({"type":"operation","status":"IMPORTED","pointer":pointer}),

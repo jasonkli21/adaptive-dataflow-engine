@@ -1,10 +1,14 @@
 # Phase17 implementation report — 2026-10-30
 
-Status: **COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1**. All bounded G0–G14 passed on
-source-bound local evidence. The user's request authorized implementation in this
-session, without subagents and with one final local commit. No push, PR, production
-mutation or Phase18 authorization occurred. The attachment supplied requirements;
-it did not supersede the PRD/architecture or independently establish acceptance.
+Status of the original candidate5 run: **COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1**
+on its frozen local G0–G14 evidence. Current repository status after independent
+review: **PARTIAL_VERIFICATION** until the additive remediation acceptance is
+completed. The candidate5 evidence below remains historical and does not qualify
+the remediation source. See
+[`phase-17-review-remediation-2026-10-30.md`](phase-17-review-remediation-2026-10-30.md).
+No push, PR, production mutation or Phase18 authorization occurred. The attachment
+supplied review findings; it did not supersede the PRD/architecture or itself
+establish acceptance.
 
 ## Identity and supported product
 
@@ -55,7 +59,7 @@ already-PAUSED cuts are idempotent. Fresh transition processes perform the real
 full semantic equivalence before atomic activation. Failed migration leaves the
 old cut visible. Physical rescale is explicitly refused.
 
-## Gate results
+## Historical candidate5 gate results
 
 The [raw primary manifest](../evidence/phase17/manifest.json) binds21,160 files.
 Candidate5 has121 transactional cases,144 separate reader observations,376 matched

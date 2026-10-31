@@ -60,8 +60,18 @@ def campaign(a):
             work=pathlib.Path(c['state']['working_root']);removed=[]
             for p in work.iterdir():removed.append(p.name);shutil.rmtree(p)
             dump(root/(label+'.dead-working-cleanup.json'),dict(reason='SIGKILL child waited; kernel writer lock released; disposable lossy working files only',removed=removed))
+        def selected_head(c):
+            return json.loads(pathlib.Path(c['state']['checkpoint_root'],'CURRENT3').read_text())['blake3']
+        def root_inventory(path):
+            result={}
+            for item in sorted(pathlib.Path(path).rglob('*')):
+                rel=str(item.relative_to(path))
+                if item.is_symlink():result[rel]={'symlink':str(item.readlink())}
+                elif item.is_dir():result[rel]={'directory':True}
+                elif item.is_file():result[rel]={'sha256':hashlib.sha256(item.read_bytes()).hexdigest()}
+            return result
         def imported(base,label,path,digest):
-            c=config(base['state']['source']['topic'],label,base['state']['job_id']);c['trusted_history']=base['trusted_history'];c['codec']=base['codec'];c['state']['owners']=base['state']['owners'];execute(label+'-import',c,'import',[path,digest]);return c
+            c=config(base['state']['source']['topic'],label,base['state']['job_id']);c['trusted_history']=base['trusted_history'];c['codec']=base['codec'];c['state']['owners']=base['state']['owners'];execute(label+'-import',c,'import',[path,digest,selected_head(base)]);return c
         # Full-state/cold tier seed and self-contained export used for each isolated crash branch.
         topic=s.topic('atomic');c=config(topic,'atomic-roots');s.produce(topic,[(i%2,event(i,1,-50)) for i in range(80)])
         execute('atomic-seed',c,'run',['--pause-after-records',80]);exports=private(root/'savepoints')
@@ -88,7 +98,45 @@ def campaign(a):
         # Real lifecycle kills use the same single commit boundary and separate reader.
         q=imported(c,'migration-kill-roots',path,digest);label='migration-kill';p=launch(label,q,'transition',[2,2,'--test-pause-at','epoch_verified']);wait(label,p,point='epoch_verified');snapshot(label+'-old',q);p.kill();finish(label,q,p,-9);clean_work(q,label);execute(label+'-retry',q,'transition',[2,2],observe=False);q['codec']=2;q['state']['owners']=2;snapshot(label+'-new',q)
         label='export-kill';p=launch(label,c,'export',[exports,'killed','--test-pause-at','export_object']);wait(label,p,point='export_object');p.kill();finish(label,c,p,-9);require(not (exports/'killed').exists(),'killed export acquired valid name')
-        q=config(c['state']['source']['topic'],'import-kill-roots',c['state']['job_id']);q['trusted_history']=c['trusted_history'];label='import-kill';p=launch(label,q,'import',[path,digest,'--test-pause-at','import_before_selector']);wait(label,p,point='import_before_selector');out=s.call([str(pinned['txn']),str(cfgfile(label+'-reader',q)),'read'],label+'-reader');require(not out,'partial import exposed output');p.kill();finish(label,q,p,-9);execute(label+'-replay-refused',q,'import',[path,digest],expected=1,observe=False)
+        q=config(c['state']['source']['topic'],'import-kill-roots',c['state']['job_id']);q['trusted_history']=c['trusted_history'];label='import-kill';p=launch(label,q,'import',[path,digest,selected_head(c),'--test-pause-at','import_before_selector']);wait(label,p,point='import_before_selector');import_check=pathlib.Path(q['state']['checkpoint_root']);import_inventory=root_inventory(import_check);dump(root/'import-kill-state.json',dict(root=import_inventory,selector_present=(import_check/'CURRENT3').exists()));out=execute(label+'-reader',q,'read',expected=1,observe=False)[1];require(not out,'partial import exposed output');p.kill();finish(label,q,p,-9);execute(label+'-run-refused',q,'run',expected=1,observe=False);execute(label+'-resume-refused',q,'resume',expected=1,observe=False);execute(label+'-replay-refused',q,'import',[path,digest,selected_head(c)],expected=1,observe=False);dump(root/'import-kill-refused.json',dict(root=root_inventory(import_check),selector_present=(import_check/'CURRENT3').exists()));require(root_inventory(import_check)==import_inventory,'incomplete import refusal mutated root')
+        # G15/A1: a missing selector on a populated root cannot become an empty
+        # read or a new genesis; run/resume fail before Kafka assignment.
+        missing_topic=s.topic('missing-selector');missing=config(missing_topic,'missing-selector-roots')
+        s.produce(missing_topic,[(i%2,event(i,1,-50)) for i in range(40)])
+        execute('missing-selector-seed',missing,'run',['--pause-after-records',40])
+        s.produce(missing_topic,[(0,event(9999,0,200)),(1,event(9999,0,200))])
+        execute('missing-selector-close',missing,'resume',['--pause-after-records',42])
+        current=pathlib.Path(missing['state']['checkpoint_root'],'CURRENT3');saved_selector=root/'missing-selector.CURRENT3';selector_bytes=current.read_bytes();selector_sha=hashlib.sha256(selector_bytes).hexdigest();os.replace(current,saved_selector)
+        inventory_before=root_inventory(missing['state']['checkpoint_root']);dump(root/'missing-selector-state.json',dict(selector_sha256=selector_sha,root=inventory_before))
+        for command in ['read','run','resume']:
+            trace,out=execute('missing-selector-'+command,missing,command,expected=1,observe=False)
+            require(not out,'missing selector exposed stdout')
+            require(not any(r.get('type')=='admitted' or r.get('point')=='source_assigned' for r in trace),'missing selector reached Kafka assignment')
+            require(not current.exists(),'missing selector was recreated')
+            require(root_inventory(missing['state']['checkpoint_root'])==inventory_before,'missing selector refusal mutated root')
+        dump(root/'missing-selector-refused.json',dict(root=inventory_before,selector_present=current.exists()))
+        os.replace(saved_selector,current);require(hashlib.sha256(current.read_bytes()).hexdigest()==selector_sha,'selector restoration changed bytes')
+        restored=snapshot('missing-selector-restored',missing);require(len(restored)==40,'restored committed prefix differs')
+        dump(root/'missing-selector-restored.json',dict(selector_sha256=hashlib.sha256(current.read_bytes()).hexdigest(),root=root_inventory(missing['state']['checkpoint_root'])))
+        # A2: an empty but durably PAUSED first epoch is activated lineage too.
+        empty_topic=s.topic('empty-selector');empty=config(empty_topic,'empty-selector-roots')
+        execute('empty-selector-seed',empty,'run',['--pause-after-ms',250]);empty_current=pathlib.Path(empty['state']['checkpoint_root'],'CURRENT3');empty_saved=root/'empty-selector.CURRENT3';empty_bytes=empty_current.read_bytes();empty_sha=hashlib.sha256(empty_bytes).hexdigest();os.replace(empty_current,empty_saved)
+        empty_inventory=root_inventory(empty['state']['checkpoint_root']);dump(root/'empty-selector-state.json',dict(selector_sha256=empty_sha,root=empty_inventory))
+        for command in ['read','run','resume']:
+            trace,out=execute('empty-selector-'+command,empty,command,expected=1,observe=False)
+            require(not out and not any(r.get('type')=='admitted' or r.get('point')=='source_assigned' for r in trace),'empty activated root was admitted')
+            require(not empty_current.exists() and root_inventory(empty['state']['checkpoint_root'])==empty_inventory,'empty selector refusal mutated root')
+        dump(root/'empty-selector-refused.json',dict(root=empty_inventory,selector_present=empty_current.exists()))
+        os.replace(empty_saved,empty_current);require(hashlib.sha256(empty_current.read_bytes()).hexdigest()==empty_sha,'empty selector restore changed bytes');require(snapshot('empty-selector-restored',empty)==[],'empty paused root gained output')
+        dump(root/'empty-selector-restored.json',dict(selector_sha256=hashlib.sha256(empty_current.read_bytes()).hexdigest(),root=root_inventory(empty['state']['checkpoint_root'])))
+        # A8: a savepoint whose source lineage has advanced is stale. Supplying
+        # that newer authoritative head must be refused before target creation.
+        fork_topic=s.topic('stale-savepoint');fork=config(fork_topic,'stale-savepoint-roots')
+        s.produce(fork_topic,[(i%2,event(i,1,-50)) for i in range(40)]);execute('stale-savepoint-seed',fork,'run',['--pause-after-records',40])
+        fork_trace,_=execute('stale-savepoint-export',fork,'export',[exports,'stale']);fork_cap=next(r for r in fork_trace if r.get('status')=='EXPORTED')
+        s.produce(fork_topic,[(0,event(9999,0,200)),(1,event(9999,0,200))]);execute('stale-savepoint-close',fork,'resume',['--pause-after-records',42])
+        stale_target=config(fork_topic,'stale-savepoint-target',fork['state']['job_id']);stale_target['trusted_history']=fork['trusted_history'];stale_path=pathlib.Path(stale_target['state']['checkpoint_root']);stale_before=root_inventory(stale_path);execute('stale-continuation-refused',stale_target,'import',[fork_cap['path'],fork_cap['blake3'],selected_head(fork)],expected=1,observe=False)
+        stale_after=root_inventory(stale_path);require(stale_before==stale_after and not (stale_path/'CURRENT3').exists(),'stale savepoint modified target');dump(root/'stale-continuation-state.json',dict(before=stale_before,after=stale_after,selector_present=(stale_path/'CURRENT3').exists()))
         q=imported(c,'slow-local-io-roots',path,digest);label='slow-local-io';p=launch(label,q,'resume',['--pause-after-records',82,'--test-pause-at','before_output_sync']);wait(label,p,point='before_output_sync');before=[r for r in rows(root/(label+'.stderr')) if r.get('type')=='input'];time.sleep(3);after=[r for r in rows(root/(label+'.stderr')) if r.get('type')=='input'];require(before==after,'source data polled during slow local sink');p.send_signal(signal.SIGINT);finish(label,q,p,1);snapshot(label+'-old',q);execute(label+'-resume',q,'resume',['--pause-after-records',82])
         # A real kernel file-size I/O refusal after a partial staged output write.
         import resource

@@ -258,17 +258,19 @@ explicit guarded replay/restore. Preserve candidate5 runtime/executable identiti
 and all four failed predecessors. Static defaults and v1 remain; same-host service
 proof is not physical HA. No Phase17 authorization is inferred.
 
-## Phase17 authorization and completion — 2026-10-30
+## Phase17 authorization and review remediation — 2026-10-30
 
-The user explicitly authorized Phase17 implementation in this session without
-subagents and with one final local project commit. Phase17 is
-COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1 under ADR-0024 and
-`docs/reports/phase-17-implementation-report.md`. Candidate5 has121 transactional
-cases,144 committed-reader observations/376 matched cuts/65 sessions, five fresh
-real Kafka/MinIO Phase16 post-fix proofs, and a matched actual-ENOSPC supplement.
-All required workspace checks pass (301 Rust tests/10 existing ignored,54 Python
-checks); fresh stateless30-case and fixed-state70-case regressions pass. Preserve
-its immutable source/executable/archive identities and all four predecessors.
+The user explicitly authorized Phase17 implementation and later review remediation
+in these sessions without subagents and with one local project commit per request.
+The original candidate5 `COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1` result under
+ADR-0024 is preserved as historical evidence in
+`docs/reports/phase-17-implementation-report.md`; its121 transactional cases,144
+committed-reader observations/376 matched cuts/65 sessions, five Kafka/MinIO
+prerequisite proofs and actual ENOSPC supplement are immutable. The independent
+review found a missing-selector lineage reset plus lifecycle gaps. Current Phase17
+status is `PARTIAL_VERIFICATION` until the additive G15 and matched final-source
+regressions are freshly verified. Preserve candidate5 identities and all four
+predecessors.
 
 The default-off v3 path selects complete state+source progress+output through one
 CURRENT3 pointer, with kernel writer fencing, poisoned ambiguous attempts,
@@ -283,7 +285,10 @@ physical state/Kafka rescale is inferred. Imported continuations require one act
 branch under operator control; no global cross-filesystem writer registry exists.
 Defaults, v1/v2 formats and prior evidence remain; old modes refuse v3 roots.
 
-The additive `docs/reports/phase-16-postfix-reacceptance-2026-10-30.md` closes the
-five decisive review paths on the matched current runtime. It does not relabel the
-historical117-case campaign or rewrite the earlier PARTIAL_VERIFICATION report.
-Earlier Phase10–16 broader debt remains separate. No Phase18 authorization is inferred.
+Review fixes add a non-authoritative ACTIVATED3 refusal witness, terminal PAUSED
+transaction handles, retired-predecessor head attestation on import and atomic
+no-replace savepoint publication. The additive
+`docs/reports/phase-17-review-remediation-2026-10-30.md` records current remediation,
+source-bound validation and remaining G15 service acceptance. Candidate5 and
+earlier evidence remain unchanged. Earlier Phase10–16 broader debt remains
+separate. No Phase18 authorization is inferred.

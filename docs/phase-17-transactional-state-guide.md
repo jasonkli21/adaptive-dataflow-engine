@@ -51,11 +51,21 @@ and the epoch manifest are immutable and synced first. The manifest records the
 parent hash, job/session/writer, codec/owners, offsets/frontier, late counts and
 state/output hashes. There is no separately committed state pointer.
 
+`ACTIVATED3` is a synced monotonic refusal witness, not a second selector. It is
+written before the first epoch publication or import. If CURRENT3 is missing,
+`read`, `run` and `resume` refuse whenever this witness or any object beyond the
+fresh `ROOT3`/`WRITER3` controls exists. This includes interrupted first commits
+and imports. Never remove the witness or guess a selector from directory contents.
+Restore the exact selector only after independently proving its bytes and closure;
+otherwise recover through a verified exact-digest savepoint into a new root.
+
 SIGINT requests source-demand pause. The owner settles its current input and all
 closed windows, verifies Kafka ranges, commits a PAUSED epoch, shuts down the owned
 Kafka client/control pump and exits with a PAUSED diagnostic. That operation status
 is also durable in the selected manifest. Resuming an unchanged already-PAUSED cut
-is idempotent and does not consume another epoch. SIGKILL, I/O failure, failed
+is idempotent and does not consume another epoch. The public transaction handle
+is terminal after PAUSED; `accept` and further commits require a fresh-process
+resume. SIGKILL, I/O failure, failed
 telemetry or a test hook is not a clean pause. After a failure, discard the attempt
 and reopen CURRENT3. An error after rename may mean the new epoch committed;
 never delete, roll back or replay it based on missing success telemetry. A corrupt
@@ -68,7 +78,7 @@ BLAKE3 digest from EXPORTED telemetry independently of the export directory.
 
 ```
 ade-state-stream-txn CONFIG3 export /absolute/private/exports name
-ade-state-stream-txn FRESH_CONFIG3 import /absolute/private/exports/name EXACT_DIGEST
+ade-state-stream-txn FRESH_CONFIG3 import /absolute/private/exports/name EXACT_DIGEST RETIRED_PREDECESSOR_HEAD_BLAKE3
 ade-state-stream-txn FRESH_CONFIG3 resume
 ```
 
@@ -79,7 +89,11 @@ sync. Export collision, unsafe name/path, corruption, foreign source/job/operato
 incomplete closure, excessive bytes and symlink/hardlink refuse. Failure leaves
 an invalid stage orphan charged to the export budget; previous named exports are
 unchanged. Import verifies the exact retained digest, all bytes and semantic
-closure before adopting into an empty root. It requires matching codec/owners;
+closure before adopting into an empty root. It requires the operator to supply the
+retired predecessor's authoritative CURRENT3 `blake3`; this must match the
+savepoint's selected head, so a newer supplied head refuses a stale savepoint
+before target effects. This is an explicit operator attestation, not global
+cross-root fencing. Import also requires matching codec/owners;
 change those through an explicit transition afterward. Import selection is atomic;
 an interrupted import requires a fresh root and preserves the source export.
 
@@ -87,7 +101,14 @@ A savepoint continuation retains the logical output prefix. Do not concurrently
 run imported branches and merge their external output as one lineage. No system
 can fence an independent copied filesystem after the operator explicitly authorizes
 a new writer there; this product supports one active continuation under operator
-control. Imports do not authorize rollback over an existing selected output prefix.
+control. The predecessor-head value is operator-supplied; it cannot prove that
+another root is retired or that no branch remains active. Imports do not authorize
+rollback over an existing selected output prefix.
+
+The export label is published with an atomic no-replace rename. If the label
+appears after preflight, export fails and preserves that destination. The
+implementation requires the platform's atomic no-replace rename; unsupported
+filesystems/platforms fail closed.
 
 ## Upgrade and logical rescale
 

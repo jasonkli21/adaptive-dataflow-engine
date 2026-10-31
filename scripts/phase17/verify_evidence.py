@@ -4,18 +4,20 @@ import argparse,hashlib,io,json,pathlib,tarfile,tempfile,re
 from digest import digest,raw
 from oracle import chain,verify_trace,shard
 from service_fixture import require,rows
+from remediation import check_refusal
 import struct
 
 def load(p):return json.loads(pathlib.Path(p).read_text())
 def sha(b):return hashlib.sha256(b).hexdigest()
 def source(root):
+    criteria=load(root/'criteria.json');version=criteria['version'];require(version in [3,4],'unsupported Phase17 criteria version')
     inventory=load(root/'source-inventory.json')
     with tarfile.open(root/'source.tar.gz','r:gz') as tar:
         members=tar.getmembers();require(len(members)<=2048 and sum(m.size for m in members)<=33554432 and all(m.isfile() and m.size<=4194304 for m in members),'source archive cap/type');files={m.name:tar.extractfile(m).read() for m in members}
     require(set(files)==set(inventory),'source inventory coverage')
     for p,h in inventory.items():require(sha(files[p])==h,'source hash mismatch: '+p)
-    runtime=load(root/'matched-runtime-inventory.json');require(all(inventory.get(p)==h for p,h in runtime.items()) and len(runtime)==139,'matched runtime source inventory')
-    env=load(root/'environment.json');require(env['base']==load(root/'criteria.json')['starting_head'],'wrong baseline')
+    runtime=load(root/'matched-runtime-inventory.json');require(all(inventory.get(p)==h for p,h in runtime.items()) and (len(runtime)==139 if version==3 else len(runtime)>=139),'matched runtime source inventory')
+    env=load(root/'environment.json');require(env['base']==criteria['starting_head'],'wrong baseline')
     for name,h in env['binaries'].items():
         p=root/(name+'-pinned')
         if p.exists():require(sha(p.read_bytes())==h,'pinned executable hash')
@@ -72,9 +74,11 @@ def prerequisite(root,ledgers):
             writes=[r for r in wire if r['method']=='PUT' and r['path'].startswith(prefix)];extra=[r for r in writes if not any(g in r['path'] for g in allowed)];require(len(extra)==2 and all('/probe-' in r['path'] for r in extra),'PUT occurred after placement capacity veto')
     return dict(cases=5,requests=len(wire),remote_objects=len(puts))
 
-def exports(root,ledgers,attempts):
+def exports(root,ledgers,attempts,version=3):
     count=0
-    for label in ['atomic-export','lifecycle-export','previous-export-safe']:
+    labels=['atomic-export','lifecycle-export','previous-export-safe']
+    if version>=4:labels.append('stale-savepoint-export')
+    for label in labels:
         c=load(root/(label+'.config3.json'));cap=next(r for r in rows(root/(label+'.stderr')) if r.get('status')=='EXPORTED');path=root/'savepoints'/pathlib.Path(cap['path']).name
         top=(path/'SAVEPOINT3').read_bytes();require(digest(top)==cap['blake3'],'retained export digest mismatch');m=json.loads(top);require(m['version']==3,'export version')
         cuts=chain(path,c,m['selected']);expected=[];observed=[]
@@ -86,14 +90,39 @@ def exports(root,ledgers,attempts):
         verify_trace(path,c,ledgers,attempts,observed,m['selected']);count+=1
     return count
 
-def checks(root):
+def checks(root,version=3):
     v=root/'validation';rust=(v/'ade17-final-workspace-tests-unrestricted.log').read_text();summaries=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored',rust)
-    require(sum(int(r[0]) for r in summaries)==301 and all(int(r[1])==0 for r in summaries) and sum(int(r[2]) for r in summaries)==10 and 'test result: FAILED' not in rust,'workspace correctness log mismatch')
-    require('Ran 54 tests' in (v/'ade17-final-python-3.log').read_text() and (v/'ade17-final-python-3.log').read_text().rstrip().endswith('OK'),'Python correctness log mismatch')
+    if version==3:
+        require(sum(int(r[0]) for r in summaries)==301 and all(int(r[1])==0 for r in summaries) and sum(int(r[2]) for r in summaries)==10 and 'test result: FAILED' not in rust,'workspace correctness log mismatch')
+        require('Ran 54 tests' in (v/'ade17-final-python-3.log').read_text() and (v/'ade17-final-python-3.log').read_text().rstrip().endswith('OK'),'Python correctness log mismatch')
+    else:
+        require(sum(int(r[0]) for r in summaries)>=301 and all(int(r[1])==0 for r in summaries) and 'test result: FAILED' not in rust,'workspace correctness log mismatch')
+        py=(v/'ade17-final-python-3.log').read_text();match=re.search(r'Ran (\d+) tests?',py);require(match and int(match.group(1))>=54 and py.rstrip().endswith('OK'),'Python correctness log mismatch')
     for label in ['check','clippy']:require('Finished' in (v/('ade17-final-'+label+'.log')).read_text(),'locked build gate log missing')
     require(not (v/'ade17-final-fmt.log').read_bytes(),'format gate log not clean')
     require('"validated": true' in (v/'ade17-final-smoke.log').read_text(),'smoke result missing')
     require(load(root/'required-checks.json')['runtime_inventory_sha256']==sha((root/'matched-runtime-inventory.json').read_bytes()),'validation source binding')
+
+def refusal_case(root,names,label):
+    require(label in names,'missing refusal '+label)
+    trace=rows(root/(label+'.stderr'))
+    try:check_refusal(label,names[label],trace,(root/(label+'.stdout')).read_bytes())
+    except ValueError as error:raise ValueError(str(error)) from error
+
+def selector_loss(root,names,observations):
+    for label in ['missing-selector-read','missing-selector-run','missing-selector-resume','empty-selector-read','empty-selector-run','empty-selector-resume','import-kill-reader','import-kill-run-refused','import-kill-resume-refused','import-kill-replay-refused','stale-continuation-refused']:
+        refusal_case(root,names,label)
+    for stem in ['missing-selector','empty-selector']:
+        before=load(root/(stem+'-state.json'));after=load(root/(stem+'-refused.json'));restored=load(root/(stem+'-restored.json'))
+        require('CURRENT3' not in before['root'] and 'ACTIVATED3' in before['root'],'selector-loss fixture was not activated')
+        require(before['root']==after['root'] and after['selector_present'] is False,'selector refusal mutated root')
+        require(before['selector_sha256']==restored['selector_sha256'] and restored['root']['CURRENT3']['sha256']==before['selector_sha256'],'selector restoration did not preserve exact bytes')
+    require(observations['missing-selector-restored']['proof']['records']==42 and observations['missing-selector-restored']['proof']['outputs']==40,'restored nonempty prefix mismatch')
+    require(observations['empty-selector-restored']['proof']['records']==0 and observations['empty-selector-restored']['proof']['outputs']==0,'restored empty PAUSED prefix mismatch')
+    interrupted=load(root/'import-kill-state.json');after=load(root/'import-kill-refused.json')
+    require(interrupted['selector_present'] is False and 'ACTIVATED3' in interrupted['root'],'partial import lacked activation witness')
+    require(interrupted['root']==after['root'] and after['selector_present'] is False,'partial import refusal mutated root')
+    stale=load(root/'stale-continuation-state.json');require(stale['before']==stale['after'] and stale['selector_present'] is False,'stale continuation modified fresh target')
 
 def verify(root):
     root=pathlib.Path(root);sources=source(root);criteria=load(root/'criteria.json');env=load(root/'environment.json');ledgers=load(root/'ledgers.json');cases=load(root/'cases.json');observations=load(root/'observations.json')
@@ -120,11 +149,14 @@ def verify(root):
     for owner in [2,4,1]:require(obs[f'transition-2-{owner}']['proof']['owners']==owner and obs[f'transition-2-{owner}']['proof']['state_entries']==80,'actual full-state owner transfer missing')
     conflict=load(root/'conflicting-payloads.json');require(conflict[0]['output_id']==conflict[1]['output_id'] and conflict[0]['payload_fingerprint']!=conflict[1]['payload_fingerprint'],'conflicting legal-order payload experiment absent')
     negatives=['wrong-history','wrong-job','wrong-origin','wrong-codec','wrong-owners','epoch-quota','stage-quota','output-quota','history-quota','corrupt-selector','missing-output','modified-output','symlink-output','hardlink-output','wrong-shard-owner','broken-parent','failed-migration','failed-export','import-kill-replay-refused']
+    if criteria['version']>=4:
+        negatives += ['import-kill-run-refused','import-kill-resume-refused','missing-selector-read','missing-selector-run','missing-selector-resume','empty-selector-read','empty-selector-run','empty-selector-resume','stale-continuation-refused']
     for label in negatives:
         require(names[label]['exit']==1,'missing negative '+label);trace=rows(root/(label+'.stderr'));require(any(r.get('type')=='failure' for r in trace) and not any(r.get('status') in ['PAUSED','TRANSITIONED','IMPORTED','EXPORTED'] for r in trace),'false operation success '+label);require(not (root/(label+'.stdout')).read_bytes(),'negative business output '+label)
     repeats=load(root/'ordered-repeats.json');require(len(repeats)==2 and repeats[0]==repeats[1],'ordered trace repeat differs');require(all(f'ordered-repeat-{i}-repeat-check' in obs for i in range(2)),'missing real ordered repeat observations')
     costs=load(root/'costs.json');require(len(costs)==6 and {r['mode'] for r in costs}=={'txn','static_v1'},'descriptive baseline samples absent')
-    export_count=exports(root,ledgers,attempts);checks(root)
+    if criteria['version']>=4:selector_loss(root,names,obs)
+    export_count=exports(root,ledgers,attempts,criteria['version']);checks(root,criteria['version'])
     prereq=prerequisite(root,ledgers)
     extra=root/'supplemental/enospc';enospc=load(extra/'outcome.json');require(enospc['errno']==28 and enospc['binary_sha256']==env['binaries']['txn'],'actual ENOSPC matched executable missing')
     require(load(extra/'statvfs-full.json')['available']==0 and 'No space left on device' in (extra/'fill-error.stderr').read_text(),'filesystem was not actually full')

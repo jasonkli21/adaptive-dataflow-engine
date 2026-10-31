@@ -6,7 +6,12 @@ rust-version.workspace = true
 publish = false
 [lints]
 workspace = true
+[features]
+default = []
+unified-planner = ["dep:ade-logical"]
+
 [dependencies]
+ade-logical = { path = "../ade-logical", optional = true }
 ade-physical = { path = "../ade-physical" }
 ade-exec = { path = "../ade-exec" }
 ade-distributed = { path = "../ade-distributed" }

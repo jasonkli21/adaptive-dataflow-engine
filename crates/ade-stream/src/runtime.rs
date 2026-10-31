@@ -268,6 +268,13 @@ pub fn run(
                         return Ok("STOPPED_BY_OPERATOR_TEST_LIMIT");
                     };
                     engine.acknowledge()?;
+                    #[cfg(feature = "unified-planner")]
+                    if let Some(record) = source.classification(receipt.partition, receipt.offset) {
+                        trace(
+                            diagnostics,
+                            &serde_json::json!({"type":"unified_confirmed","record":record}),
+                        )?;
+                    }
 
                     trace(
                         diagnostics,

@@ -45,7 +45,7 @@ group.initial.rebalance.delay.ms=0
 message.max.bytes=32768
 log.retention.hours=24
 ''')
-        self.call([self.java,'-cp',self.cp,'kafka.tools.StorageTool','format','--cluster-id',self.cluster,'--config',str(p)],'format')
+        self.call([self.java,'-cp',self.cp,'kafka.tools.StorageTool','format','--cluster-id='+self.cluster,'--config',str(p)],'format')
         broker=self.spawn([self.java,'-Xmx512m','-Xms256m','-cp',self.cp,'kafka.Kafka',str(p)],'broker');self.ready(self.port,broker);time.sleep(2)
         require(self.admin('cluster','unused').decode().strip()==self.cluster,'cluster mismatch')
         self.minio_port=port();console=port();self.proxy_port=port();self.endpoint=f'http://127.0.0.1:{self.proxy_port}'

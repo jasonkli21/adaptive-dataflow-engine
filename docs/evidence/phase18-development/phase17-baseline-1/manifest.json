@@ -1,0 +1,17 @@
+{
+  "archive_sha256": "d0f0423081bf743cf1a7dfbaf75eaa709faf57e2655c0bb09cda8bd9671391e2",
+  "files": {
+    "cases.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "criteria.json": "2441911e479a7d848ea0017d21e13aa52848264111ae2af09d3d8c9b5f5eac2c",
+    "environment.json": "ac921d95377ed8bcceed1f4901b91e2bcd031c5350941de71b3f5b77c5a98afd",
+    "observations.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "source-inventory.json": "2e68945c7f7d1fc47ee1890e2aeae494b38ea8c3b1d7460c3369bf89badff117",
+    "source.tar.gz": "c7331a1d5c93e3efda3346d4e6eb692eb5333babe64f1e74768cc3fa5173c173",
+    "symlink-attacks.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "qualified": false,
+  "result": {
+    "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+  },
+  "version": 3
+}

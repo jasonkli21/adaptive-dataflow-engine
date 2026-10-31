@@ -1,0 +1,122 @@
+{
+  "default_route": "legacy_static",
+  "evidence": {
+    "executables": {
+      "ade-bench": "cf18a6d7a16b143a44c35b6d4340face9e7b91553b997e8c48874f14f88e8136",
+      "ade-plan": "70dd174ed477a064606626bc49ad61ca25ec2e1d1dd7e50c2ae1b2031f2b0d43",
+      "ade-query": "11ee28e09d97a78065d9c1e7d9d9dc78dd609767a4ed4fbff629f417cb39c0d1",
+      "ade-state-stream": "d1b6d9d93c0b4ceecfb6b59ab2d7adda7b26aa9ca3e525ff3e556116f156d598",
+      "ade-state-stream-txn": "1b81e47a33781e3aa6b41f3c716ba3baddf37cedb09168f23a95a8c450fc0b7f",
+      "ade-stream": "25c3810dc36c0a797c1c14e6051a7fd1478dbe2de108fb16e3ac09525d6af96d",
+      "ade-worker": "df3ab563d3add4c37a4cfad49bfda57b4c397ed478266495f35e426f04206eb8",
+      "phase18-oracle": "6f52c139f9c16a2cf33628a6f7a274b7bf0c9afee8f5dfe68d176a5bd88a4655"
+    },
+    "phase17": {
+      "cases": 137,
+      "enospc": {
+        "codec": 1,
+        "cuts": 2,
+        "outputs": 0,
+        "owners": 1,
+        "records": 80,
+        "state_entries": 80
+      },
+      "exports": 4,
+      "matched_cuts": 387,
+      "observations": 152,
+      "prerequisite": {
+        "cases": 5,
+        "remote_objects": 172,
+        "requests": 848
+      },
+      "sessions": 70,
+      "source_files": 352
+    },
+    "phase17_archive_sha256": "ace36b8fa54ef0a279b4050e04481c18a9d7da39764aecee29eed1db4cf99e05",
+    "phase18": {
+      "cases": 38,
+      "classifications": 1897,
+      "measurements": 12,
+      "peaks": {
+        "checkpoint_peak_bytes": 140279,
+        "disk_peak_bytes": 1216,
+        "hot_peak_bytes": 128,
+        "kafka_queue_bytes": 13356
+      },
+      "records": 2061,
+      "source_files": 352,
+      "windows": 64
+    },
+    "phase18_archive_sha256": "fa38f4dbc0922d20b0d0075cd85dc54ee3f82b73c36ae7defb3a5c8beb2f2794",
+    "runtime_inputs": 147,
+    "runtime_inventory_sha256": "f3819bf56a757d93b1c758a4c6c033a75fc3f04647360f5bd7b1137e1fd91f80",
+    "source_inventory_sha256": "53e53f53e7c963a8ed74915eb1bedaaff38a9a918b0f21421d625feb164aa646"
+  },
+  "features": {
+    "ade-frontend": "unified-planner",
+    "ade-stream": "unified-planner plus existing native mode features"
+  },
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G10": "PASS",
+    "G11": "PASS",
+    "G12": "PASS",
+    "G13": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS"
+  },
+  "limits": {
+    "assigned_partitions": 4,
+    "candidates": 3,
+    "decision_bytes": 16384,
+    "native_in_flight_records": 1,
+    "native_sink_frame_bytes": 2048,
+    "nodes_and_depth": 64,
+    "plan_bytes": 262144,
+    "workers": [
+      2,
+      3,
+      4
+    ]
+  },
+  "logical_version": 1,
+  "new_v1_v2_lineage": "derived native job UUID; fresh lineage required; no implicit old-root migration",
+  "qualifications": [
+    "local real-service evidence only",
+    "trace-relative late/window behavior",
+    "trusted immutable uncompressed Kafka history; no incarnation or undetected-regrow proof",
+    "at-least-once v1/v2 outputs",
+    "single local filesystem v3 committed visibility",
+    "resource ledgers are not RSS caps",
+    "fixed proxy is not latency/dollars; no performance advantage claimed",
+    "same-session self-review; no independent reviewer or subagents"
+  ],
+  "refused": [
+    "transactional hybrid",
+    "KafkaRange finite EOF",
+    "streaming SQL/joins/sort/global LIMIT/collect",
+    "multi-source Parquet/Kafka CDC continuity",
+    "UDFs",
+    "physical worker/Kafka rescale",
+    "automatic recovery/GC",
+    "production HA/cloud/external transactions",
+    "Phase19 incremental maintenance"
+  ],
+  "source_base": "fbe0e2b7739fd7d61c45c58706faa56b63a945be",
+  "status": "COMPLETE_BOUNDED_UNIFIED_PLANNER_V1",
+  "supported": {
+    "batch": "all admitted Phase11 families; native local, fixed-worker aggregate/join",
+    "hybrid": "same pinned Kafka topic; explicit exclusive per-assigned-partition cuts; one native source/state/progress session",
+    "optimizer": "bounded deterministic legality-first fixed proxy, forced/static control; two actual aggregate targets",
+    "stream": "EventV1 native filter/project, diagnostic timers, keyed tumbling sum/count, v1/v2/v3 native modes",
+    "v3": "pure-live local committed prefix through unchanged CURRENT3 reader"
+  },
+  "version": 1
+}

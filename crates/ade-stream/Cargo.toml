@@ -10,6 +10,7 @@ workspace = true
 
 [features]
 default = []
+unified-planner = ["dep:ade-logical", "kafka"]
 stateful = ["kafka"]
 transactional-state = ["stateful"]
 adaptive-checkpoint = ["stateful"]
@@ -17,6 +18,7 @@ remote-checkpoint = ["adaptive-checkpoint", "dep:object_store", "dep:url", "dep:
 kafka = ["dep:rdkafka", "dep:ctrlc", "dep:rustix", "dep:futures-executor"]
 
 [dependencies]
+ade-logical = { path = "../ade-logical", optional = true }
 object_store = { version = "0.13.2", default-features = false, features = ["aws", "tls-webpki-roots"], optional = true }
 url = { version = "2", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"], optional = true }

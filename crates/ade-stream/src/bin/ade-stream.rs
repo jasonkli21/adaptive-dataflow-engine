@@ -11,8 +11,18 @@ fn stderr_sink() -> ade_stream::Result<Nonblocking<std::fs::File>> {
         .map_err(|_| ade_stream::Error::Sink)?;
     Nonblocking::new(std::fs::File::from(fd))
 }
+#[allow(
+    clippy::too_many_lines,
+    reason = "One native demand owner with optional semantic admission"
+)]
 fn execute() -> ade_stream::Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    #[cfg(feature = "unified-planner")]
+    let (args, unified) = {
+        let mut a = args;
+        let u = ade_stream::unified::take_args(&mut a)?;
+        (a, u)
+    };
     ade_stream::require(
         args.len() == 1 || args.len() == 3,
         "usage: ade-stream CONFIG [--test-stop-records N | --test-stop-ms N]",
@@ -35,6 +45,10 @@ fn execute() -> ade_stream::Result<()> {
         .read_to_end(&mut bytes)
         .map_err(|_| ade_stream::Error::Admission("config read"))?;
     let config = StreamConfigV1::parse(&bytes)?;
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        a.validate_stateless(&config)?;
+    }
     let mut stop = Stop::default();
     if args.len() == 3 {
         let n: u64 = args[2]
@@ -55,6 +69,17 @@ fn execute() -> ade_stream::Result<()> {
     let session = uuid::Uuid::new_v4();
     let mut engine = Engine::new(config.clone(), session)?;
     let mut diagnostics = stderr_sink()?;
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        trace(
+            &mut diagnostics,
+            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+        )?;
+    }
+    #[cfg(feature = "unified-planner")]
+    let mut source =
+        KafkaSource::connect_unified(config.clone(), session, &engine.progress, unified)?;
+    #[cfg(not(feature = "unified-planner"))]
     let mut source = KafkaSource::connect(config.clone(), session, &engine.progress)?;
     token.check().map_err(|_| ade_stream::Error::Cancelled)?;
     trace(

@@ -1,0 +1,132 @@
+{
+  "version": 4,
+  "status_on_success": "COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1",
+  "starting_head": "fbe0e2b7739fd7d61c45c58706faa56b63a945be",
+  "gates": [
+    "G0",
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+    "G8",
+    "G9",
+    "G10",
+    "G11",
+    "G12",
+    "G13",
+    "G14",
+    "G15"
+  ],
+  "crash_points": [
+    "before_stage",
+    "stage_created",
+    "before_output_write",
+    "output_half_written",
+    "before_output_sync",
+    "output_synced",
+    "state_written",
+    "state_synced",
+    "before_manifest",
+    "manifest_synced",
+    "epoch_durable",
+    "epoch_verified",
+    "before_selector",
+    "selector_half_written",
+    "selector_synced",
+    "selector_renamed",
+    "selector_durable",
+    "before_telemetry"
+  ],
+  "new_selection_points": [
+    "selector_renamed",
+    "selector_durable",
+    "before_telemetry"
+  ],
+  "prerequisite_cases": [
+    "retained_saved_offsets",
+    "both_vectors_expired",
+    "assignment_race",
+    "placement_forced_full",
+    "placement_capacity_veto_before_put"
+  ],
+  "owners": [
+    1,
+    2,
+    4,
+    1
+  ],
+  "codecs": [
+    1,
+    2
+  ],
+  "shards": 32,
+  "correctness": "all reachable output records, offsets, frontier, late counts and full state match the independent ordered producer-ledger oracle at every cut",
+  "cost": "three local descriptive static/transactional samples; no performance threshold",
+  "services": "disposable real Kafka 3.9.1 and separate actual MinIO process",
+  "no_waivers": true,
+  "required_lifecycle_kills": [
+    "migration-kill",
+    "export-kill",
+    "import-kill"
+  ],
+  "required_refusals": [
+    "wrong-history",
+    "wrong-job",
+    "wrong-origin",
+    "wrong-codec",
+    "wrong-owners",
+    "epoch-quota",
+    "stage-quota",
+    "output-quota",
+    "history-quota",
+    "corrupt-selector",
+    "missing-output",
+    "modified-output",
+    "symlink-output",
+    "hardlink-output",
+    "wrong-shard-owner",
+    "broken-parent",
+    "failed-migration",
+    "failed-export",
+    "import-kill-replay-refused",
+    "import-kill-run-refused",
+    "import-kill-resume-refused",
+    "missing-selector-read",
+    "missing-selector-run",
+    "missing-selector-resume",
+    "empty-selector-read",
+    "empty-selector-run",
+    "empty-selector-resume",
+    "stale-continuation-refused",
+    "file-size-io-failure"
+  ],
+  "selector_loss_contract": {
+    "fresh_root_only_names": [
+      "ROOT3",
+      "WRITER3"
+    ],
+    "activated_marker": "ACTIVATED3",
+    "missing_selector_cases": [
+      "missing-selector-read",
+      "missing-selector-run",
+      "missing-selector-resume"
+    ],
+    "empty_paused_cases": [
+      "empty-selector-read",
+      "empty-selector-run",
+      "empty-selector-resume"
+    ],
+    "interrupted_import_cases": [
+      "import-kill-reader",
+      "import-kill-run-refused",
+      "import-kill-resume-refused",
+      "import-kill-replay-refused"
+    ],
+    "stale_savepoint_case": "stale-continuation-refused"
+  },
+  "ordered_repeats": 2,
+  "static_txn_samples": 3
+}

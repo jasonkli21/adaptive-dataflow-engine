@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "baseline": "fbe0e2b7739fd7d61c45c58706faa56b63a945be",
+  "gates": {
+    "G0": "baseline_phase17_g15",
+    "G1": "strict_properties_digest",
+    "G2": "optimizer_two_native_choices",
+    "G3": "batch_all_shapes",
+    "G4": "kafka_stateless_stateful_v3",
+    "G5": "hybrid_cut_continuity_restart",
+    "G6": "transaction_lifecycle_refusal",
+    "G7": "malicious_inputs",
+    "G8": "resource_cancellation",
+    "G9": "static_optimized_science",
+    "G10": "compatibility_features",
+    "G11": "toolchain_regressions",
+    "G12": "independent_portable_evidence",
+    "G13": "documentation"
+  },
+  "limits": {
+    "nodes": 64,
+    "plan_bytes": 262144,
+    "candidates": 3,
+    "trace_bytes": 16384
+  },
+  "optimizer": {
+    "local_row_units": 4,
+    "distributed_start_units": 20000,
+    "distributed_row_units": 2,
+    "workers": [
+      2,
+      3,
+      4
+    ],
+    "samples": 3,
+    "timing": "descriptive_only_no_speedup_threshold"
+  },
+  "batch": [
+    "scan",
+    "filter_project",
+    "group",
+    "filtered_group",
+    "sort_limit",
+    "join",
+    "dataframe"
+  ],
+  "hybrid": [
+    "two_partition",
+    "four_partition",
+    "empty_prefix",
+    "offset_gaps",
+    "asynchronous_tail",
+    "idle_pending",
+    "sink_stall",
+    "cold_restart",
+    "cut_tamper",
+    "history_tamper",
+    "retention",
+    "cancel"
+  ],
+  "transactional_hybrid": "refuse_pre_effects"
+}

@@ -19,6 +19,12 @@ fn stderr_sink() -> Result<Nonblocking<std::fs::File>> {
 )]
 fn execute() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    #[cfg(feature = "unified-planner")]
+    let (args, unified) = {
+        let mut a = args;
+        let u = ade_stream::unified::take_args(&mut a)?;
+        (a, u)
+    };
     ade_stream::require(
         !args.is_empty() && args.len() <= 20,
         "usage: ade-state-stream CONFIG [--restore] [--test-stop-records N | --test-stop-ms N] [--test-pause-at POINT]",
@@ -44,6 +50,10 @@ fn execute() -> Result<()> {
         .read_to_end(&mut bytes)
         .map_err(|_| Error::Admission("config read"))?;
     let mut config = Config::parse(&bytes)?;
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        a.validate_state(&config, false)?;
+    }
     #[cfg(feature = "adaptive-checkpoint")]
     let mut policy_path = None;
     #[cfg(feature = "adaptive-checkpoint")]
@@ -209,6 +219,17 @@ fn execute() -> Result<()> {
         .as_ref()
         .and_then(|s| s.adaptive.as_ref())
         .map(|a| a.policy.recovery.original_starts.clone());
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        trace(
+            &mut diagnostics,
+            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+        )?;
+    }
+    #[cfg(feature = "unified-planner")]
+    let mut source =
+        KafkaSource::connect_unified(config.source.clone(), session, &engine.progress, unified)?;
+    #[cfg(not(feature = "unified-planner"))]
     let mut source = KafkaSource::connect(config.source.clone(), session, &engine.progress)?;
     ade_stream::require(
         source.partition_inventory() == config.topic_partitions,

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/ade-logical",
     "crates/ade-stream",
     "crates/ade-ops",
     "crates/ade-physical",

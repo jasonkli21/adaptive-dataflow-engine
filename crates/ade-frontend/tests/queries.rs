@@ -74,10 +74,38 @@ async fn compare(
         .plan_sql(sql, target)
         .await
         .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    #[cfg(feature = "unified-planner")]
+    let unified_output = {
+        let logical = c.plan_sql_unified(sql, target).await.unwrap();
+        let controls = ade_logical::Controls {
+            workers: options.workers,
+            distributed_available: options.worker_binary.is_some(),
+            ..ade_logical::Controls::default()
+        };
+        let (out, decision) = c
+            .execute_unified_until(
+                &logical,
+                &controls,
+                options.clone(),
+                std::time::Instant::now() + options.timeout,
+            )
+            .unwrap();
+        assert_eq!(decision.semantic_digest, logical.digest().unwrap());
+        Some(out)
+    };
     let out = c
         .execute(&plan, options)
         .unwrap_or_else(|e| panic!("{sql}: {e}"));
     let expected = oracle(c, sql).await;
+    #[cfg(feature = "unified-planner")]
+    if let Some(u) = unified_output {
+        assert_eq!(
+            rows(u.batches(), ordered),
+            rows(&expected, ordered),
+            "unified {sql}"
+        );
+    }
+
     if let (Some(a), Some(b)) = (out.batches().first(), expected.first()) {
         assert_eq!(a.schema(), b.schema(), "{sql}");
     }
@@ -529,6 +557,23 @@ async fn signed_sum_final_overflow_and_nullable_source_refusal() {
             .unwrap_err_native()
             .contains("overflow")
     );
+    #[cfg(feature = "unified-planner")]
+    {
+        let logical = ade_frontend::unified::from_bound(&p).unwrap();
+        assert!(
+            c.execute_unified_until(
+                &logical,
+                &ade_logical::Controls::default(),
+                Options::default(),
+                std::time::Instant::now() + std::time::Duration::from_secs(10)
+            )
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("overflow")
+        );
+    }
+
     replace_values(&root, &[-9, 4], false);
     let mut c = Catalog::default();
     c.register_manifest("input", &root, &root.join("manifest.json"))
@@ -815,4 +860,129 @@ async fn join_four_workers_forced_baseline_empty_and_failure_controls() {
             assert_eq!(output.batches().len(), 0);
         }
     }
+}
+
+#[cfg(feature = "unified-planner")]
+#[tokio::test]
+async fn unified_two_actual_targets_and_forced_controls() {
+    use ade_logical::{Choice, Controls};
+    let mut observed = vec![];
+    for n in [128, 12000] {
+        let (_dir, _root, c) = fixture(n, false);
+        let sql = "SELECT key,SUM(value_i64) AS sum,COUNT(*) AS count FROM input GROUP BY key";
+        let logical = DataFrame::scan(&c, "input", Target::Local)
+            .unwrap()
+            .group_sum_count("key", "value_i64")
+            .unwrap()
+            .build_logical()
+            .unwrap();
+        let controls = Controls {
+            distributed_available: true,
+            ..Controls::default()
+        };
+        let options = Options {
+            worker_binary: Some(worker()),
+            ..Options::default()
+        };
+        let expected = oracle(&c, sql).await;
+        let (out, d) = c
+            .execute_unified_until(
+                &logical,
+                &controls,
+                options.clone(),
+                std::time::Instant::now() + options.timeout,
+            )
+            .unwrap();
+        observed.push(d.chosen);
+        assert_eq!(rows(out.batches(), false), rows(&expected, false));
+        for forced in [Choice::Local, Choice::DistributedAggregate] {
+            let controls = Controls {
+                forced: Some(forced),
+                ..controls.clone()
+            };
+            let (out, d) = c
+                .execute_unified_until(
+                    &logical,
+                    &controls,
+                    options.clone(),
+                    std::time::Instant::now() + options.timeout,
+                )
+                .unwrap();
+            assert_eq!(d.chosen, forced);
+            assert_eq!(rows(out.batches(), false), rows(&expected, false));
+        }
+        let controls = Controls {
+            enabled: false,
+            ..controls
+        };
+        assert_eq!(
+            logical.lower_batch(&controls).unwrap().1.chosen,
+            Choice::Local
+        );
+        let expired = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_millis(1))
+            .unwrap();
+        assert!(
+            c.execute_unified_until(&logical, &controls, options.clone(), expired)
+                .is_err()
+        );
+        let mut tiny = logical.clone();
+        if let ade_logical::Computation::ParquetManifest {
+            max_output_bytes, ..
+        } = &mut tiny.computation
+        {
+            *max_output_bytes = 1;
+        }
+        assert!(
+            c.execute_unified_until(
+                &tiny,
+                &controls,
+                options.clone(),
+                std::time::Instant::now() + options.timeout
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(observed, [Choice::Local, Choice::DistributedAggregate]);
+}
+
+#[cfg(feature = "unified-planner")]
+#[tokio::test]
+async fn unified_source_binding_and_drift_refuse_without_results() {
+    let (_dir, _root, catalog) = fixture(16, false);
+    let logical = catalog
+        .plan_sql_unified("SELECT key,value_i64 FROM input", Target::Local)
+        .await
+        .unwrap();
+    let mut forged = logical.clone();
+    if let ade_logical::Computation::ParquetManifest { sources, .. } = &mut forged.computation {
+        sources[0].files[0].fingerprint = "0".repeat(64);
+    }
+    let controls = ade_logical::Controls::default();
+    assert!(
+        catalog
+            .execute_unified_until(
+                &forged,
+                &controls,
+                Options::default(),
+                std::time::Instant::now() + std::time::Duration::from_secs(10)
+            )
+            .is_err()
+    );
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&catalog.native().bindings[0].files[0])
+        .unwrap()
+        .write_all(b"changed")
+        .unwrap();
+    assert!(
+        catalog
+            .execute_unified_until(
+                &logical,
+                &controls,
+                Options::default(),
+                std::time::Instant::now() + std::time::Duration::from_secs(10)
+            )
+            .is_err()
+    );
 }

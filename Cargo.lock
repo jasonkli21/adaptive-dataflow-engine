@@ -73,6 +73,7 @@ dependencies = [
  "ade-bench",
  "ade-distributed",
  "ade-exec",
+ "ade-logical",
  "ade-physical",
  "arrow",
  "clap",
@@ -83,6 +84,17 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "ade-logical"
+version = "0.1.0"
+dependencies = [
+ "ade-physical",
+ "blake3",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -119,6 +131,7 @@ name = "ade-stream"
 version = "0.1.0"
 dependencies = [
  "ade-exec",
+ "ade-logical",
  "arrow",
  "async-trait",
  "blake3",

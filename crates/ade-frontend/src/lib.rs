@@ -31,3 +31,6 @@ pub(crate) fn require(ok: bool, message: &str) -> Result<()> {
         Err(Error::Unsupported(message.into()))
     }
 }
+
+#[cfg(feature = "unified-planner")]
+pub mod unified;

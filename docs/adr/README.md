@@ -61,3 +61,5 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0023: Bounded adaptive checkpoints and placement v1](0023-adaptive-checkpoint-placement-v1.md) — opt-in v2, immutable incremental shards, explicit verified S3 copies and guarded replay/restore.
 
 - [ADR-0024: Transactional output and savepoint operations v1](0024-transactional-output-savepoints-v1.md) — opt-in v3 atomic state/output epochs, committed reader, savepoints and compatible logical transitions.
+
+- [ADR-0025: Unified bounded/unbounded planning v1](0025-unified-bounded-unbounded-planning-v1.md) — shared semantic admission, bounded native choices and same-topic history/live continuity.

@@ -96,6 +96,13 @@ impl DataFrame {
         )?;
         Ok(self)
     }
+    /// Compile the same semantic IR used by SQL and Kafka admission.
+    /// # Errors
+    /// Rejects invalid or unsupported bound operators.
+    #[cfg(feature = "unified-planner")]
+    pub fn build_logical(self) -> Result<ade_logical::LogicalPlanV1> {
+        crate::unified::from_bound(&self.build()?)
+    }
     /// # Errors
     /// Final target validation refuses unsupported native graph shapes.
     pub fn build(self) -> Result<PlanV1> {

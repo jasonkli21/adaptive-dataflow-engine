@@ -96,6 +96,8 @@ pub struct BrokerMetrics {
     pub backlog: BTreeMap<i32, i64>,
 }
 pub struct KafkaSource {
+    #[cfg(feature = "unified-planner")]
+    unified: Option<crate::unified::Admission>,
     consumer: Arc<BaseConsumer<Context>>,
     queues: Vec<PartitionQueue<Context>>,
     admin: AdminClient<Context>,
@@ -120,6 +122,44 @@ impl KafkaSource {
     )]
     pub fn connect(config: StreamConfigV1, session: Uuid, progress: &Progress) -> Result<Self> {
         let mut source = Self::unassigned(config, session)?;
+        source.verify(progress)?;
+        source.assign()?;
+        Ok(source)
+    }
+
+    /// # Errors
+    /// Checks original history/cuts and saved progress before fixed assignment.
+    #[cfg(feature = "unified-planner")]
+    pub fn connect_unified(
+        config: StreamConfigV1,
+        session: Uuid,
+        progress: &Progress,
+        admission: Option<crate::unified::Admission>,
+    ) -> Result<Self> {
+        if let Some(a) = &admission {
+            let mut original = config.clone();
+            original.starts = a
+                .source()
+                .original_starts
+                .iter()
+                .map(|o| crate::Start {
+                    partition: o.partition,
+                    offset: o.offset,
+                })
+                .collect();
+            a.validate_source(&original)?;
+            crate::require(
+                config.starts.iter().all(|s| {
+                    progress
+                        .partitions
+                        .get(&s.partition)
+                        .is_some_and(|c| c.next_offset_suggestion == s.offset)
+                }),
+                "logical saved assignment mismatch",
+            )?;
+        }
+        let mut source = Self::unassigned(config, session)?;
+        source.unified = admission;
         source.verify(progress)?;
         source.assign()?;
         Ok(source)
@@ -242,6 +282,8 @@ impl KafkaSource {
             .create_with_context(Context(counters.clone()))
             .map_err(|_| Error::Broker)?;
         let source = Self {
+            #[cfg(feature = "unified-planner")]
+            unified: None,
             consumer: Arc::new(consumer),
             queues: Vec::new(),
             admin,
@@ -514,6 +556,10 @@ impl KafkaSource {
     }
 }
 impl Source for KafkaSource {
+    #[cfg(feature = "unified-planner")]
+    fn classification(&self, partition: i32, offset: i64) -> Option<serde_json::Value> {
+        self.unified.as_ref().map(|a| a.record(partition, offset))
+    }
     fn poll(&mut self) -> Result<Poll> {
         self.healthy()?;
         if self.paused {
@@ -574,6 +620,34 @@ impl Source for KafkaSource {
     )]
     fn verify(&mut self, progress: &Progress) -> Result<()> {
         self.verify_identity()?;
+        #[cfg(feature = "unified-planner")]
+        if let Some(a) = &self.unified {
+            let semantic = a.source();
+            crate::require(
+                semantic.topic_partitions == self.partition_inventory,
+                "logical full source inventory",
+            )?;
+            for origin in &semantic.original_starts {
+                let (low, high) = self
+                    .consumer
+                    .fetch_watermarks(&self.config.topic, origin.partition, RPC)
+                    .map_err(|_| Error::Broker)?;
+                crate::require(
+                    low <= origin.offset && origin.offset <= high,
+                    "logical origin retention/truncation",
+                )?;
+                if let ade_logical::KafkaMode::HistoryThenLive { cut } = &semantic.mode {
+                    let end = cut
+                        .iter()
+                        .find(|c| c.partition == origin.partition)
+                        .ok_or(Error::Source("cut inventory"))?;
+                    crate::require(
+                        end.offset <= high,
+                        "logical cut beyond retained high watermark",
+                    )?;
+                }
+            }
+        }
         for start in &self.config.starts {
             if !self.partition_inventory.contains(&start.partition) {
                 return Err(Error::Source("assigned partition missing"));

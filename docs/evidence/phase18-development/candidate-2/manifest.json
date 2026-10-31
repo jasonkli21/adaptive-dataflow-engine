@@ -1,0 +1,22 @@
+{
+  "archive_sha256": "ed75838c17a6c4cd918fd14ce5d745449fde473b041791bedcf8191d51f20bba",
+  "files": {
+    "broker.properties": "2474a28491a7e1d2362da691e19ac0a16abc7350607e8f5cfd2e9781bd921709",
+    "cases.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "commands.json": "17014f503d4c41290a5a86790a80a55285415d17f3089062da4fe78343f68bc2",
+    "criteria.json": "8bfc638143108574ea62b423ba863bd12c0de0551f653cd72bf31be2731e8b10",
+    "environment.json": "daf8d2043d8530675c9ce11362e59a61694540895f5882a43349f47a86931f43",
+    "format.stderr": "43f7e7886860db9e7c3d2cd7db8958e0ee649f25189984552464feaf1cc81d6b",
+    "format.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "javac.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "javac.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "runtime-inventory.json": "bf68981aa7f4a99b5bcec2d7202bc0fbfc9b9f3480c5ad9ffeeccadbbe51c04e",
+    "source-inventory.json": "118223f128bb9565ea59b3ec6b407471b603c8988005ca73b996c1228b474bfb",
+    "source.tar.gz": "9fcee3adad06647c96e6e60fa151d6530ab7d073bb3437fea3ccbf6d68e141c3"
+  },
+  "qualified": false,
+  "result": {
+    "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+  },
+  "version": 1
+}

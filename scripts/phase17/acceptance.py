@@ -5,7 +5,7 @@ from service_fixture import Services,dump,private,require,rows
 from prerequisite import native,event,run as prerequisite
 from oracle import verify_trace,chain
 
-P=argparse.ArgumentParser();P.add_argument('--output',required=True,type=pathlib.Path);P.add_argument('--kafka-home',required=True,type=pathlib.Path);P.add_argument('--java-home',required=True,type=pathlib.Path);P.add_argument('--minio',required=True,type=pathlib.Path);P.add_argument('--service-python',required=True,type=pathlib.Path);P.add_argument('--binary-dir',type=pathlib.Path,default=pathlib.Path('target/debug'))
+P=argparse.ArgumentParser();P.add_argument('--criteria',type=pathlib.Path);P.add_argument('--output',required=True,type=pathlib.Path);P.add_argument('--kafka-home',required=True,type=pathlib.Path);P.add_argument('--java-home',required=True,type=pathlib.Path);P.add_argument('--minio',required=True,type=pathlib.Path);P.add_argument('--service-python',required=True,type=pathlib.Path);P.add_argument('--binary-dir',type=pathlib.Path,default=pathlib.Path('target/debug'))
 
 def campaign(a):
     root=a.output.resolve();private(root);repo=pathlib.Path(__file__).resolve().parents[2];s=None;cases=[];observations=[]
@@ -18,7 +18,7 @@ def campaign(a):
     for name,relative in [('txn','ade-state-stream-txn'),('legacy','ade-state-stream'),('race','examples/phase16-preflight'),('placement','examples/phase16-placement')]:
         target=root/(name+'-pinned');shutil.copy2(a.binary_dir/relative,target);pinned[name]=target
     dump(root/'environment.json',dict(base=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),status=subprocess.check_output(['git','status','--short'],text=True),platform=list(os.uname()),rustc=subprocess.check_output(['rustc','-Vv'],text=True),binaries={k:hashlib.sha256(p.read_bytes()).hexdigest() for k,p in pinned.items()},started=time.time()))
-    shutil.copy2(repo/'scripts/phase17/criteria.json',root/'criteria.json')
+    shutil.copy2(a.criteria if a.criteria else repo/'scripts/phase17/criteria.json',root/'criteria.json')
     try:
         s=Services.start(a,root);prerequisite(s,pinned['legacy'],pinned['race'],pinned['placement'])
         def config(topic,label,job=None):

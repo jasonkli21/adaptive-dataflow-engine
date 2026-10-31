@@ -1,0 +1,58 @@
+{
+  "candidates": [
+    {
+      "candidate": 1,
+      "qualification": "FAILED_OR_PREMEASUREMENT_PRESERVED",
+      "package": {
+        "archive_sha256": "9477a9037cce65f4fcbd1c5995208b536a1214c1b1fb2256e3635b9c5eac797f",
+        "files": 730,
+        "result": {
+          "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+        }
+      }
+    },
+    {
+      "candidate": 2,
+      "qualification": "FAILED_OR_PREMEASUREMENT_PRESERVED",
+      "package": {
+        "archive_sha256": "ed75838c17a6c4cd918fd14ce5d745449fde473b041791bedcf8191d51f20bba",
+        "files": 12,
+        "result": {
+          "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+        }
+      }
+    },
+    {
+      "candidate": 3,
+      "qualification": "FAILED_OR_PREMEASUREMENT_PRESERVED",
+      "package": {
+        "archive_sha256": "f8154954afa2d9dacaea4783db5b66ee806233a371cdf0a28df0387ce2fb75de",
+        "files": 1475,
+        "result": {
+          "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+        }
+      }
+    },
+    {
+      "candidate": 4,
+      "qualification": "FAILED_OR_PREMEASUREMENT_PRESERVED",
+      "package": {
+        "archive_sha256": "b05b93cfde0a19c575b4422dd0ca2302c639af8e4f23ecc0a8059afa4b5dac8c",
+        "files": 646,
+        "result": {
+          "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+        }
+      }
+    }
+  ],
+  "baseline_attempts": [
+    "/private/tmp/ade-phase18-phase17-reacceptance-1",
+    "/private/tmp/ade-phase18-phase17-reacceptance-2"
+  ],
+  "notes": [
+    "candidate1: incorrect v1 fault-hook fixture name",
+    "candidate2: leading-dash random Kafka cluster ID parsed as CLI option",
+    "candidate3: native sink deadline correctly refused before requested resumption",
+    "candidate4: Kafka admin fixture timed out while heavy workspace regressions ran"
+  ]
+}

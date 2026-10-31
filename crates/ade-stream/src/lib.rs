@@ -261,6 +261,10 @@ pub enum Poll {
 }
 /// Separate from bounded `BatchSource`. No empty-poll EOF.
 pub trait Source {
+    #[cfg(feature = "unified-planner")]
+    fn classification(&self, _: i32, _: i64) -> Option<serde_json::Value> {
+        None
+    }
     /// # Errors
     /// Returns broker, identity or payload errors; never infers EOF from idle.
     fn poll(&mut self) -> Result<Poll>;
@@ -562,3 +566,6 @@ impl Engine {
         self.timers.clear();
     }
 }
+
+#[cfg(feature = "unified-planner")]
+pub mod unified;

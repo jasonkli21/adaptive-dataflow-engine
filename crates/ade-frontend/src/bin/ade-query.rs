@@ -30,8 +30,14 @@ struct Args {
     sql: Option<String>,
     #[arg(long)]
     sql_file: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "local")]
-    target: NativeTarget,
+    #[arg(long, value_enum)]
+    target: Option<NativeTarget>,
+    #[cfg(feature = "unified-planner")]
+    #[arg(long)]
+    unified_planner: bool,
+    #[cfg(feature = "unified-planner")]
+    #[arg(long, requires = "unified_planner")]
+    disable_optimizer: bool,
     #[arg(long, default_value_t = 1000)]
     max_output_rows: u64,
     #[arg(long, default_value_t = 16777216)]
@@ -50,6 +56,10 @@ struct Args {
     timeout_ms: u64,
 }
 #[tokio::main]
+#[allow(
+    clippy::too_many_lines,
+    reason = "One end-to-end deadline spans legacy and opt-in semantic compilation/execution"
+)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let timeout = std::time::Duration::from_millis(args.timeout_ms);
@@ -57,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("timeout-ms must be between 1 and 120000".into());
     }
     let deadline = std::time::Instant::now() + timeout;
-    let target = match args.target {
+    let target = match args.target.unwrap_or(NativeTarget::Local) {
         NativeTarget::Local => Target::Local,
         NativeTarget::DistributedAggregate => Target::DistributedAggregate,
         NativeTarget::DistributedJoin => Target::DistributedJoin,
@@ -102,6 +112,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     plan.max_output_rows = args.max_output_rows;
     plan.max_output_bytes = args.max_output_bytes;
     plan.validate()?;
+    #[cfg(feature = "unified-planner")]
+    let shared = if args.unified_planner {
+        let logical = ade_frontend::unified::from_bound(&plan)?;
+        let controls = ade_logical::Controls {
+            enabled: !args.disable_optimizer,
+            static_choice: match target {
+                Target::Local => ade_logical::Choice::Local,
+                Target::DistributedAggregate => ade_logical::Choice::DistributedAggregate,
+                Target::DistributedJoin => ade_logical::Choice::DistributedJoin,
+            },
+            forced: args.target.map(|t| match t {
+                NativeTarget::Local => ade_logical::Choice::Local,
+                NativeTarget::DistributedAggregate => ade_logical::Choice::DistributedAggregate,
+                NativeTarget::DistributedJoin => ade_logical::Choice::DistributedJoin,
+            }),
+            workers: args.workers,
+            distributed_available: args.worker_bin.is_some(),
+        };
+        let (lowered, decision) = logical.lower_batch(&controls)?;
+        plan = lowered;
+        eprintln!(
+            "{}",
+            serde_json::json!({"type":"unified_decision","plan":logical,"decision":decision})
+        );
+        Some((logical, controls))
+    } else {
+        None
+    };
     match args.action {
         Action::PlanSql | Action::Explain => println!(
             "{}\nplan_hash={}\nexecution_policy=native explicit configuration; no storage tier in IR",
@@ -118,6 +156,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             options.local.memory_limit_bytes = args.memory_limit_bytes;
             options.aggregate.memory_limit_bytes = args.memory_limit_bytes;
             options.join.local.memory_limit_bytes = args.memory_limit_bytes;
+            #[cfg(feature = "unified-planner")]
+            let output = if let Some((logical, controls)) = &shared {
+                catalog
+                    .execute_unified_until(logical, controls, options, deadline)?
+                    .0
+            } else {
+                catalog.execute_until(&plan, options, deadline)?
+            };
+            #[cfg(not(feature = "unified-planner"))]
             let output = catalog.execute_until(&plan, options, deadline)?;
             // No output is printed until execution and postflight validation succeed.
             println!("{}", serde_json::to_string_pretty(&output.diagnostics)?);

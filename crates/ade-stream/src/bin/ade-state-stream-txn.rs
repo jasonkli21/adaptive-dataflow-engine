@@ -33,16 +33,37 @@ fn main() {
 )]
 fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(feature = "unified-planner")]
+    let (args, unified) = {
+        let mut a = args;
+        let u = ade_stream::unified::take_args(&mut a)?;
+        (a, u)
+    };
     let [config_path, command, rest @ ..] = args.as_slice() else {
         return Err(Error::Admission(
             "CONFIG3 run|resume|read|export|import|transition; physical rescale refused",
         ));
     };
     let config = Config::parse(&store_bytes(Path::new(config_path), 32768)?)?;
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        a.validate_state(&config.state, true)?;
+        ade_stream::require(
+            a.source().immutable_history == config.trusted_history,
+            "logical v3 history mismatch",
+        )?;
+    }
     let diagnostics = std::cell::RefCell::new(Limited {
         inner: Nonblocking::new(std::io::stderr())?,
         remaining: config.limits.diagnostic_bytes,
     });
+    #[cfg(feature = "unified-planner")]
+    if let Some(a) = &unified {
+        runtime::trace(
+            &mut *diagnostics.borrow_mut(),
+            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+        )?;
+    }
     let token = CancellationToken::default();
     let signal = token.clone();
     ctrlc::set_handler(move || signal.cancel()).map_err(|_| Error::Admission("signal handler"))?;

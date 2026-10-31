@@ -1,0 +1,49 @@
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: long literal lacking separators
+  --> crates/ade-stream/tests/transactional.rs:45:27
+   |
+45 |             output_bytes: 262144,
+   |                           ^^^^^^ help: consider: `262_144`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+   = note: `-D clippy::unreadable-literal` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::unreadable_literal)]`
+
+error: long literal lacking separators
+  --> crates/ade-stream/tests/transactional.rs:48:31
+   |
+48 |             diagnostic_bytes: 1048576,
+   |                               ^^^^^^^ help: consider: `1_048_576`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/transactional.rs:159:9
+    |
+159 |         assert!(sink::read(&c).unwrap().is_empty());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+    = note: `-D clippy::assert-is-empty` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assert_is_empty)]`
+help: use `assert_eq!` to show the value on failure
+    |
+159 -         assert!(sink::read(&c).unwrap().is_empty());
+159 +         assert_eq!(sink::read(&c).unwrap(), [] as [ade_stream::transactional::sink::Output; 0]);
+    |
+
+error: used `assert!` to check that a value is empty
+   --> crates/ade-stream/tests/transactional.rs:298:5
+    |
+298 |     assert!(sink::read(&c).unwrap().is_empty());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assert_is_empty
+help: use `assert_eq!` to show the value on failure
+    |
+298 -     assert!(sink::read(&c).unwrap().is_empty());
+298 +     assert_eq!(sink::read(&c).unwrap(), [] as [ade_stream::transactional::sink::Output; 0]);
+    |
+
+error: could not compile `ade-stream` (test "transactional") due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

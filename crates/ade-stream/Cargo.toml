@@ -11,6 +11,7 @@ workspace = true
 [features]
 default = []
 stateful = ["kafka"]
+transactional-state = ["stateful"]
 adaptive-checkpoint = ["stateful"]
 remote-checkpoint = ["adaptive-checkpoint", "dep:object_store", "dep:url", "dep:reqwest", "dep:async-trait", "dep:http-body-util", "dep:tokio", "dep:futures"]
 kafka = ["dep:rdkafka", "dep:ctrlc", "dep:rustix", "dep:futures-executor"]
@@ -47,3 +48,8 @@ required-features = ["stateful"]
 
 [dev-dependencies]
 bytes = "1"
+
+[[bin]]
+name = "ade-state-stream-txn"
+path = "src/bin/ade-state-stream-txn.rs"
+required-features = ["transactional-state"]

@@ -1,0 +1,15 @@
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.48s
+     Running tests/transactional.rs (target/debug/deps/transactional-01dc71a7fd158a28)
+
+running 7 tests
+test no_id_only_dedup_and_overflow_poison ... ok
+test clean_pause_replay_is_idempotent_and_partial_migration_never_activates ... ok
+test legacy_modes_stale_inode_and_cloned_roots_are_fenced ... ok
+test crash_orphans_savepoint_tamper_hardlinks_and_strict_configs_refuse ... ok
+test competing_writer_paths_hash_consistent_semantic_corruption_and_resource_refusals ... ok
+test savepoint_codec_and_owners_round_trip_preserves_full_state_output_and_progress ... ok
+test every_failure_selects_whole_old_or_new_and_poison ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.59s
+

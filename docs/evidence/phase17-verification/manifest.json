@@ -1,0 +1,29 @@
+{
+  "files": {
+    "enospc-4.log": "6fb8c91c47b6467c449185a00faa6c2cb294f9de6ff644736afae5951d171e53",
+    "final-offline-2.log": "408bba3d887507f40b4cd70c3d5b0a34c6fe118eb5d2524dbd8841c45c6af60e",
+    "final-python-5.log": "cf356c5e55b9697444a4a71393837786c6da037383489a207b32cd35ddb5c496",
+    "final-tamper.log": "f0be466d3b5d078a60d77e7d21af922ba813289569375d4340e8c0d8fbf62cca",
+    "fixed-state-archive-verify.log": "a25c165e79f19052b47e3f2de9c6134da04ede114abe925891eb1b8732d6fed9",
+    "source.tar.gz": "6b3ca24d0ac032b2aa17f6c71e3058745299e036cdfa454a6caf2810c0461f38",
+    "stateless-verify-2.log": "f453b4e8bd033021f6ea654fa434db2bc50529d0467bae438f05c3d7393a8ec9"
+  },
+  "primary_archive_sha256": "0802436c9760a0b1547a22a551c4a056ee3907383fbd404763c53584c24ed175",
+  "runtime_inventory_sha256": "57d14486a535b17264ad64a9140beab3449ca064208a6939b7de247735b3ea4b",
+  "source_files": {
+    "scripts/phase17/acceptance.py": "518ccb9982cb588e3cd0d12156a29151f37d9019c2406628483d8dedf2994cae",
+    "scripts/phase17/digest.py": "a106009dbd089473847024aab69c028efa1ccc5210ddf73016123370eaee2ad5",
+    "scripts/phase17/enospc.py": "b4ae3480c5be328cc66e1bb3d5f0460c2f03328c664c8b17190265acb2510405",
+    "scripts/phase17/oracle.py": "f2bce9ca5acd269bb3c8dca2645e430f56557c6634407d47eebf158073546210",
+    "scripts/phase17/package_evidence.py": "9595337fe1e98098bc7b1fc384ae05ccd74373a7ffcb0dc9bef3f20eb789e86b",
+    "scripts/phase17/package_legacy_regression.py": "631ddfbcfdace1d6cd1ef836ec1b37b9b8e70e95bf5c4d7a8503c82dbde3c1eb",
+    "scripts/phase17/prerequisite.py": "e65eb8194c08fb6fea368dadf66e48e5a5742b7289b6b6af34c0e66bb61aee45",
+    "scripts/phase17/service_fixture.py": "d07f65f5a339a2560183ec6f29c4e0f1216ee85e40e0a6c5cba24b8a1fbde9fc",
+    "scripts/phase17/tamper_checks.py": "5b5800bec69e90b0e2dbad6c214f9166024f812da8e6deff4d2529a1eb06c930",
+    "scripts/phase17/verify_evidence.py": "270d311edbcb3b5498a7f3657b7e430f657d77ef88b9aff663e47adfd347f72f",
+    "scripts/phase17/verify_legacy_regression.py": "59b40ea043fc3555272735c007ad45499f620ab10b4b79a3a23de9a8f0247cc7",
+    "scripts/tests/test_phase17_evidence.py": "b07dfc2c3e999803d4123fb28383b5c6aec98a36200b267fd00743dc52e79a6c"
+  },
+  "source_sha256": "6b3ca24d0ac032b2aa17f6c71e3058745299e036cdfa454a6caf2810c0461f38",
+  "version": 3
+}

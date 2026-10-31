@@ -1,0 +1,18 @@
+[
+  {
+    "argv": [
+      "/usr/bin/hdiutil",
+      "create",
+      "-size",
+      "16m",
+      "-fs",
+      "HFS+",
+      "-volname",
+      "ADE17_DISPOSABLE",
+      "-format",
+      "UDRW",
+      "/private/tmp/ade-phase17-enospc/owned-only.dmg"
+    ],
+    "label": "create-image"
+  }
+]

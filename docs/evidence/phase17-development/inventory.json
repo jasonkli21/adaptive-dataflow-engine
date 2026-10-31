@@ -1,0 +1,35 @@
+{
+  "baseline": "46a976d41d8642d54fe0829bd7944c9a1ddd39d1",
+  "candidates": [
+    {
+      "archive_sha256": "444e69aa45469d9dacf565151f9b8a9e901b2e935bce1f7075c29d5b50318331",
+      "candidate": 1,
+      "driver_sha256": "8b7245ffb7da13484a904996ba257f45f2df3e783b41d96238dfa862d38af298",
+      "qualification": "failed/premeasurement; never final acceptance"
+    },
+    {
+      "archive_sha256": "1a73fb2cb9baa55c4a8d290ae1abf21886de022cb587c0b1140bb587e7e33ff7",
+      "candidate": 2,
+      "driver_sha256": "4aeeeff274df8810508273d11a37f5381a44a29ec3879c8a5ef2089237ab0344",
+      "qualification": "failed/premeasurement; never final acceptance"
+    },
+    {
+      "archive_sha256": "b3ddb687f8625abdab75d521029b67208810794b0d27bde24a823ab55b320297",
+      "candidate": 3,
+      "driver_sha256": "bce7f79def5c8c77a7461673e914c1155b62ee1605426ca44be86785dbb69e15",
+      "qualification": "failed/premeasurement; never final acceptance"
+    },
+    {
+      "archive_sha256": "832c636b829aa88059753e68e44f1ad4d8c1fe221b2d469e627ce37c9cb21713",
+      "candidate": 4,
+      "driver_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "qualification": "failed/premeasurement; never final acceptance"
+    }
+  ],
+  "handoff_sha256": "74bf0480b53f75024aaf07ac271a93108c4a46e82c0fedf873bc7d0af40c6ab3",
+  "initial_status": [
+    "?? docs/plans/phase-17-implementation-plan.md",
+    "?? sol-medium-phase-0-bootstrap-implementation-prompt.md"
+  ],
+  "preserved_unowned_prompt_sha256": "5a45a881e06e314263d1836c11a4794cfae711f938a0d5d88f4a8b964fc90c76"
+}

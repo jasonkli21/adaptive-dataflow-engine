@@ -1,0 +1,136 @@
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: binding's name is too similar to existing binding
+   --> crates/ade-stream/src/transactional/epoch.rs:594:9
+    |
+594 |     let stage = root.join(id.to_string());
+    |         ^^^^^
+    |
+note: existing binding defined here
+   --> crates/ade-stream/src/transactional/epoch.rs:529:9
+    |
+529 |     let state = engine.state.as_ref().ok_or(Error::State("native state"))?;
+    |         ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#similar_names
+    = note: `-D clippy::similar-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::similar_names)]`
+
+error: long literal lacking separators
+   --> crates/ade-stream/src/transactional/savepoint.rs:109:22
+    |
+109 |         top.len() <= 1048576
+    |                      ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+    = note: `-D clippy::unreadable-literal` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unreadable_literal)]`
+
+error: long literal lacking separators
+   --> crates/ade-stream/src/transactional/savepoint.rs:149:47
+    |
+149 |     let top = bytes(&path.join("SAVEPOINT3"), 1048576)?;
+    |                                               ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:65:14
+   |
+65 |             (131072..=268435456).contains(&l.root_bytes)
+   |              ^^^^^^ help: consider: `131_072`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:65:23
+   |
+65 |             (131072..=268435456).contains(&l.root_bytes)
+   |                       ^^^^^^^^^ help: consider: `268_435_456`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:66:29
+   |
+66 |                 && (65536..=16777216).contains(&l.stage_bytes)
+   |                             ^^^^^^^^ help: consider: `16_777_216`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:67:28
+   |
+67 |                 && (2048..=8388608).contains(&l.output_bytes)
+   |                            ^^^^^^^ help: consider: `8_388_608`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:68:28
+   |
+68 |                 && (2048..=33554432).contains(&l.history_bytes)
+   |                            ^^^^^^^^ help: consider: `33_554_432`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:70:28
+   |
+70 |                 && (8192..=67108864).contains(&l.diagnostic_bytes)
+   |                            ^^^^^^^^ help: consider: `67_108_864`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:71:21
+   |
+71 |                 && (131072..=536870912).contains(&l.savepoint_bytes)
+   |                     ^^^^^^ help: consider: `131_072`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: long literal lacking separators
+  --> crates/ade-stream/src/transactional/mod.rs:71:30
+   |
+71 |                 && (131072..=536870912).contains(&l.savepoint_bytes)
+   |                              ^^^^^^^^^ help: consider: `536_870_912`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unreadable_literal
+
+error: this function has too many lines (117/100)
+   --> crates/ade-stream/src/transactional/epoch.rs:254:1
+    |
+254 | pub(crate) fn verify_codec(c: &Config, p: &Pointer, enforce_codec: bool) -> Result<Vec<Verified>> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_lines
+    = note: `-D clippy::too-many-lines` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: assigning the result of `Clone::clone()` may be inefficient
+   --> crates/ade-stream/src/transactional/epoch.rs:299:9
+    |
+299 |         next = m.parent.clone();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ help: use `clone_from()`: `next.clone_from(&m.parent)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assigning_clones
+    = note: `-D clippy::assigning-clones` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::assigning_clones)]`
+
+error: docs for function which may panic missing `# Panics` section
+  --> crates/ade-stream/src/transactional/migration.rs:33:1
+   |
+33 | pub fn read(file: &mut impl Read, codec: u32, window: i64) -> Result<Option<Entry>> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: first possible panic found here
+  --> crates/ade-stream/src/transactional/migration.rs:47:35
+   |
+47 |         start: i64::from_le_bytes(b[0..8].try_into().expect("fixed")),
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#missing_panics_doc
+   = note: `-D clippy::missing-panics-doc` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::missing_panics_doc)]`
+
+error: could not compile `ade-stream` (lib) due to 14 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib test) due to 14 previous errors

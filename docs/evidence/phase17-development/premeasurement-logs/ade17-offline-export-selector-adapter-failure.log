@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/verify_evidence.py", line 148, in <module>
+    p=argparse.ArgumentParser();p.add_argument('--campaign',type=pathlib.Path);p.add_argument('--archive',type=pathlib.Path);p.add_argument('--manifest',type=pathlib.Path);a=p.parse_args();print(json.dumps(verify(a.campaign) if a.campaign else archive(a.archive,a.manifest),sort_keys=True))
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/verify_evidence.py", line 145, in archive
+    return verify(root)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/verify_evidence.py", line 127, in verify
+    export_count=exports(root,ledgers,attempts);checks(root)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/verify_evidence.py", line 86, in exports
+    verify_trace(path,c,ledgers,attempts,observed);count+=1
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/oracle.py", line 68, in verify_trace
+    cuts=chain(root,config);model=Model(config);history=[];topic=config['state']['source']['topic'];ledger={(r['partition'],r['offset']):r['event'] for r in ledgers[topic]}
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase17/oracle.py", line 41, in chain
+    root=pathlib.Path(root);p=pointer or json.loads((root/'CURRENT3').read_text());result=[]
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1256, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1242, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1110, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/kn/djny7kpj0vl523qvdw763ppm0000gn/T/ade17-offline-82oqb9oy/savepoints/seed/CURRENT3'

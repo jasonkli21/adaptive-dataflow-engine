@@ -1,0 +1,61 @@
+{
+  "codec": 1,
+  "limits": {
+    "diagnostic_bytes": 16777216,
+    "epochs": 64,
+    "history_bytes": 1048576,
+    "output_bytes": 262144,
+    "root_bytes": 33554432,
+    "savepoint_bytes": 67108864,
+    "savepoints": 8,
+    "stage_bytes": 1048576
+  },
+  "state": {
+    "checkpoint_bytes": 16777216,
+    "checkpoint_every_ms": 60000,
+    "checkpoint_every_records": 40,
+    "checkpoint_root": "/private/tmp/ade-phase17-enospc-3/mount/check",
+    "cold_bytes": 1048576,
+    "hash_version": 1,
+    "hot_bytes": 128,
+    "job_id": "dc500b7c-53ba-44f4-b89c-c4babc23345a",
+    "late_policy": "receipt_drop_closed_v1",
+    "max_generations": 64,
+    "operator": "tumbling_sum_count_v1",
+    "owners": 1,
+    "source": {
+      "allowance_ms": 10,
+      "bootstrap": "127.0.0.1:55605",
+      "client_queue_kib": 16,
+      "expected_cluster_id": "ykA7P7nYRR2cQpmS3LmECA",
+      "key_less_than": 1000,
+      "payload_bytes": 4096,
+      "security": {
+        "mode": "loopback_dev"
+      },
+      "sink_stall_ms": 30000,
+      "starts": [
+        {
+          "offset": 0,
+          "partition": 0
+        },
+        {
+          "offset": 0,
+          "partition": 1
+        }
+      ],
+      "timers": [],
+      "topic": "ade17-8326012253-atomic",
+      "version": 1
+    },
+    "topic_partitions": [
+      0,
+      1
+    ],
+    "version": 1,
+    "window_ms": 100,
+    "working_root": "/private/tmp/ade-phase17-enospc-3/work"
+  },
+  "trusted_history": "owned-immutable-ade17-8326012253-atomic",
+  "version": 3
+}

@@ -186,7 +186,7 @@ pub struct State {
     last_ms: u64,
     pub test_pause_at: Option<String>,
     failed: bool,
-    _lock: checkpoint::Lock,
+    checkpoint_lock: Option<checkpoint::Lock>,
 }
 impl State {
     /// # Errors
@@ -210,6 +210,11 @@ impl State {
         check(
             v2 || !config.checkpoint_root.join("CURRENT2").exists(),
             "v2 root requires adaptive mode",
+        )?;
+        check(
+            std::fs::symlink_metadata(config.checkpoint_root.join("ROOT3")).is_err()
+                && std::fs::symlink_metadata(config.checkpoint_root.join("CURRENT3")).is_err(),
+            "v3 root requires transactional mode",
         )?;
         let lock = checkpoint::Lock::acquire(&config)?;
         let loaded = if restore {
@@ -264,10 +269,35 @@ impl State {
                 last_ms: 0,
                 test_pause_at: None,
                 failed: false,
-                _lock: lock,
+                checkpoint_lock: Some(lock),
             },
             progress,
         ))
+    }
+    #[cfg(feature = "transactional-state")]
+    pub(crate) fn transactional(
+        config: Config,
+        session: Uuid,
+        token: CancellationToken,
+    ) -> Result<Self> {
+        config.validate()?;
+        let store = store::Store::new(&config, session, token)?;
+        Ok(Self {
+            config,
+            store,
+            closed_window_late: 0,
+            last_closed_late: false,
+            input_pending: false,
+            pending_close: None,
+            generation: None,
+            #[cfg(feature = "adaptive-checkpoint")]
+            adaptive: None,
+            last_records: 0,
+            last_ms: 0,
+            test_pause_at: None,
+            failed: false,
+            checkpoint_lock: None,
+        })
     }
     pub(crate) fn apply(&mut self, r: &Receipt, frontier: Option<i64>) -> Result<()> {
         check(
@@ -374,6 +404,10 @@ impl State {
         ms: u64,
         hook: &mut dyn FnMut(&str) -> Result<()>,
     ) -> Result<checkpoint::Pointer> {
+        check(
+            self.checkpoint_lock.is_some(),
+            "transactional state requires atomic epoch publication",
+        )?;
         check(
             !self.failed
                 && !self.input_pending

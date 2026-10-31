@@ -1,0 +1,11 @@
+{
+  "binary_sha256": "6c2b3f57c4df0cae105f11e00cb931480553b82de3906eb061e06bd7e195c26f",
+  "errno": 28,
+  "filesystem": "HFS+ owned 16MiB image",
+  "filler_bytes": 16101376,
+  "objects": 73,
+  "savepoint_blake3": "57a0ea9fa36dd4f7f2ea69a9e6180c81aef6228b513b91b80a704000a09adacd",
+  "selector_sha256": "729fb3a715587b09ef7f9b79b6c70f7f182080dbee77289cfda05254ed1ff462",
+  "source_campaign": "/private/tmp/ade-phase17-candidate-5",
+  "status": "ACTUAL_ENOSPC_REFUSED"
+}

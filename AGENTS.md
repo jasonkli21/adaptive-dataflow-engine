@@ -257,3 +257,33 @@ Phase16 is COMPLETE_BOUNDED_ADAPTIVE_STATE_V1 under ADR-0023 and
 explicit guarded replay/restore. Preserve candidate5 runtime/executable identities
 and all four failed predecessors. Static defaults and v1 remain; same-host service
 proof is not physical HA. No Phase17 authorization is inferred.
+
+## Phase17 authorization and completion — 2026-10-30
+
+The user explicitly authorized Phase17 implementation in this session without
+subagents and with one final local project commit. Phase17 is
+COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1 under ADR-0024 and
+`docs/reports/phase-17-implementation-report.md`. Candidate5 has121 transactional
+cases,144 committed-reader observations/376 matched cuts/65 sessions, five fresh
+real Kafka/MinIO Phase16 post-fix proofs, and a matched actual-ENOSPC supplement.
+All required workspace checks pass (301 Rust tests/10 existing ignored,54 Python
+checks); fresh stateless30-case and fixed-state70-case regressions pass. Preserve
+its immutable source/executable/archive identities and all four predecessors.
+
+The default-off v3 path selects complete state+source progress+output through one
+CURRENT3 pointer, with kernel writer fencing, poisoned ambiguous attempts,
+self-contained exact-digest savepoints, durable pause/resume, real codec1→2
+migration and local logical1→2→4→1 owner redistribution. Exactly once is the
+committed-visible window prefix within one pinned local job lineage through the
+versioned reader. Source replay remains trace-relative. Trusted immutable Kafka
+history and single-local-filesystem rename/fsync assumptions are explicit.
+No external Kafka/HTTP/S3 exactly once, cross-service2PC, consumer-group coupling,
+automatic recovery/GC, disk-loss/cloud/production HA, arbitrary rolling upgrade or
+physical state/Kafka rescale is inferred. Imported continuations require one active
+branch under operator control; no global cross-filesystem writer registry exists.
+Defaults, v1/v2 formats and prior evidence remain; old modes refuse v3 roots.
+
+The additive `docs/reports/phase-16-postfix-reacceptance-2026-10-30.md` closes the
+five decisive review paths on the matched current runtime. It does not relabel the
+historical117-case campaign or rewrite the earlier PARTIAL_VERIFICATION report.
+Earlier Phase10–16 broader debt remains separate. No Phase18 authorization is inferred.

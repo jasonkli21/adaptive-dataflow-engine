@@ -1,0 +1,1 @@
+[{"kind": "output", "reason": "exact committed output payload/history differs", "result": "REFUSED_BY_INDEPENDENT_SEMANTICS"}, {"kind": "state", "reason": "full hot/cold logical state differs", "result": "REFUSED_BY_INDEPENDENT_SEMANTICS"}]

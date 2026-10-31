@@ -1,0 +1,372 @@
+   Compiling ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ade-frontend` (bin "ade-query") generated 1 warning
+   Compiling ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+warning: `ade-bench` (lib test) generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase0") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase2") generated 1 warning (1 duplicate)
+warning: `ade-frontend` (test "queries") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase1") generated 1 warning (1 duplicate)
+warning: `ade-bench` (test "phase13") generated 1 warning (1 duplicate)
+warning: `ade-bench` (bin "ade-bench") generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.94s
+     Running unittests src/lib.rs (target/debug/deps/ade_bench-844aba916d638f38)
+
+running 27 tests
+test ade_distributed::tests::configuration_is_effective_and_strict ... ok
+test ade_distributed::tests::cost_configuration_is_explicit_effective_and_strict ... ok
+test ade_distributed::tests::scheduler_options_are_explicit_and_strict ... ok
+test ade_distributed::tests::static_projected_diagnostic_is_explicit_and_bounded ... ok
+test cli::tests::cli_contract ... ok
+test dataset::tests::row_ranges_are_safe_at_the_accepted_domain_limit ... ok
+test dataset::tests::row_ranges_cover_ordinary_and_degenerate_partitions ... ok
+test dataset::topology_fixture_tests::engineered_keys_are_distinct_and_in_one_base_hash_bucket ... ok
+test engine::tests::engine_dispatch_rejects_unsupported_names ... ok
+test engine::tests::generic_harness_accepts_adapter_owned_configuration ... ok
+test engine::tests::join_canonicalization_rejects_renamed_or_nullable_schema_even_when_empty ... ok
+test engine::tests::join_sql_oracle_preserves_duplicate_bags_and_output_cap ... ok
+test engine::tests::q1_cutoff_is_a_date32_day_value ... ok
+test engine::tests::q1_tolerance_requires_exact_counts_and_finite_values ... ok
+test engine::tests::sort_validation_rejects_wrong_order_across_batches ... ok
+test environment::tests::build_metadata_includes_effective_known_settings ... ok
+test environment::tests::build_provenance_stays_unknown_for_source_archives ... ok
+test environment::tests::metadata_serializes ... ok
+test environment::tests::repository_info_uses_compiled_values_not_runtime_git_context ... ok
+test join_dataset::tests::deterministic_sides_empty_and_manifest_separation ... ok
+test result::tests::atomic_no_clobber_and_cleanup ... ok
+test runner::resource_tests::resource_units_and_unvalidated_protocol ... ok
+test runner::tests::child_command_forwards_engine_and_raw_options ... ok
+test runner::tests::failure_protocols ... ok
+test spec::tests::semantic_identity_includes_contract_and_excludes_description_and_tags ... ok
+test spec::tests::specs_strict ... ok
+test stats::tests::known_statistics ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running unittests src/main.rs (target/debug/deps/ade_bench-37643d1993322ce5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase0.rs (target/debug/deps/phase0-4d32763a5177cc45)
+
+running 6 tests
+test all_synthetic_workloads_and_errors ... ok
+test cli_process_roundtrip_and_comparison_integrity ... ok
+test deterministic_readback_and_distribution ... ok
+test q1_cutoff_and_tolerance_reference ... ok
+test source_provenance_is_independent_of_runtime_git_repository ... git version 2.39.5 (Apple Git-154)
+ok
+test weighted_file_layout_preserves_logical_rows_and_manifest_verification ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.59s
+
+     Running tests/phase1.rs (target/debug/deps/phase1-ba84fefcc3de67a5)
+
+running 1 test
+test phase1_adapter_validates_all_synthetic_cases ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/phase13.rs (target/debug/deps/phase13-b4eac7480c8140cd)
+
+running 1 test
+test independent_oracle_and_all_local_remote_cost_samples ... ignored, source-bound same-data local/remote campaign requires separate private S3 fixture
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/phase2.rs (target/debug/deps/phase2-5c5f06d814c48f2f)
+
+running 1 test
+test phase2_adapter_ordered_sort_pressure_and_configuration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.19s
+
+     Running unittests src/lib.rs (target/debug/deps/ade_distributed-e26de68abdff7730)
+
+running 96 tests
+test adaptive::tests::configuration_serialization_is_strict_and_roundtrips ... ok
+test adaptive::tests::deterministic_monotone_thresholds_and_bounds ... ok
+test adaptive::tests::direct_transition_reason_names_the_observed_pressure ... ok
+test bounded_output::tests::empty_collection_does_not_consume_output_budget ... ok
+test bounded_output::tests::multi_batch_overflow_is_refused_before_the_next_batch_is_retained ... ok
+test bounded_output::tests::one_batch_at_exact_row_and_byte_boundary_is_admitted ... ok
+test cost::tests::active_slo_and_checked_overflow ... ok
+test cost::tests::empty_transfer_replay_has_no_source_or_compute_cost ... ok
+test cost::tests::endpoints_ties_margin_and_determinism ... ok
+test cost::tests::sequential_recovery_closures_share_remaining_slack ... ok
+test cost::tests::sequential_write_then_restore_uses_one_deadline_penalty ... ok
+test cost::tests::source_requests_capacity_and_storage_prices_have_real_effect ... ok
+test disk::tests::shared_atomic_cap_and_overflow_never_write_one_more_byte ... ok
+test exchange::join_tests::typed_codec_context_route_ingress_terminal_and_stage_are_fenced ... FAILED
+test exchange::leased_tests::leased_persistent_idle_session_hash_context_and_poison ... FAILED
+test exchange::tests::adaptive_all_boundaries_exact_readback_with_bounded_suffixes ... ok
+test exchange::tests::adaptive_direct_wait_cancels_and_live_metrics_do_not_block ... ok
+test exchange::tests::blocking_accept_shutdown_wakes_idle_and_all_busy_slots ... FAILED
+test exchange::tests::duplicate_completed_transfer_fails_the_session ... FAILED
+test exchange::tests::loopback_finalizes_empty_and_rejects_duplicate_and_partial ... FAILED
+test exchange::tests::mechanism_roundtrips_include_empty_transfer_and_metrics ... FAILED
+test exchange::tests::receiver_drop_unblocks_a_direct_handoff ... FAILED
+test exchange::tests::receiver_shutdown_returns_while_spill_io_is_stalled ... FAILED
+test exchange::tests::rejects_duplicate_gapped_segments_and_incorrect_final_counts ... FAILED
+test exchange::tests::rejects_oversized_frame_and_wrong_schema_version ... FAILED
+test exchange::tests::retention_snapshot_reports_live_buffer_and_spill_backlog_then_drains ... ok
+test exchange::tests::sequence_and_completion_count_rejections_fail_the_session ... FAILED
+test exchange::tests::terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty ... FAILED
+test exchange::tests::waiting_reader_cancels_and_incomplete_objects_are_not_visible ... ok
+test exchange::topology_tests::misrouted_but_row_conserving_batch_is_rejected ... FAILED
+test gather::tests::completed_original_cannot_be_replaced_and_incomplete_output_cannot_commit ... FAILED
+test gather::tests::incomplete_original_is_quarantined_and_only_one_attempt_commits ... FAILED
+test join::tests::decision_fence_own_observations_and_stale_commit ... ok
+test join::tests::incomplete_prefix_and_forged_complete_never_authorize_broadcast ... ok
+test lineage::tests::snapshot_morsels_and_attempt_independent_segments ... ok
+test managed::tests::managed_and_legacy_framing_refuse_each_other ... ok
+test managed::tests::oversized_truncated_and_foreign_managed_frames_refuse ... ok
+test managed::tests::stale_response_fence_is_refused_over_real_socket ... FAILED
+test materialization::tests::empty_transfer_is_complete_and_cancellation_discards_staging ... FAILED
+test materialization::tests::full_copy_survives_writer_and_rejects_corruption_missing_forgery_and_ephemeral ... FAILED
+test partition::packer_tests::frame_boundaries_preserve_signed_rows_and_empty_destinations ... ok
+test partition::packer_tests::single_pass_matches_reference_frames_including_selective_replay_and_sink_failure ... ok
+test partition::tests::stable_vectors ... ok
+test probe::tests::compressed_large_key_chunk_is_refused_before_one_row_probe_decode ... ok
+test protocol::tests::rejects_version_size_and_truncation ... ok
+test protocol::tests::rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout ... FAILED
+test protocol::tests::total_deadline_rejects_a_continuously_progressing_peer ... FAILED
+test protocol::tests::vectored_write_handles_partial_fallback_interruption_and_zero ... ok
+test protocol::tests::vectored_write_retains_total_deadline ... FAILED
+test recovery::tests::admitted_large_snapshot_is_not_duplicated_in_recovery_request ... ok
+test recovery::tests::foreign_layout_cannot_reuse_materialization_facts ... ok
+test recovery::tests::minimal_file_closure_and_compact_ranges_are_deterministic ... ok
+test recovery::tests::mixed_restore_recompute_and_forged_fact_refusal ... ok
+test recovery::tests::recovery_action_selection_accumulates_elapsed_across_closures ... ok
+test recovery::tests::refuses_incomplete_multiple_losses_and_invalid_lineage ... ok
+test remote::http::tests::body_allocation_hint_per_response_total_bytes_and_actual_request_caps ... ok
+test remote::store::tests::cancellation_deadline_drop_future_and_no_late_local_publication ... ok
+test remote::store::tests::conditional_capability_probe_and_exact_operation_counts ... ok
+test remote::store::tests::immutable_create_wrong_size_checksum_namespace_and_caps_poison ... ok
+test remote::tests::cost_configured_egress_checked_overflow_and_all_limits ... ok
+test remote::tests::old_control_oversized_unknown_and_truncated_remote_frames_refuse ... ok
+test remote::tests::provider_endpoint_secrets_traversal_and_explicit_tls_refuse ... ok
+test remote::worker::failure_tests::refusal_classes_are_distinct_and_never_include_diagnostic_text ... ok
+test remote::worker::tests::independently_pinned_bytes_still_require_schema_rows_owner_and_terminal_chain ... ok
+test retention::tests::blocked_spill_read_cancellation_releases_retention_state_and_poisons_worker ... ok
+test retention::tests::blocked_spill_write_cancellation_releases_retention_state_and_poisons_worker ... ok
+test retention::tests::bounded_buffer_backpressure_and_cancellation ... ok
+test retention::tests::execution_namespaces_isolate_shared_store_cleanup_for_reused_job_ids ... ok
+test retention::tests::hanging_object_store_put_and_get_obey_cancel_and_deadline ... ok
+test retention::tests::object_keys_isolate_identity_and_backend_errors_propagate ... ok
+test retention::tests::spill_fifo_has_constant_metadata_and_exact_once_readback ... ok
+test retention::tests::supplied_object_store_backend_is_used_and_reported ... ok
+test scheduler::connection::tests::oversized_frame_refuses_before_body_allocation ... FAILED
+test scheduler::connection::tests::persistent_frames_reset_deadline_and_refuse_a_truncated_next_frame ... FAILED
+test scheduler::source::parallel_tests::scoped_parallel_hash_is_canonical_bounded_and_cancels_on_drift ... ok
+test scheduler::source::tests::source_pass_checks_cancellation_and_deadline_between_chunks ... ok
+test scheduler::tests::control_admission_saturation_aborts_and_closes_bounded_peer_set ... FAILED
+test scheduler::tests::coverage_steal_duplicate_ack_and_bounded_log ... ok
+test scheduler::tests::fencing_owner_nonce_source_conflicts_and_expiry ... ok
+test scheduler::tests::malformed_control_aborts_service_and_dead_service_refuses_clients ... FAILED
+test scheduler::tests::minimum_steal_waits_for_active_owner_and_falls_back_for_inactive_owners ... ok
+test scheduler::tests::no_steal_empty_producer_deadlines_and_bounds ... ok
+test scheduler::tests::parked_producer_waits_for_scheduled_activation_then_closes ... ok
+test scheduler::tests::parked_without_activation_closes_and_small_pending_work_makes_progress ... ok
+test scheduler::tests::participation_drain_has_cutoff_and_spot_deadline ... ok
+test scheduler::tests::persistent_idle_main_session_retains_independent_renewals_and_closure ... FAILED
+test scheduler::tests::pure_capacity_locality_critical_path_and_overflow ... ok
+test scheduler::tests::source_catalog_bounds_participation_and_rejects_last_active_drain ... ok
+test scheduler::tests::source_replacement_and_symlink_drift_are_rechecked_after_a_verified_pass ... ok
+test scheduler::tests::source_verification_checks_deadline_cancellation_and_drift ... ok
+test scheduler::tests::stalled_control_does_not_monopolize_minimum_lease_renewals ... FAILED
+test topology::tests::deterministic_split_coalesce_and_negative_controls ... ok
+test topology::tests::distinct_keys_in_one_virtual_shard_are_reported_as_one_occupied_shard ... ok
+test topology::tests::static_vectors_conservation_and_validation ... ok
+test worker::tests::cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected ... FAILED
+test worker::tests::empty_replay_emits_matching_attempt_terminal_without_source_access ... FAILED
+
+failures:
+
+---- exchange::join_tests::typed_codec_context_route_ingress_terminal_and_stage_are_fenced stdout ----
+
+thread 'exchange::join_tests::typed_codec_context_route_ingress_terminal_and_stage_are_fenced' (7052675) panicked at crates/ade-distributed/src/exchange.rs:2172:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- exchange::leased_tests::leased_persistent_idle_session_hash_context_and_poison stdout ----
+
+thread 'exchange::leased_tests::leased_persistent_idle_session_hash_context_and_poison' (7052677) panicked at crates/ade-distributed/src/exchange.rs:2264:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::blocking_accept_shutdown_wakes_idle_and_all_busy_slots stdout ----
+
+thread 'exchange::tests::blocking_accept_shutdown_wakes_idle_and_all_busy_slots' (7052697) panicked at crates/ade-distributed/src/exchange.rs:1349:83:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::duplicate_completed_transfer_fails_the_session stdout ----
+
+thread 'exchange::tests::duplicate_completed_transfer_fails_the_session' (7052698) panicked at crates/ade-distributed/src/exchange.rs:1435:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::loopback_finalizes_empty_and_rejects_duplicate_and_partial stdout ----
+
+thread 'exchange::tests::loopback_finalizes_empty_and_rejects_duplicate_and_partial' (7052699) panicked at crates/ade-distributed/src/exchange.rs:1932:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::mechanism_roundtrips_include_empty_transfer_and_metrics stdout ----
+
+thread 'exchange::tests::mechanism_roundtrips_include_empty_transfer_and_metrics' (7052700) panicked at crates/ade-distributed/src/exchange.rs:1606:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::receiver_drop_unblocks_a_direct_handoff stdout ----
+
+thread 'exchange::tests::receiver_drop_unblocks_a_direct_handoff' (7052701) panicked at crates/ade-distributed/src/exchange.rs:1470:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::receiver_shutdown_returns_while_spill_io_is_stalled stdout ----
+
+thread 'exchange::tests::receiver_shutdown_returns_while_spill_io_is_stalled' (7052702) panicked at crates/ade-distributed/src/exchange.rs:1548:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::rejects_duplicate_gapped_segments_and_incorrect_final_counts stdout ----
+
+thread 'exchange::tests::rejects_duplicate_gapped_segments_and_incorrect_final_counts' (7052705) panicked at crates/ade-distributed/src/exchange.rs:1852:70:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::rejects_oversized_frame_and_wrong_schema_version stdout ----
+
+thread 'exchange::tests::rejects_oversized_frame_and_wrong_schema_version' (7052706) panicked at crates/ade-distributed/src/exchange.rs:1998:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::sequence_and_completion_count_rejections_fail_the_session stdout ----
+
+thread 'exchange::tests::sequence_and_completion_count_rejections_fail_the_session' (7052709) panicked at crates/ade-distributed/src/exchange.rs:1817:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::tests::terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty stdout ----
+
+thread 'exchange::tests::terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty' (7052710) panicked at crates/ade-distributed/src/exchange.rs:2030:77:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- exchange::topology_tests::misrouted_but_row_conserving_batch_is_rejected stdout ----
+
+thread 'exchange::topology_tests::misrouted_but_row_conserving_batch_is_rejected' (7052729) panicked at crates/ade-distributed/src/exchange.rs:2106:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- gather::tests::completed_original_cannot_be_replaced_and_incomplete_output_cannot_commit stdout ----
+
+thread 'gather::tests::completed_original_cannot_be_replaced_and_incomplete_output_cannot_commit' (7052731) panicked at crates/ade-distributed/src/gather.rs:347:64:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- gather::tests::incomplete_original_is_quarantined_and_only_one_attempt_commits stdout ----
+
+thread 'gather::tests::incomplete_original_is_quarantined_and_only_one_attempt_commits' (7052737) panicked at crates/ade-distributed/src/gather.rs:303:64:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- managed::tests::stale_response_fence_is_refused_over_real_socket stdout ----
+
+thread 'managed::tests::stale_response_fence_is_refused_over_real_socket' (7052762) panicked at crates/ade-distributed/src/managed.rs:170:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- materialization::tests::empty_transfer_is_complete_and_cancellation_discards_staging stdout ----
+
+thread 'materialization::tests::empty_transfer_is_complete_and_cancellation_discards_staging' (7052763) panicked at crates/ade-distributed/src/materialization.rs:232:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- materialization::tests::full_copy_survives_writer_and_rejects_corruption_missing_forgery_and_ephemeral stdout ----
+
+thread 'materialization::tests::full_copy_survives_writer_and_rejects_corruption_missing_forgery_and_ephemeral' (7052764) panicked at crates/ade-distributed/src/materialization.rs:232:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- protocol::tests::rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout stdout ----
+
+thread 'protocol::tests::rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout' (7052829) panicked at crates/ade-distributed/src/protocol.rs:373:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- protocol::tests::total_deadline_rejects_a_continuously_progressing_peer stdout ----
+
+thread 'protocol::tests::total_deadline_rejects_a_continuously_progressing_peer' (7052830) panicked at crates/ade-distributed/src/protocol.rs:349:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- protocol::tests::vectored_write_retains_total_deadline stdout ----
+
+thread 'protocol::tests::vectored_write_retains_total_deadline' (7052832) panicked at crates/ade-distributed/src/protocol.rs:334:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- scheduler::connection::tests::oversized_frame_refuses_before_body_allocation stdout ----
+
+thread 'scheduler::connection::tests::oversized_frame_refuses_before_body_allocation' (7052887) panicked at crates/ade-distributed/src/scheduler/connection.rs:183:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- scheduler::connection::tests::persistent_frames_reset_deadline_and_refuse_a_truncated_next_frame stdout ----
+
+thread 'scheduler::connection::tests::persistent_frames_reset_deadline_and_refuse_a_truncated_next_frame' (7052888) panicked at crates/ade-distributed/src/scheduler/connection.rs:116:67:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- scheduler::tests::control_admission_saturation_aborts_and_closes_bounded_peer_set stdout ----
+
+thread 'scheduler::tests::control_admission_saturation_aborts_and_closes_bounded_peer_set' (7052955) panicked at crates/ade-distributed/src/scheduler/tests.rs:729:6:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- scheduler::tests::malformed_control_aborts_service_and_dead_service_refuses_clients stdout ----
+
+thread 'scheduler::tests::malformed_control_aborts_service_and_dead_service_refuses_clients' (7052958) panicked at crates/ade-distributed/src/scheduler/tests.rs:88:6:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- scheduler::tests::persistent_idle_main_session_retains_independent_renewals_and_closure stdout ----
+
+thread 'scheduler::tests::persistent_idle_main_session_retains_independent_renewals_and_closure' (7052964) panicked at crates/ade-distributed/src/scheduler/tests.rs:203:6:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- scheduler::tests::stalled_control_does_not_monopolize_minimum_lease_renewals stdout ----
+
+thread 'scheduler::tests::stalled_control_does_not_monopolize_minimum_lease_renewals' (7052969) panicked at crates/ade-distributed/src/scheduler/tests.rs:138:6:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+
+---- worker::tests::cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected stdout ----
+
+thread 'worker::tests::cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected' (7052973) panicked at crates/ade-distributed/src/worker.rs:1732:65:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- worker::tests::empty_replay_emits_matching_attempt_terminal_without_source_access stdout ----
+
+thread 'worker::tests::empty_replay_emits_matching_attempt_terminal_without_source_access' (7052974) panicked at crates/ade-distributed/src/worker.rs:1853:73:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+
+failures:
+    exchange::join_tests::typed_codec_context_route_ingress_terminal_and_stage_are_fenced
+    exchange::leased_tests::leased_persistent_idle_session_hash_context_and_poison
+    exchange::tests::blocking_accept_shutdown_wakes_idle_and_all_busy_slots
+    exchange::tests::duplicate_completed_transfer_fails_the_session
+    exchange::tests::loopback_finalizes_empty_and_rejects_duplicate_and_partial
+    exchange::tests::mechanism_roundtrips_include_empty_transfer_and_metrics
+    exchange::tests::receiver_drop_unblocks_a_direct_handoff
+    exchange::tests::receiver_shutdown_returns_while_spill_io_is_stalled
+    exchange::tests::rejects_duplicate_gapped_segments_and_incorrect_final_counts
+    exchange::tests::rejects_oversized_frame_and_wrong_schema_version
+    exchange::tests::sequence_and_completion_count_rejections_fail_the_session
+    exchange::tests::terminal_manifests_ignore_attempt_and_detect_content_sequence_and_empty
+    exchange::topology_tests::misrouted_but_row_conserving_batch_is_rejected
+    gather::tests::completed_original_cannot_be_replaced_and_incomplete_output_cannot_commit
+    gather::tests::incomplete_original_is_quarantined_and_only_one_attempt_commits
+    managed::tests::stale_response_fence_is_refused_over_real_socket
+    materialization::tests::empty_transfer_is_complete_and_cancellation_discards_staging
+    materialization::tests::full_copy_survives_writer_and_rejects_corruption_missing_forgery_and_ephemeral
+    protocol::tests::rpc_timeout_bounds_a_nonresponsive_peer_below_io_timeout
+    protocol::tests::total_deadline_rejects_a_continuously_progressing_peer
+    protocol::tests::vectored_write_retains_total_deadline
+    scheduler::connection::tests::oversized_frame_refuses_before_body_allocation
+    scheduler::connection::tests::persistent_frames_reset_deadline_and_refuse_a_truncated_next_frame
+    scheduler::tests::control_admission_saturation_aborts_and_closes_bounded_peer_set
+    scheduler::tests::malformed_control_aborts_service_and_dead_service_refuses_clients
+    scheduler::tests::persistent_idle_main_session_retains_independent_renewals_and_closure
+    scheduler::tests::stalled_control_does_not_monopolize_minimum_lease_renewals
+    worker::tests::cancelled_job_id_cannot_be_reused_and_stale_exchange_is_rejected
+    worker::tests::empty_replay_emits_matching_attempt_terminal_without_source_access
+
+test result: FAILED. 67 passed; 29 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.48s
+
+error: test failed, to rerun pass `-p ade-distributed --lib`

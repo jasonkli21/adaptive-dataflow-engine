@@ -17,6 +17,8 @@ pub mod runtime;
 #[cfg(feature = "stateful")]
 pub mod state;
 pub mod timers;
+#[cfg(feature = "transactional-state")]
+pub mod transactional;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

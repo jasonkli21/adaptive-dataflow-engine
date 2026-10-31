@@ -1,0 +1,3 @@
+usage: verify_evidence.py [-h] [--archive ARCHIVE] [--manifest MANIFEST]
+                          [--mode {current,historical}]
+verify_evidence.py: error: unrecognized arguments: --campaign /private/tmp/ade-phase17-stateless-regression

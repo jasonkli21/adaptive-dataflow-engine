@@ -1,0 +1,23 @@
+.............................................E.E......
+======================================================================
+ERROR: test_arithmetic_fails_closed (test_phase17_evidence.Phase17)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/tests/test_phase17_evidence.py", line 17, in test_arithmetic_fails_closed
+    from oracle import checked
+ImportError: cannot import name 'checked' from 'oracle' (/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase15/oracle.py)
+
+======================================================================
+ERROR: test_native_window_contract_negative_time_and_late_close (test_phase17_evidence.Phase17)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/tests/test_phase17_evidence.py", line 13, in test_native_window_contract_negative_time_and_late_close
+    m=Model(c);ledger={(0,0):{'key':1,'value_i64':2,'event_time_ms':-50},(1,0):{'key':1,'value_i64':3,'event_time_ms':-50},(0,1):{'key':9999,'value_i64':0,'event_time_ms':200},(1,1):{'key':9999,'value_i64':0,'event_time_ms':200},(0,2):{'key':1,'value_i64':7,'event_time_ms':-50}}
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase15/oracle.py", line 19, in __init__
+    self.offsets = {s['partition']: s['offset'] for s in config['source']['starts']}
+KeyError: 'source'
+
+----------------------------------------------------------------------
+Ran 54 tests in 2.807s
+
+FAILED (errors=2)

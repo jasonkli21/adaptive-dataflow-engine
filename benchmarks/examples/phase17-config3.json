@@ -1,0 +1,61 @@
+{
+  "version": 3,
+  "codec": 1,
+  "trusted_history": "operator-attested-immutable-topic-incarnation",
+  "limits": {
+    "root_bytes": 33554432,
+    "stage_bytes": 1048576,
+    "output_bytes": 262144,
+    "history_bytes": 1048576,
+    "epochs": 64,
+    "diagnostic_bytes": 16777216,
+    "savepoint_bytes": 67108864,
+    "savepoints": 8
+  },
+  "state": {
+    "version": 1,
+    "job_id": "00000000-0000-0000-0000-000000000017",
+    "source": {
+      "version": 1,
+      "bootstrap": "127.0.0.1:9092",
+      "expected_cluster_id": "REPLACE_WITH_PINNED_CLUSTER",
+      "topic": "owned-immutable-topic",
+      "starts": [
+        {
+          "partition": 0,
+          "offset": 0
+        },
+        {
+          "partition": 1,
+          "offset": 0
+        }
+      ],
+      "security": {
+        "mode": "loopback_dev"
+      },
+      "key_less_than": 1000,
+      "allowance_ms": 10,
+      "payload_bytes": 4096,
+      "client_queue_kib": 16,
+      "sink_stall_ms": 30000,
+      "timers": []
+    },
+    "topic_partitions": [
+      0,
+      1
+    ],
+    "operator": "tumbling_sum_count_v1",
+    "window_ms": 100,
+    "late_policy": "receipt_drop_closed_v1",
+    "hash_version": 1,
+    "owners": 1,
+    "hot_bytes": 128,
+    "cold_bytes": 1048576,
+    "checkpoint_bytes": 16777216,
+    "max_generations": 64,
+    "checkpoint_every_records": 40,
+    "checkpoint_every_ms": 60000,
+    "working_root": "/absolute/private/working",
+    "checkpoint_root": "/absolute/private/transactional"
+  }
+}

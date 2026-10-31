@@ -1,0 +1,43 @@
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error: used underscore-prefixed binding
+   --> crates/ade-stream/src/state/mod.rs:408:13
+    |
+408 |             self._lock.is_some(),
+    |             ^^^^^^^^^^
+    |
+note: binding is defined here
+   --> crates/ade-stream/src/state/mod.rs:189:5
+    |
+189 |     _lock: Option<checkpoint::Lock>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#used_underscore_binding
+    = note: `-D clippy::used-underscore-binding` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::used_underscore_binding)]`
+
+error: this `if` statement can be collapsed
+   --> crates/ade-stream/src/transactional/mod.rs:190:9
+    |
+190 | /         if operation == epoch::Operation::Paused && self.outputs.is_empty() {
+191 | |             if let Some(selected) = &self.selected {
+192 | |                 let closure = epoch::verify(&self.config, selected)?;
+193 | |                 let prior = &closure
+...   |
+204 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+190 ~         if operation == epoch::Operation::Paused && self.outputs.is_empty()
+191 ~             && let Some(selected) = &self.selected {
+192 |                 let closure = epoch::verify(&self.config, selected)?;
+...
+202 |                 }
+203 ~             }
+    |
+
+error: could not compile `ade-stream` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib) due to 2 previous errors

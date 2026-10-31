@@ -1,0 +1,3 @@
+# Preserve raw Phase17 evidence bytes, including native stdout tabs and compiler EOFs.
+docs/evidence/phase17-development/**/*.stdout -whitespace
+docs/evidence/phase17-development/premeasurement-logs/*.log -whitespace

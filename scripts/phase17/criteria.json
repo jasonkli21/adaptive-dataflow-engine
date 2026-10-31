@@ -1,0 +1,98 @@
+{
+  "version": 3,
+  "status_on_success": "COMPLETE_BOUNDED_TRANSACTIONAL_STATE_V1",
+  "starting_head": "46a976d41d8642d54fe0829bd7944c9a1ddd39d1",
+  "gates": [
+    "G0",
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+    "G8",
+    "G9",
+    "G10",
+    "G11",
+    "G12",
+    "G13",
+    "G14"
+  ],
+  "crash_points": [
+    "before_stage",
+    "stage_created",
+    "before_output_write",
+    "output_half_written",
+    "before_output_sync",
+    "output_synced",
+    "state_written",
+    "state_synced",
+    "before_manifest",
+    "manifest_synced",
+    "epoch_durable",
+    "epoch_verified",
+    "before_selector",
+    "selector_half_written",
+    "selector_synced",
+    "selector_renamed",
+    "selector_durable",
+    "before_telemetry"
+  ],
+  "new_selection_points": [
+    "selector_renamed",
+    "selector_durable",
+    "before_telemetry"
+  ],
+  "prerequisite_cases": [
+    "retained_saved_offsets",
+    "both_vectors_expired",
+    "assignment_race",
+    "placement_forced_full",
+    "placement_capacity_veto_before_put"
+  ],
+  "owners": [
+    1,
+    2,
+    4,
+    1
+  ],
+  "codecs": [
+    1,
+    2
+  ],
+  "shards": 32,
+  "correctness": "all reachable output records, offsets, frontier, late counts and full state match the independent ordered producer-ledger oracle at every cut",
+  "cost": "three local descriptive static/transactional samples; no performance threshold",
+  "services": "disposable real Kafka 3.9.1 and separate actual MinIO process",
+  "no_waivers": true,
+  "required_lifecycle_kills": [
+    "migration-kill",
+    "export-kill",
+    "import-kill"
+  ],
+  "required_refusals": [
+    "wrong-history",
+    "wrong-job",
+    "wrong-origin",
+    "wrong-codec",
+    "wrong-owners",
+    "epoch-quota",
+    "stage-quota",
+    "output-quota",
+    "history-quota",
+    "corrupt-selector",
+    "missing-output",
+    "modified-output",
+    "symlink-output",
+    "hardlink-output",
+    "wrong-shard-owner",
+    "broken-parent",
+    "failed-migration",
+    "failed-export",
+    "import-kill-replay-refused",
+    "file-size-io-failure"
+  ],
+  "ordered_repeats": 2,
+  "static_txn_samples": 3
+}

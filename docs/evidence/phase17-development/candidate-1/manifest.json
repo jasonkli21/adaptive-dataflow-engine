@@ -1,0 +1,18 @@
+{
+  "archive_sha256": "444e69aa45469d9dacf565151f9b8a9e901b2e935bce1f7075c29d5b50318331",
+  "files": {
+    "cases.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "criteria.json": "c400a5078ffd4b10549ab07459de0b6ed53f5ad9d175b3571b155459d1f6e730",
+    "driver.log": "8b7245ffb7da13484a904996ba257f45f2df3e783b41d96238dfa862d38af298",
+    "environment.json": "cc5b0a91671fbdbfc73312a0ced300d7d446035e0d98be69ff04de51486f82b2",
+    "observations.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "source-inventory.json": "c613b65160d6a8181c6b7ec47aaf6dc02c179327cf5dd6d033c824118d07fdf4",
+    "source.tar.gz": "283dc46021479e44da451b2129fea268c63ac71920298f10c10705de2e03acf2",
+    "symlink-attacks.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "qualified": false,
+  "result": {
+    "status": "FAILED_OR_PREMEASUREMENT_PRESERVED"
+  },
+  "version": 3
+}

@@ -1,0 +1,73 @@
+[
+  {
+    "argv": [
+      "/usr/bin/hdiutil",
+      "create",
+      "-size",
+      "16m",
+      "-fs",
+      "HFS+",
+      "-volname",
+      "ADE17_DISPOSABLE",
+      "-type",
+      "UDIF",
+      "/private/tmp/ade-phase17-enospc-3/owned-only.dmg"
+    ],
+    "label": "create-image"
+  },
+  {
+    "argv": [
+      "/usr/bin/hdiutil",
+      "attach",
+      "-nobrowse",
+      "-mountpoint",
+      "/private/tmp/ade-phase17-enospc-3/mount",
+      "/private/tmp/ade-phase17-enospc-3/owned-only.dmg"
+    ],
+    "label": "attach-owned-image"
+  },
+  {
+    "argv": [
+      "/private/tmp/ade-phase17-candidate-5/txn-pinned",
+      "/private/tmp/ade-phase17-enospc-3/config3.json",
+      "import",
+      "/private/tmp/ade-phase17-candidate-5/savepoints/seed",
+      "57a0ea9fa36dd4f7f2ea69a9e6180c81aef6228b513b91b80a704000a09adacd"
+    ],
+    "label": "import"
+  },
+  {
+    "argv": [
+      "/private/tmp/ade-phase17-candidate-5/txn-pinned",
+      "/private/tmp/ade-phase17-enospc-3/config3.json",
+      "read"
+    ],
+    "label": "reader-before"
+  },
+  {
+    "argv": [
+      "/private/tmp/ade-phase17-candidate-5/txn-pinned",
+      "/private/tmp/ade-phase17-enospc-3/config3.json",
+      "transition",
+      "2",
+      "2"
+    ],
+    "label": "transition-refused"
+  },
+  {
+    "argv": [
+      "/private/tmp/ade-phase17-candidate-5/txn-pinned",
+      "/private/tmp/ade-phase17-enospc-3/config3.json",
+      "read"
+    ],
+    "label": "reader-after"
+  },
+  {
+    "argv": [
+      "/usr/bin/hdiutil",
+      "detach",
+      "/private/tmp/ade-phase17-enospc-3/mount"
+    ],
+    "label": "detach-owned-image"
+  }
+]

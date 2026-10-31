@@ -1,0 +1,17 @@
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+error[E0382]: use of moved value
+   --> crates/ade-stream/src/transactional/epoch.rs:264:20
+    |
+264 |     while let Some(p) = next {
+    |                    ^ value moved here, in previous iteration of loop
+    |
+    = note: move occurs because value has type `transactional::epoch::Pointer`, which does not implement the `Copy` trait
+help: borrow this binding in the pattern to avoid moving the value
+    |
+264 |     while let Some(ref p) = next {
+    |                    +++
+
+For more information about this error, try `rustc --explain E0382`.
+error: could not compile `ade-stream` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-stream` (lib) due to 1 previous error

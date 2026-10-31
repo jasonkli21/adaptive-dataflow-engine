@@ -91,6 +91,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = args
         .manifest
         .unwrap_or_else(|| args.dataset.join("manifest.json"));
+    #[cfg(feature = "unified-planner")]
+    let tables = if args.unified_planner {
+        if contains_join_keyword(&sql) {
+            vec!["ade_left", "ade_right"]
+        } else {
+            vec!["input"]
+        }
+    } else if target == Target::DistributedJoin {
+        vec!["ade_left", "ade_right"]
+    } else {
+        vec!["input"]
+    };
+    #[cfg(not(feature = "unified-planner"))]
     let tables = if target == Target::DistributedJoin {
         vec!["ade_left", "ade_right"]
     } else {
@@ -99,29 +112,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for table in tables {
         catalog.register_manifest_until(table, &args.dataset, &manifest, deadline)?;
     }
-    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-    let mut plan = tokio::time::timeout(remaining, catalog.plan_sql(&sql, target))
-        .await
-        .map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "query planning deadline expired",
-            )
-        })??;
-    check_deadline(deadline)?;
-    plan.max_output_rows = args.max_output_rows;
-    plan.max_output_bytes = args.max_output_bytes;
-    plan.validate()?;
     #[cfg(feature = "unified-planner")]
-    let shared = if args.unified_planner {
-        let logical = ade_frontend::unified::from_bound(&plan)?;
+    let (plan, shared) = if args.unified_planner {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let mut logical = tokio::time::timeout(remaining, catalog.plan_sql_unified(&sql))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "query planning deadline expired",
+                )
+            })??;
+        if let ade_logical::Computation::ParquetManifest {
+            max_output_rows,
+            max_output_bytes,
+            ..
+        } = &mut logical.computation
+        {
+            *max_output_rows = args.max_output_rows;
+            *max_output_bytes = args.max_output_bytes;
+        }
         let controls = ade_logical::Controls {
             enabled: !args.disable_optimizer,
-            static_choice: match target {
-                Target::Local => ade_logical::Choice::Local,
-                Target::DistributedAggregate => ade_logical::Choice::DistributedAggregate,
-                Target::DistributedJoin => ade_logical::Choice::DistributedJoin,
-            },
+            static_choice: ade_logical::Choice::Local,
             forced: args.target.map(|t| match t {
                 NativeTarget::Local => ade_logical::Choice::Local,
                 NativeTarget::DistributedAggregate => ade_logical::Choice::DistributedAggregate,
@@ -130,16 +143,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             workers: args.workers,
             distributed_available: args.worker_bin.is_some(),
         };
-        let (lowered, decision) = logical.lower_batch(&controls)?;
-        plan = lowered;
+        let (mut plan, decision) = logical.lower_batch(&controls)?;
         eprintln!(
             "{}",
             serde_json::json!({"type":"unified_decision","plan":logical,"decision":decision})
         );
-        Some((logical, controls))
+        plan.max_output_rows = args.max_output_rows;
+        plan.max_output_bytes = args.max_output_bytes;
+        (plan, Some((logical, controls)))
     } else {
-        None
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let mut plan = tokio::time::timeout(remaining, catalog.plan_sql(&sql, target))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "query planning deadline expired",
+                )
+            })??;
+        plan.max_output_rows = args.max_output_rows;
+        plan.max_output_bytes = args.max_output_bytes;
+        (plan, None)
     };
+    #[cfg(not(feature = "unified-planner"))]
+    let plan = {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let mut plan = tokio::time::timeout(remaining, catalog.plan_sql(&sql, target))
+            .await
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "query planning deadline expired",
+                )
+            })??;
+        plan.max_output_rows = args.max_output_rows;
+        plan.max_output_bytes = args.max_output_bytes;
+        plan
+    };
+    check_deadline(deadline)?;
+    plan.validate()?;
     match args.action {
         Action::PlanSql | Action::Explain => println!(
             "{}\nplan_hash={}\nexecution_policy=native explicit configuration; no storage tier in IR",
@@ -175,6 +217,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "unified-planner")]
+fn contains_join_keyword(sql: &str) -> bool {
+    sql.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .any(|word| word.eq_ignore_ascii_case("join"))
 }
 
 fn check_deadline(deadline: std::time::Instant) -> Result<(), std::io::Error> {

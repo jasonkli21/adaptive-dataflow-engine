@@ -56,7 +56,7 @@
     "ade-frontend": "unified-planner",
     "ade-stream": "unified-planner plus existing native mode features"
   },
-  "gates": {
+  "historical_candidate5_gates": {
     "G0": "PASS",
     "G1": "PASS",
     "G10": "PASS",
@@ -110,12 +110,35 @@
     "Phase19 incremental maintenance"
   ],
   "source_base": "fbe0e2b7739fd7d61c45c58706faa56b63a945be",
-  "status": "COMPLETE_BOUNDED_UNIFIED_PLANNER_V1",
+  "status": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1",
+  "review_remediation": {
+    "reviewed_commit": "43672fd2a42f0fd42eb253c688856f108e95c2c0",
+    "report": "phase-18-review-remediation-2026-10-31.md",
+    "gates": {
+      "G0": "PARTIAL",
+      "G1": "PARTIAL",
+      "G2": "HISTORICAL_PASS",
+      "G3": "PARTIAL",
+      "G4": "HISTORICAL_PASS",
+      "G5": "HISTORICAL_PASS",
+      "G6": "HISTORICAL_PASS",
+      "G7": "PARTIAL",
+      "G8": "NOT_RUN",
+      "G9": "HISTORICAL_PASS",
+      "G10": "PARTIAL",
+      "G11": "PARTIAL",
+      "G12": "HISTORICAL_PASS",
+      "G13": "PASS",
+      "G14": "FAIL",
+      "G15": "PARTIAL",
+      "G16": "NOT_RUN"
+    }
+  },
   "supported": {
-    "batch": "all admitted Phase11 families; native local, fixed-worker aggregate/join",
-    "hybrid": "same pinned Kafka topic; explicit exclusive per-assigned-partition cuts; one native source/state/progress session",
+    "batch": "target-neutral semantic binding for admitted Phase11 families; optimizer choice and pre-output capability refusal tested; native no-override join execution not source-bound in this remediation",
+    "hybrid": "historical candidate5 same-topic Kafka prefix/tail evidence is preserved; it is not yet proof of logical-authoritative native stream lowering",
     "optimizer": "bounded deterministic legality-first fixed proxy, forced/static control; two actual aggregate targets",
-    "stream": "EventV1 native filter/project, diagnostic timers, keyed tumbling sum/count, v1/v2/v3 native modes",
+    "stream": "default-off shared admission checked against native EventV1 filter/project, timers and keyed tumbling sum/count; G14 executable lowering remains open",
     "v3": "pure-live local committed prefix through unchanged CURRENT3 reader"
   },
   "version": 1

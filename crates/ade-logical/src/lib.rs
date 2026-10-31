@@ -185,9 +185,9 @@ impl LogicalPlanV1 {
     }
     /// Extract semantic operators, discarding all physical properties and choices.
     /// # Errors
-    /// Refuses malformed legacy input before extracting its semantics.
+    /// Refuses malformed semantic/source structure before extracting operators.
     pub fn from_physical(p: &PlanV1) -> Result<Self> {
-        p.validate()?;
+        p.validate_structure()?;
         Ok(Self {
             version: 1,
             sink: Sink::Collect,
@@ -310,8 +310,8 @@ impl LogicalPlanV1 {
                     "stateful transient timers refused",
                 )?;
                 require(
-                    valid_token(&source.cluster, 128)
-                        && valid_token(&source.topic, 128)
+                    valid_cluster_id(&source.cluster)
+                        && valid_topic(&source.topic)
                         && valid_token(&source.immutable_history, 256),
                     "source/history token",
                 )?;
@@ -466,6 +466,20 @@ fn valid_token(s: &str, max: usize) -> bool {
         && s != ".."
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"._:-".contains(&b))
+}
+fn valid_topic(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s != "."
+        && s != ".."
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+fn valid_cluster_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
 }
 fn validate_offsets(offsets: &[Offset], parts: &[i32]) -> Result<()> {
     require(

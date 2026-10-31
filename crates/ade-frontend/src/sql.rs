@@ -15,6 +15,22 @@ impl Catalog {
     /// # Errors
     /// Unsupported syntax, expressions, types and target combinations fail closed.
     pub async fn plan_sql(&self, sql: &str, target: Target) -> Result<PlanV1> {
+        self.bind_sql(sql, target, true).await
+    }
+
+    /// Bind semantic operators without applying a native target's shape filter.
+    /// The returned tree is only an intermediate for `ade-logical`; it must be
+    /// lowered and fully validated before native execution. `PlanV1` still needs a
+    /// temporary target for its reusable schema inference; `from_physical` strips
+    /// that value and its derived properties before optimization.
+    /// # Errors
+    /// Unsupported SQL and semantic/source errors fail closed.
+    #[cfg(feature = "unified-planner")]
+    pub(crate) async fn bind_sql_semantic(&self, sql: &str) -> Result<PlanV1> {
+        self.bind_sql(sql, Target::Local, false).await
+    }
+
+    async fn bind_sql(&self, sql: &str, target: Target, validate_target: bool) -> Result<PlanV1> {
         require(
             !sql.is_empty() && sql.len() <= 16 * 1024,
             "SQL byte cap 16KiB",
@@ -60,7 +76,11 @@ impl Catalog {
         let refs = tables.iter().map(String::as_str).collect::<Vec<_>>();
         let (mut plan, _) = self.plan(target, &refs)?;
         translate(&logical, &mut plan, 0)?;
-        plan.validate()?;
+        if validate_target {
+            plan.validate()?;
+        } else {
+            plan.validate_structure()?;
+        }
         Ok(plan)
     }
 }

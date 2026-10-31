@@ -39,14 +39,10 @@ impl Catalog {
 }
 
 impl Catalog {
-    /// Bind SQL semantics then discard physical facts before common optimization.
+    /// Bind SQL semantics without selecting a native target, then enter common optimization.
     /// # Errors
     /// Refuses unsupported SQL using the established public `DataFusion` binder.
-    pub async fn plan_sql_unified(
-        &self,
-        sql: &str,
-        binding_target: ade_physical::Target,
-    ) -> Result<LogicalPlanV1> {
-        from_bound(&self.plan_sql(sql, binding_target).await?)
+    pub async fn plan_sql_unified(&self, sql: &str) -> Result<LogicalPlanV1> {
+        from_bound(&self.bind_sql_semantic(sql).await?)
     }
 }

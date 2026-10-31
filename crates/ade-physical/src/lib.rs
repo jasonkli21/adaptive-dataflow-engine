@@ -408,6 +408,15 @@ impl PlanV1 {
     /// # Errors
     /// Rejects forged properties, malformed graphs and unsupported native targets.
     pub fn validate(&self) -> Result<()> {
+        self.validate_structure()?;
+        self.validate_target()
+    }
+    /// Validate semantic/source structure without applying physical target
+    /// capability rules. This is for opt-in shared logical binding only; native
+    /// execution must still call `validate` after a target is selected.
+    /// # Errors
+    /// Rejects forged properties, malformed graphs, source errors, and size caps.
+    pub fn validate_structure(&self) -> Result<()> {
         require(self.version == 1, "unsupported version")?;
         require(
             !self.nodes.is_empty()
@@ -453,7 +462,6 @@ impl PlanV1 {
             uses[..uses.len() - 1].iter().all(|u| *u == 1) && source_uses.iter().all(|u| *u == 1),
             "unreachable/shared graph or source",
         )?;
-        self.validate_target()?;
         require(
             serde_json::to_vec(self)
                 .map_err(|e| Error(e.to_string()))?

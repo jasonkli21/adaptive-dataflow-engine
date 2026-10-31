@@ -148,6 +148,91 @@ fn kafka() -> LogicalPlanV1 {
         },
     }
 }
+
+#[test]
+fn kafka_identity_grammar_matches_native_stream_config() {
+    let plan = kafka();
+    let with_identity = |field: &str, value: &str| {
+        let mut candidate = plan.clone();
+        let Computation::Kafka { source, .. } = &mut candidate.computation else {
+            unreachable!()
+        };
+        match field {
+            "topic" => source.topic = value.to_owned(),
+            "cluster" => source.cluster = value.to_owned(),
+            "history" => source.immutable_history = value.to_owned(),
+            _ => unreachable!(),
+        }
+        LogicalPlanV1::from_json(&serde_json::to_vec(&candidate).unwrap())
+    };
+    for valid in [
+        "a",
+        "A",
+        "topic_1",
+        "topic.name",
+        "topic-name",
+        &"t".repeat(128),
+    ] {
+        assert!(with_identity("topic", valid).is_ok());
+    }
+    for invalid in [
+        "",
+        ".",
+        "..",
+        "phase18:topic",
+        "topic/name",
+        "tópico",
+        &"t".repeat(129),
+    ] {
+        assert!(with_identity("topic", invalid).is_err());
+    }
+
+    for valid in ["cluster", "CLUSTER_1", "cluster-one", &"c".repeat(128)] {
+        assert!(with_identity("cluster", valid).is_ok());
+    }
+    for invalid in [
+        "",
+        "cluster.one",
+        "cluster:one",
+        "cluster/one",
+        "clüstér",
+        &"c".repeat(129),
+    ] {
+        assert!(with_identity("cluster", invalid).is_err());
+    }
+
+    // History and job tokens intentionally keep their separate portable grammar.
+    assert!(with_identity("history", "history:v1").is_ok());
+}
+
+#[test]
+fn ade_plan_refuses_native_incompatible_kafka_names_without_echoing_them() {
+    use std::process::Command;
+
+    for (field, invalid) in [("topic", "phase18:topic"), ("cluster", "cluster:one")] {
+        let mut plan = kafka();
+        let Computation::Kafka { source, .. } = &mut plan.computation else {
+            unreachable!()
+        };
+        match field {
+            "topic" => source.topic = invalid.into(),
+            "cluster" => source.cluster = invalid.into(),
+            _ => unreachable!(),
+        }
+        let path = std::env::temp_dir().join(format!(
+            "ade-plan-review-{}-{field}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_ade-plan"))
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains(invalid));
+        std::fs::remove_file(path).unwrap();
+    }
+}
 #[test]
 fn stream_lattice_cut_and_delivery_refusals() {
     let p = kafka();

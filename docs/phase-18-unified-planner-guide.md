@@ -1,10 +1,19 @@
 # Phase18 unified planner v1
 
+**Current qualification: `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`.** The original
+candidate5 implementation report and evidence remain historical, source-bound
+records. Review remediation made bounded SQL binding target-neutral and aligned
+logical Kafka topic/cluster tokens with the native grammar. It did not complete
+execution-authoritative stream lowering or fresh G14/G16 evidence. See the
+[review remediation report](reports/phase-18-review-remediation-2026-10-31.md).
+
 The default-off `unified-planner` features in ade-frontend and ade-stream use the
 same neutral `ade-logical::LogicalPlanV1` admission, property inference and pure
-optimizer. Batch semantics lower to unchanged PlanV1 and native execution.
-Kafka semantics select the existing native demand/state/transactional machinery.
-No DataFusion physical execution fallback is part of the query route.
+optimizer. Batch semantics lower to unchanged PlanV1 and native execution. Kafka
+plans currently validate against a separately supplied native runtime config and
+then use the existing demand/state/transactional machinery; that compatibility
+path is not yet an execution-authoritative stream lowering. No DataFusion physical
+execution fallback is part of the query route.
 
 ## Build and batch
 
@@ -17,18 +26,24 @@ ade-query execute --dataset /absolute/manifest-dataset \
 ```
 
 With no explicit `--target`, the optimizer can select local or the existing fixed
-2–4-worker unfiltered aggregate. An explicit `--target` is a hard constraint.
-`--disable-optimizer` executes the declared static target (local by default).
-Joins require `--target distributed-join` for the existing bounded join binder;
-all Phase11 shape, schema, overflow, source and output limits remain. Controls
-never authorize leased scheduling or unsupported distributed operator graphs.
+2–4-worker unfiltered aggregate. Unified SQL binding also accepts a supported
+two-table join without a target override; the optimizer selects the fixed-worker
+distributed join only when that capability is supplied. Missing worker capability
+or forced local join refuses before output. The legacy route retains its local
+default and target-specific binder. An explicit `--target` is a hard constraint.
+`--disable-optimizer` uses the declared static target (local by default), so a
+join with that local baseline refuses. All Phase11 shape, schema, overflow, source
+and output limits remain. Controls never authorize leased scheduling or
+unsupported distributed operator graphs.
 
-SQL API: `Catalog::plan_sql_unified(sql, binding_target)`; Rust API:
-`DataFrame::build_logical()`. `Catalog::execute_unified_until` checks supplied
+SQL API: `Catalog::plan_sql_unified(sql)`; typed API:
+`DataFrame::scan_unified(catalog, table)` followed by `build_logical()`.
+`Catalog::execute_unified_until` checks supplied
 capabilities, optimizes and regenerates native PlanV1 under the caller's deadline.
 The SQL binder and typed builder reuse existing semantic operator construction;
-physical schemas/properties/target are discarded before inference and choice.
-The optimizer-selected target is the target that actually executes.
+physical properties/target are discarded before common optimization. The selected
+target is validated before native execution. The native join execution path still
+needs fresh source-bound acceptance for this remediation.
 
 The fixed proxy model costs local `4*manifest_rows`, distributed aggregate
 `20000+2*manifest_rows`. Ties choose local. These are conservative declared units,
@@ -68,9 +83,12 @@ ade-state-stream-txn CONFIG3 read --logical-plan PURE_LIVE_PLAN
 ```
 
 All native lifecycle flags remain. `--disable-optimizer` selects the static native
-Kafka choice. Supplying a logical flag without its feature refuses. Source and
-transform fields must match the native config exactly before effects. Diagnostic
-timers remain native, bounded and nondurable; stateful timers remain refused.
+Kafka choice. Supplying a logical flag without its feature refuses. The current
+opt-in stream path validates source and transform fields against a separately
+supplied native config before effects; it does not yet generate the executable
+stream program from a portable lowering spec. That distinction is the open G14
+review item. Diagnostic timers remain native, bounded and nondurable; stateful
+timers remain refused.
 
 For every opt-in v1/v2 stateful descriptor, set the native config's `job_id` to the
 UUID representation of `bound_job_hex` from `ade-plan`. The logical `job` is the

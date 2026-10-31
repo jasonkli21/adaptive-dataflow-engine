@@ -72,3 +72,22 @@ of the full pinned topic inventory is valid; only assigned partitions enter the
 frontier/cut vector. The decision view is immutable, and plan/metadata bounds are
 checked before derived copies. All failed candidates and slower measurements are
 preserved. No separate reviewer or future-phase authorization is claimed.
+
+## Independent review amendment — 2026-10-31
+
+The candidate5 acceptance remains immutable historical evidence. The independent
+review of `43672fd` distinguishes shared admission from execution-authoritative
+lowering: the bounded same-topic cut classifier is useful evidence, but its
+descriptor currently checks a separately configured native stream program. SQL
+and typed binding also validate a physical target before the shared optimizer
+chooses one. These findings narrow the accepted claim; they do not establish
+corruption in the archived fixtures.
+
+The additive G14–G16 requirements are recorded in the Phase18 plan amendment.
+Until they are source-bound and freshly accepted, the current label is
+`PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. G14 requires a logical-derived immutable
+native stream specification actually consumed by existing runtime components.
+G15 requires target-neutral finite binding and optimizer-selected lowering.
+G16 requires near-minimum V2 diagnostic-quota parity or a pre-effects bounded
+admission rule. No old PlanV1, StreamConfigV1, state, or CURRENT3 format changes
+are authorized by this amendment. Missing live-service evidence remains NOT_RUN.

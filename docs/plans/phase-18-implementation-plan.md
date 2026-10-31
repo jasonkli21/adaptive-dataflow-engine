@@ -150,3 +150,30 @@ checks every source receipt/ACK/cursor/session/window and selected state, and
 rejects eight rehashed semantic attacks. KafkaRange and transactional hybrid remain
 the explicit ADR refusals. No Phase19, physical rescale, automatic recovery/GC,
 external transaction or production HA is inferred.
+
+## 8. Independent review reconciliation — 2026-10-31
+
+The independent review of `43672fd` accepts the archived bounded evidence but
+finds that the completion wording exceeds what the execution-authority paths
+prove. Stream admission validates a separately supplied native configuration,
+and SQL/Rust semantic binding still starts from a physical target. The same-topic
+historical-prefix/live-tail campaign proves continuous native execution plus
+offset classification; it does not by itself prove that the logical plan lowers
+into the executable stream program.
+
+Freeze three additive gates before remediation evidence:
+
+| Gate | Falsifiable requirement | Baseline state |
+|---|---|---|
+| G14 | The accepted logical stream descriptor owns the executable native source/transform/window/sink specification, consumed by existing native components; semantic mutations change execution or refuse before effects. | FAIL at `43672fd`; source-bound reacceptance required after any fix. |
+| G15 | SQL and typed batch binding are independent of a physical target; optimizer legality and explicit forced targets decide native lowering. A no-override supported join executes with available workers and refuses before output without them. | FAIL at `43672fd`; source-bound reacceptance required after any fix. |
+| G16 | Minimum/near-minimum V2 diagnostic budgets have measured legacy/unified parity or an explicit pre-effects bounded admission rule. | NOT_RUN at `43672fd`; real Kafka campaign required. |
+
+G14 does not authorize a second stream kernel, changed progress/state semantics,
+wire/selector changes, cross-source continuity, or transactional hybrid. If an
+execution-authoritative lowering cannot safely fit the existing native contracts,
+the status remains `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. The original plan,
+criteria, candidate identities and evidence archives are historical and remain
+unchanged. Completion needs a new pinned source/executable plus fresh G0–G16
+acceptance; historical G0–G13 results cannot be inherited by changed runtime
+bytes.

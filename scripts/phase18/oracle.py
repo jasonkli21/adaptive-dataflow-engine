@@ -36,7 +36,10 @@ def strict(p):
     keys(p,['version','computation','sink']);require(type(p['version']) is int and p['version']==1,'logical version');c=p['computation']
     if c['kind']=='kafka':
         keys(c,['kind','source','job','key_less_than','allowance_ms','projection','window_ms','late_policy','hash_version','timers']);s=c['source'];keys(s,['cluster','topic','topic_partitions','original_starts','immutable_history','mode'])
-        for token,cap in [(s['cluster'],128),(s['topic'],128),(s['immutable_history'],256),(c['job'],128)]:
+        cluster,topic=s['cluster'],s['topic']
+        require(isinstance(cluster,str) and 0<len(cluster.encode())<=128 and all(ch.isascii() and (ch.isalnum() or ch in '_-') for ch in cluster),'native cluster identity grammar')
+        require(isinstance(topic,str) and 0<len(topic.encode())<=128 and topic not in ['.','..'] and all(ch.isascii() and (ch.isalnum() or ch in '._-') for ch in topic),'native topic grammar')
+        for token,cap in [(s['immutable_history'],256),(c['job'],128)]:
             require(isinstance(token,str) and 0<len(token.encode())<=cap and token not in ['.','..'] and all(ch.isascii() and (ch.isalnum() or ch in '._:-') for ch in token),'source/job/history token')
         require(type(c['allowance_ms']) is int and 0<=c['allowance_ms']<2**63 and type(c['key_less_than']) is int and 0<=c['key_less_than']<2**64 and type(c['hash_version']) is int,'numeric semantics')
         require(c['window_ms'] is None or type(c['window_ms']) is int and 0<c['window_ms']<2**63,'window integer')

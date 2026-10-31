@@ -13,6 +13,14 @@ impl DataFrame {
         plan.push(Operator::Scan { source: 0 })?;
         Ok(Self { plan })
     }
+    /// Start a typed plan without choosing a physical target.
+    /// The selected target is validated after shared optimization.
+    /// # Errors
+    /// Rejects an unregistered table or invalid source schema.
+    #[cfg(feature = "unified-planner")]
+    pub fn scan_unified(catalog: &Catalog, table: &str) -> Result<Self> {
+        Self::scan(catalog, table, Target::Local)
+    }
     fn column(&self, name: &str) -> Result<usize> {
         self.plan.nodes[self.plan.output as usize]
             .schema
@@ -98,10 +106,10 @@ impl DataFrame {
     }
     /// Compile the same semantic IR used by SQL and Kafka admission.
     /// # Errors
-    /// Rejects invalid or unsupported bound operators.
+    /// Rejects malformed semantics; target capability is decided by the shared optimizer.
     #[cfg(feature = "unified-planner")]
     pub fn build_logical(self) -> Result<ade_logical::LogicalPlanV1> {
-        crate::unified::from_bound(&self.build()?)
+        crate::unified::from_bound(&self.plan)
     }
     /// # Errors
     /// Final target validation refuses unsupported native graph shapes.

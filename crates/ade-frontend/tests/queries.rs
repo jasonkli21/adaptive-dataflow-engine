@@ -76,7 +76,7 @@ async fn compare(
         .unwrap_or_else(|e| panic!("{sql}: {e}"));
     #[cfg(feature = "unified-planner")]
     let unified_output = {
-        let logical = c.plan_sql_unified(sql, target).await.unwrap();
+        let logical = c.plan_sql_unified(sql).await.unwrap();
         let controls = ade_logical::Controls {
             workers: options.workers,
             distributed_available: options.worker_binary.is_some(),
@@ -870,7 +870,7 @@ async fn unified_two_actual_targets_and_forced_controls() {
     for n in [128, 12000] {
         let (_dir, _root, c) = fixture(n, false);
         let sql = "SELECT key,SUM(value_i64) AS sum,COUNT(*) AS count FROM input GROUP BY key";
-        let logical = DataFrame::scan(&c, "input", Target::Local)
+        let logical = DataFrame::scan_unified(&c, "input")
             .unwrap()
             .group_sum_count("key", "value_i64")
             .unwrap()
@@ -948,10 +948,97 @@ async fn unified_two_actual_targets_and_forced_controls() {
 
 #[cfg(feature = "unified-planner")]
 #[tokio::test]
+async fn unified_join_binds_without_a_physical_target_and_cli_refuses_pre_output() {
+    use ade_logical::{Choice, Controls};
+    use std::process::Command;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("join");
+    ade_bench::join_dataset::generate(
+        &root,
+        "neutral-join-bind",
+        &ade_bench::join_dataset::Config {
+            left_rows: 31,
+            right_rows: 17,
+            left_key_domain: 5,
+            right_key_domain: 5,
+            files_per_side: 2,
+            row_group_rows: 16,
+            seed: 42,
+        },
+    )
+    .unwrap();
+    let mut catalog = Catalog::default();
+    for name in ["ade_left", "ade_right"] {
+        catalog
+            .register_manifest(name, &root, &root.join("manifest.json"))
+            .unwrap();
+    }
+    let sql = "SELECT l.key,l.value_i64 AS left_value,r.value_i64 AS right_value FROM ade_left l INNER JOIN ade_right r ON l.key=r.key";
+    let logical = catalog.plan_sql_unified(sql).await.unwrap();
+    let controls = Controls {
+        distributed_available: true,
+        ..Controls::default()
+    };
+    let (native, decision) = logical.lower_batch(&controls).unwrap();
+    assert_eq!(decision.chosen, Choice::DistributedJoin);
+    assert_eq!(native.target, Target::DistributedJoin);
+    assert!(logical.lower_batch(&Controls::default()).is_err());
+    assert!(
+        logical
+            .lower_batch(&Controls {
+                forced: Some(Choice::Local),
+                ..controls
+            })
+            .is_err()
+    );
+    assert!(catalog.plan_sql(sql, Target::Local).await.is_err());
+
+    let binary = env!("CARGO_BIN_EXE_ade-query");
+    for extra in [
+        vec!["--unified-planner".to_owned()],
+        vec![
+            "--unified-planner".to_owned(),
+            "--target".to_owned(),
+            "local".to_owned(),
+        ],
+        vec![],
+    ] {
+        let mut command = Command::new(binary);
+        command
+            .args(["execute", "--dataset"])
+            .arg(&root)
+            .args(["--sql", sql])
+            .args(extra);
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout.as_slice(), b"");
+    }
+}
+
+#[cfg(feature = "unified-planner")]
+#[test]
+fn unified_typed_scan_and_build_do_not_require_a_physical_target() {
+    use ade_logical::{Choice, Controls};
+
+    let (_dir, _root, catalog) = fixture(32, false);
+    let logical = DataFrame::scan_unified(&catalog, "input")
+        .unwrap()
+        .group_sum_count("key", "value_i64")
+        .unwrap()
+        .build_logical()
+        .unwrap();
+    let (plan, decision) = logical.lower_batch(&Controls::default()).unwrap();
+    assert_eq!(decision.chosen, Choice::Local);
+    assert_eq!(plan.target, Target::Local);
+}
+
+#[cfg(feature = "unified-planner")]
+#[tokio::test]
 async fn unified_source_binding_and_drift_refuse_without_results() {
     let (_dir, _root, catalog) = fixture(16, false);
     let logical = catalog
-        .plan_sql_unified("SELECT key,value_i64 FROM input", Target::Local)
+        .plan_sql_unified("SELECT key,value_i64 FROM input")
         .await
         .unwrap();
     let mut forged = logical.clone();

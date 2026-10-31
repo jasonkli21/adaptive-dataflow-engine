@@ -305,15 +305,21 @@ are default-off; unchanged PlanV1, StreamConfigV1 and v1/v2/v3 selectors remain.
 Transactional hybrid refuses before effects; no Phase19, physical rescale,
 automatic recovery/GC, external transactions or production HA is inferred.
 
-Phase18 is COMPLETE_BOUNDED_UNIFIED_PLANNER_V1 under ADR-0025 and
-`docs/reports/phase-18-implementation-report.md`:38 real-service cases,2,061 records,
-1,897 actual offset classifications,64 windows and12 descriptive batch samples.
-The same147 Rust/Cargo inputs and executables freshly reaccept Phase17 G0–G15:
-137 cases,152 reader observations,387 cuts,70 sessions and actual ENOSPC. Preserve
-candidate5 runtime identities, all four predecessors and initial prerequisite
-attempts. The proxy-selected distributed aggregate was slower locally; no speedup
-or billing claim is made. KafkaRange and transactional hybrid refuse explicitly;
-new v1/v2 unified lineages bind source/cut semantics in the native job UUID. Static
-and old API/format defaults remain. Physical rescale/production HA and earlier debt
-stay separate; no Phase19 is authorized. Same-session self-review and independent
-Python oracles do not claim a separate reviewer.
+Phase18 candidate5 is historically recorded as COMPLETE_BOUNDED_UNIFIED_PLANNER_V1
+under ADR-0025 and `docs/reports/phase-18-implementation-report.md`:38 real-service
+cases,2,061 records,1,897 offset classifications,64 windows and12 descriptive batch
+samples. The same147 Rust/Cargo inputs and executables freshly reaccepted Phase17
+G0–G15:137 cases,152 reader observations,387 cuts,70 sessions and actual ENOSPC.
+The independent review of `43672fd` found that stream semantic ownership and
+target-neutral batch admission were not fully proved. The current qualification is
+`PARTIAL_PHASE18_UNIFIED_ADMISSION_V1` until additive G14–G16 source-bound evidence
+passes. This review remediation adds target-neutral batch binding and native Kafka
+identity grammar parity; it does not complete executable stream lowering or the
+near-minimum V2 diagnostic-quota campaign. Preserve candidate5 runtime identities,
+all four predecessors, the initial prerequisite attempts and both original archives.
+The proxy-selected distributed aggregate was slower locally; no speedup or billing
+claim is made. KafkaRange and transactional hybrid refuse explicitly; new v1/v2
+unified lineages bind source/cut semantics in the native job UUID. Static and old
+API/format defaults remain. Physical rescale/production HA and earlier debt stay
+separate; no Phase19 is authorized. The current source-bound results are in
+`docs/reports/phase-18-review-remediation-2026-10-31.md`.

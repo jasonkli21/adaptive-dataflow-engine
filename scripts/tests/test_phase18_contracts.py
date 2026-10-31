@@ -15,6 +15,21 @@ class Phase18Contracts(unittest.TestCase):
     def test_source_cut_semantics_change_identity(self):
         changed=copy.deepcopy(self.fixture['plan']);changed['computation']['source']['mode']['cut'][0]['offset']+=1
         with self.assertRaises(ValueError):verify.oracle.decision(changed,self.fixture['decision'])
+    def test_native_kafka_identity_grammar_parity(self):
+        original=self.fixture['plan']
+        for field,accepted,rejected in [
+            ('topic',['a','A','topic_1','topic.name','topic-name','t'*128],['','.', '..','phase18:topic','topic/name','tópico','t'*129]),
+            ('cluster',['a','A','CLUSTER_1','cluster-one','c'*128],['','cluster.one','cluster:one','cluster/one','clüstér','c'*129]),
+        ]:
+            for value in accepted:
+                changed=copy.deepcopy(original);changed['computation']['source'][field]=value
+                verify.oracle.strict(changed)
+            for value in rejected:
+                changed=copy.deepcopy(original);changed['computation']['source'][field]=value
+                with self.assertRaises(ValueError):verify.oracle.strict(changed)
+        # These portable identity fields retain their own independent grammar.
+        changed=copy.deepcopy(original);changed['computation']['source']['immutable_history']='history:v1'
+        verify.oracle.strict(changed)
     def test_negative_case_requires_the_intended_admission_refusal(self):
         case=dict(name='v3-hybrid-refused',exit=1)
         valid=[dict(type='failure',reason='stream admission: strict logical plan')]

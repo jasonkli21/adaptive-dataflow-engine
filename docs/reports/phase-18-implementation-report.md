@@ -1,5 +1,10 @@
 # Phase18 implementation report — 2026-10-31
 
+> Historical candidate5 acceptance only. The status and G0–G13 below refer to
+> the frozen source/runtime identities in this report. The current repository
+> qualification is `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1` following independent
+> review; see the [additive review remediation](phase-18-review-remediation-2026-10-31.md).
+
 Status: **COMPLETE_BOUNDED_UNIFIED_PLANNER_V1**. All G0–G13 pass on the frozen
 runtime/executables and real owned services identified below. Work began on
 2026-10-30 and concluded in this session without subagents. One local project

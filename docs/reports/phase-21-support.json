@@ -1,77 +1,77 @@
 {
   "version": 1,
-  "status": "COMPLETE_BOUNDED_CONNECTOR_CATALOG_V1",
+  "status": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE",
   "default_off": true,
-  "source_identity": "4d54771ccf51add5c1b4679e7677189da5b6b80ebbf7dba7e3df3e91278dd77b",
+  "source_identity": "67c3715b0a110721f06a473962bfbf8881ca7cc495c1c42412bb38cfac421189",
   "evidence": "../evidence/phase21/manifest.json",
   "gates": {
     "G0": {
-      "status": "PASS",
-      "proof": "Baseline and exact runtime, harness, fixture and executable hashes with an independent Phase 21 prerequisite disposition."
+      "status": "PARTIAL",
+      "proof": "New remediation source identity and candidate evidence have not yet been frozen."
     },
     "G1": {
-      "status": "PASS",
-      "proof": "Public source and sink lifecycles, separate extension integration test with real Parquet, typed capabilities and strict version/schema grammar."
+      "status": "PARTIAL",
+      "proof": "PostgreSQL and Flight one-shot APIs are caller-authorized capture, not catalog-managed authorization."
     },
     "G2": {
-      "status": "PASS",
-      "proof": "Named catalog and explicit snapshot pins, verified ordered splits, metadata/row/schema/content drift refusals and private stage cleanup."
+      "status": "PARTIAL",
+      "proof": "One-shot captures do not use the pinned named-entry lifecycle."
     },
     "G3": {
-      "status": "PASS",
-      "proof": "Native local and signed SeaweedFS S3 Parquet execution, exact row bags, changed bytes, truncated body, credential failure, no-follow redirect and reached timeout."
+      "status": "PARTIAL",
+      "proof": "Changed local/S3 source witness and strict negative verifier changes require candidate 7 replay."
     },
     "G4": {
-      "status": "PASS",
-      "proof": "Two PyIceberg-produced format-v1 cuts with independent active-file and row checks, mutated metadata and data, schema and partition refusal, v2, deleted entries and malformed manifest/URI."
+      "status": "PARTIAL",
+      "proof": "Changed Iceberg bytes witness and normalization accounting require candidate 7 replay."
     },
     "G5": {
-      "status": "PASS",
-      "proof": "Three Delta versions including remove and re-add, checked with delta-rs and independently reconstructed from the JSON logs. Gaps, checkpoint, duplicate protocol, unsafe path and deletion vectors refuse."
+      "status": "PARTIAL",
+      "proof": "Delta positives and negatives remain candidate 6 historical evidence; current-source service reacceptance is pending."
     },
     "G6": {
-      "status": "PASS",
-      "proof": "Real Kafka assigned, historical and asynchronously appended live records, idle, restart, semantic identity, broker identity, retention and partition-count refusals."
+      "status": "PARTIAL",
+      "proof": "Kafka positives and negatives remain candidate 6 historical evidence; current-source broker reacceptance is pending."
     },
     "G7": {
-      "status": "PASS",
-      "proof": "Real PostgreSQL transaction and native parity during an overlapping writer, trusted and untrusted TLS, NULL/type/identifier/row-limit refusal, lock cancellation and a disconnect after 260 forwarded data frames."
+      "status": "PARTIAL",
+      "proof": "PostgreSQL positives and negatives remain candidate 6 historical evidence; current-source database reacceptance is pending."
     },
     "G8": {
-      "status": "PASS",
-      "proof": "Real Flight DoGet, changed one-shot ticket content identity, verified TLS, wrong CA, declared schema and midstream drift, oversize, timeout and cancellation."
+      "status": "PARTIAL",
+      "proof": "Flight positives and negatives remain candidate 6 historical evidence; current-source Flight reacceptance is pending."
     },
     "G9": {
-      "status": "PASS",
-      "proof": "Capped staged and decoded data, S3 one request and capped response, native deadline/cancellation, PostgreSQL raw-wire overflow reached, Flight message bounds and fail-closed source replay."
+      "status": "PARTIAL",
+      "proof": "Stage byte diagnostics now distinguish source, final, normalization and estimated peak; fresh measured campaign pending."
     },
     "G10": {
-      "status": "PASS",
-      "proof": "Same-key retry and concurrent commit, changed-plan conflict, abort, process kills before selection and after durable selection, independent IPC reopen and actual HFS+ ENOSPC."
+      "status": "PARTIAL",
+      "proof": "Sink publication is directory-descriptor anchored; final-source fault campaign pending."
     },
     "G11": {
-      "status": "PASS",
-      "proof": "Native SQL and CLI execute PlanV1 in ADE. Connector, source, pushdown, stage and native diagnostics bind to the independently checked result."
+      "status": "PARTIAL",
+      "proof": "Runtime diagnostic changes require a matched fresh campaign."
     },
     "G12": {
-      "status": "PASS",
-      "proof": "Verified remote auth and TLS where exercised, loopback-only fixture policy, redirect trap unvisited, path traversal and unsupported metadata refusal. Dependency audit shows no added advisory. Existing workspace advisories and transport-specific mitigations are recorded below."
+      "status": "PARTIAL",
+      "proof": "Descriptor-relative sink hardening and negative witness verifier require source-bound adversarial replay."
     },
     "G13": {
-      "status": "PASS",
-      "proof": "Workspace feature configurations and native smoke checks pass. Detached Phase 17\u201320 archive replays match their historical evidence."
+      "status": "PARTIAL",
+      "proof": "Linux CI now provisions native Kafka dependencies; full Linux run is pending."
     },
     "G14": {
-      "status": "PASS",
-      "proof": "Independent format, service and sink oracles, seven local and five S3 paired process comparisons with raw wall, staging, native managed and RSS observations."
+      "status": "PARTIAL",
+      "proof": "No source-matched candidate 7 oracle or resource campaign has run."
     },
     "G15": {
-      "status": "PASS",
-      "proof": "Matched evidence archive, exact ordered case contract and independent semantic verification. Fully rehashed row, request, inventory, source path, timing, Delta, sink and Kafka mutations refuse."
+      "status": "PARTIAL",
+      "proof": "Strict current-source mode requires source and binary; semantic mutation witnesses require candidate 7 replay."
     },
     "G16": {
-      "status": "PASS",
-      "proof": "Final-source build, format, workspace check, Clippy, tests with and without default features, targeted feature matrix, smoke, Python tests and reproducible operator guide."
+      "status": "PARTIAL",
+      "proof": "All-feature Linux CI was not run from this remediation source."
     }
   },
   "adapters": {
@@ -99,12 +99,14 @@
     "postgres": {
       "status": "SUPPORTED",
       "scope": "one_ordinary_table_bigint_repeatable_read",
-      "replay": "one_shot"
+      "replay": "one_shot",
+      "catalog_authorization": "caller_authorized_one_shot_capture; not_catalog_managed"
     },
     "flight": {
       "status": "SUPPORTED",
       "scope": "bounded_primitive_doget",
-      "replay": "one_shot"
+      "replay": "one_shot",
+      "catalog_authorization": "caller_authorized_one_shot_capture; not_catalog_managed"
     },
     "kafka": {
       "status": "SUPPORTED",
@@ -127,5 +129,6 @@
     "baseline_exit": 1,
     "current_exit": 1,
     "new_findings": 0
-  }
+  },
+  "remediation_note": "The original candidate 6 report/archive are historical and immutable. See phase-21-independent-reacceptance-2026-11-11.md for current remediation disposition."
 }

@@ -427,3 +427,17 @@ Phase18 and Phase20 keep their existing qualifications. Phase21's stateless
 Kafka evidence is separate. No predecessor waiver, external transaction,
 generic JDBC, full table-format support, distributed remote scan or Phase22
 authorization is inferred.
+
+## Phase21 independent review remediation — 2026-11-11
+
+The additive review remediation is recorded in
+`docs/reports/phase-21-independent-reacceptance-2026-11-11.md`. The original
+candidate6 acceptance archive and implementation report remain immutable
+historical evidence. Current source status is
+`PARTIAL_REMEDIATION_PENDING_REACCEPTANCE`: strict negative-input witnesses,
+directory-anchored sink publication, stage accounting, CI prerequisites and
+one-shot scope documentation are implemented, but candidate7 service
+reacceptance and a green Linux CI run are not yet established. The updated
+support matrix keeps affected gates partial until a matched source, executable,
+fixture and service campaign passes. Preserve all original evidence and
+Phase18/20 qualifications.

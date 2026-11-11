@@ -270,6 +270,7 @@ class Campaign:
         saved = file.read_bytes()
         file.write_bytes(bytes([saved[0] ^ 1]) + saved[1:])
         self.run("local_mutation", base)
+        (self.raw / "local_mutation" / "changed.parquet").write_bytes(file.read_bytes())
         file.unlink()
         target = root / "outside.parquet"
         target.write_bytes(saved)
@@ -526,6 +527,7 @@ class Campaign:
         data_bytes = data_file.read_bytes()
         data_file.write_bytes(bytes([data_bytes[0] ^ 1]) + data_bytes[1:])
         self.run("iceberg_data_mutation", requests[0])
+        (self.raw / "iceberg_data_mutation" / "changed.parquet").write_bytes(data_file.read_bytes())
         data_file.write_bytes(data_bytes)
 
         def rewritten_avro(raw, mutate):
@@ -592,6 +594,8 @@ class Campaign:
         self.run("s3_auth", request, dict(env, AWS_SECRET_ACCESS_KEY="invalid-fixture-secret"))
         client.put_object(Bucket="ade-connectors", Key=file.name, Body=bytes([data[0] ^ 1]) + data[1:])
         self.run("s3_mutation", request, env)
+        mutated = client.get_object(Bucket="ade-connectors", Key=file.name)["Body"].read()
+        (self.raw / "s3_mutation" / "changed.parquet").write_bytes(mutated)
         benchmark = file.parent / "benchmark.parquet"
         client.put_object(Bucket="ade-connectors", Key=benchmark.name, Body=benchmark.read_bytes())
         for i in range(self.criteria["timing"]["remote_pairs"]):

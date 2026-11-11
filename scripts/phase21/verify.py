@@ -182,7 +182,7 @@ def check_kafka(output, request, ledger, name):
     return session
 
 
-def check_native(output, request, name, mode, values):
+def check_native(output, request, name, mode, values, strict=False):
     diagnostics = output["diagnostics"]
     expected_rows = request["snapshot"]["splits"][0]["rows"] if name.startswith("timing_") else len(values)
     require(diagnostics["runtime"]["native_entrypoint"] == "ade_exec::physical::execute"
@@ -193,6 +193,19 @@ def check_native(output, request, name, mode, values):
         require("connector" not in diagnostics, "baseline staging leaked")
         return
     connector = diagnostics["connector"]
+    metric_keys = {"download_bytes", "final_stage_bytes", "normalization_write_bytes", "peak_owned_stage_bytes"}
+    if strict:
+        require(metric_keys <= set(connector), f"{name} stage accounting fields")
+        require(connector["staged_bytes"] == connector["final_stage_bytes"]
+                and connector["peak_owned_stage_bytes"] >= max(
+                    connector["download_bytes"], connector["final_stage_bytes"]),
+                f"{name} stage accounting identity")
+        if mode == "iceberg":
+            require(connector["normalization_write_bytes"] == connector["final_stage_bytes"]
+                    and connector["peak_owned_stage_bytes"] >= connector["final_stage_bytes"],
+                    f"{name} normalization accounting")
+        else:
+            require(connector["normalization_write_bytes"] == 0, f"{name} unexpected normalization writes")
     caps = connector["capabilities"]
     require(caps["bounded"] and not caps["native_offsets"] and not caps["checkpoint_restore"]
             and caps["pushdown"] == "none", "bounded capability semantics")
@@ -227,7 +240,7 @@ def read_sink(entries, key, receipt):
             "sink IPC row oracle")
 
 
-def verify(entries, repo=None, binary=None):
+def verify(entries, repo=None, binary=None, strict=False):
     criteria_bytes = (HERE / "criteria.json").read_bytes()
     require(entries["criteria.json"] == criteria_bytes, "frozen criteria mismatch")
     criteria = parse(criteria_bytes)
@@ -299,6 +312,10 @@ def verify(entries, repo=None, binary=None):
         require(exit["live_stages"] == [], name + " staging cleanup")
         if isinstance(expected, str) and expected != "receipts":
             require(exit["code"] == 1 and expected.encode() in err and not out, name + " refusal witness")
+            if strict and name in ("local_mutation", "iceberg_data_mutation", "s3_mutation"):
+                require(err == (b"ADE_ERROR_CODE=identity_mismatch\n"
+                                b"connector snapshot mismatch: split size or content\n"),
+                        name + " typed snapshot-mismatch error")
             continue
         require(exit["code"] == 0, name + " successful exit")
         output = parse(out)
@@ -309,9 +326,9 @@ def verify(entries, repo=None, binary=None):
         if mode == "cli":
             require(read(entries, stem + "descriptor.json") == req["snapshot"], "CLI descriptor binding")
             read_sink(entries, "cli", output["receipt"])
-            check_native(dict(output, rows=expected), req, name, "local", expected)
+            check_native(dict(output, rows=expected), req, name, "local", expected, strict)
             continue
-        check_native(output, req, name, mode, expected)
+        check_native(output, req, name, mode, expected, strict)
         if mode == "delta":
             check_delta(entries, req, expected)
             require(sorted(read(entries, f"fixtures/{name}.reference.json")) == sorted(expected), "Delta reference reader")
@@ -379,13 +396,29 @@ def verify(entries, repo=None, binary=None):
             valid = any(a.get("add", {}).get("path", "").startswith("../") for a in actions)
         require(valid, name + " changed semantics")
     require(read(entries, "raw/iceberg_partition/changed.json")["default-spec-id"] == 1, "Iceberg partition mutation")
+    for case, positive, folder, key in ((
+        ("local_mutation", "local", "local", "part.parquet"),
+        ("iceberg_data_mutation", "iceberg_s0", "iceberg", None),
+        ("s3_mutation", "s3", "local", None),
+    ) if strict else ()):
+        request = read(entries, f"raw/{case}/request.json")
+        positive_request = read(entries, f"raw/{positive}/request.json")
+        require(request == positive_request, case + " same pinned request")
+        split = request.get("snapshot", {}).get("splits", [None])[0]
+        if split is None:
+            split = request["pin"]["files"][0]
+        changed = entries[f"raw/{case}/changed.parquet"]
+        source_key = key or split["key"]
+        original = entries[f"fixtures/{folder}/{source_key}"]
+        require(len(changed) == len(original) and changed[0] == (original[0] ^ 1)
+                and changed[1:] == original[1:], case + " reached exact altered content")
     deleted = entries["raw/iceberg_deleted_entry/changed.avro"]
     require(next(iter(fastavro.reader(io.BytesIO(deleted))))["status"] == 2, "Iceberg deleted-entry witness")
     return dict(cases=len(case_specs), timing=timings, median_ns={
         mode: int(statistics.median(t["wall_ns"] for t in samples)) for mode, samples in timings.items()})
 
 
-def tamper(entries, archive):
+def tamper(entries, archive, strict=False):
     def replace(case, file, fn):
         def edit(data):
             key = f"raw/{case}/{file}"
@@ -405,6 +438,10 @@ def tamper(entries, archive):
             lambda v: dict(v, trace=[dict(t, record=dict(t["record"], phase="live"))
                                      if t["type"] == "unified_confirmed" else t for t in v["trace"]])),
     }
+    if strict:
+        attacks["negative_without_mutation"] = lambda e: (
+            e.__setitem__("raw/local_mutation/request.json", e["raw/local/request.json"]),
+            e.pop("raw/local_mutation/changed.parquet", None))
     for name, edit in attacks.items():
         mutated = copy.copy(entries)
         edit(mutated)
@@ -412,7 +449,7 @@ def tamper(entries, archive):
         require(not attack.exists(), "refusing to replace tamper archive")
         pin = encode_archive(attack, mutated)
         try:
-            verify(load_archive(attack, pin))
+            verify(load_archive(attack, pin), strict=strict)
         except (ValueError, KeyError, IndexError):
             print(name, "REJECTED")
         else:
@@ -426,6 +463,7 @@ def main():
     parser.add_argument("--pin")
     parser.add_argument("--repo", type=pathlib.Path)
     parser.add_argument("--binary", type=pathlib.Path)
+    parser.add_argument("--mode", choices=("historical-archive", "current-source"), required=True)
     parser.add_argument("--tamper", action="store_true")
     args = parser.parse_args()
     if args.pack:
@@ -433,9 +471,14 @@ def main():
         args.pin = encode_archive(args.archive, pack(args.pack))
         print("archive_sha256", args.pin, flush=True)
     entries = load_archive(args.archive, args.pin)
-    print(json.dumps(verify(entries, args.repo, args.binary), indent=2))
+    require(args.mode != "current-source" or (args.repo is not None and args.binary is not None),
+            "current-source verification requires --repo and --binary")
+    require(args.mode != "historical-archive" or (args.repo is None and args.binary is None),
+            "historical archive mode does not attest live source or executable")
+    print(json.dumps(dict(mode=args.mode, result=verify(
+        entries, args.repo, args.binary, strict=args.mode == "current-source")), indent=2))
     if args.tamper:
-        tamper(entries, args.archive)
+        tamper(entries, args.archive, strict=args.mode == "current-source")
 
 
 if __name__ == "__main__":

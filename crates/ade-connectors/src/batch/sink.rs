@@ -8,8 +8,8 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
+use rustix::fs::{AtFlags, linkat};
 use std::{
-    fs::hard_link,
     io::{self, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
@@ -76,7 +76,8 @@ pub struct SinkCapabilitiesV1 {
 }
 
 pub struct LocalSink {
-    root: PathBuf,
+    root: std::fs::File,
+    path: PathBuf,
 }
 
 impl LocalSink {
@@ -95,9 +96,22 @@ impl LocalSink {
     /// # Errors
     /// Refuses a missing or symlink root.
     pub fn new(root: &Path) -> Result<Self> {
-        local::root(root)?;
+        let root_fd = local::root(root)?;
+        let metadata = root_fd.metadata()?;
+        if metadata.permissions().readonly() {
+            return Err(Error::Admission("writable sink directory required"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.uid() != rustix::process::geteuid().as_raw() || metadata.mode() & 0o022 != 0
+            {
+                return Err(Error::Admission("operator-owned sink directory required"));
+            }
+        }
         Ok(Self {
-            root: root.to_path_buf(),
+            root: root_fd,
+            path: root.to_path_buf(),
         })
     }
 }
@@ -125,7 +139,7 @@ impl Write for CappedFile {
 }
 
 pub struct LocalPending {
-    root: PathBuf,
+    root: std::fs::File,
     key: String,
     plan: String,
     schema: Schema,
@@ -187,7 +201,7 @@ impl Sink for LocalSink {
         }
         let mut file = tempfile::Builder::new()
             .prefix(".ade-sink-")
-            .tempfile_in(&self.root)?;
+            .tempfile_in(&self.path)?;
         file.write_all(&[0; HEADER])?;
         let writer = StreamWriter::try_new(
             CappedFile {
@@ -199,7 +213,7 @@ impl Sink for LocalSink {
         )
         .map_err(ipc_error)?;
         Ok(LocalPending {
-            root: self.root.clone(),
+            root: self.root.try_clone()?,
             key: key.into(),
             plan: plan_digest.into(),
             schema: schema.clone(),
@@ -209,13 +223,13 @@ impl Sink for LocalSink {
     }
 
     fn reopen(&self, key: &str, context: &Context) -> Result<Published> {
-        reopen(&self.root, key, context)
+        reopen_at(&self.root, key, context)
     }
 }
 
-fn reopen(root: &Path, key: &str, context: &Context) -> Result<Published> {
+fn reopen_at(root: &std::fs::File, key: &str, context: &Context) -> Result<Published> {
     context.check()?;
-    let file = local::regular_at(&local::root(root)?, &name(key)?)?;
+    let file = local::regular_at(root, &name(key)?)?;
     let payload = file
         .metadata()?
         .len()
@@ -306,22 +320,85 @@ impl PendingSink for LocalPending {
             .file
             .write_all(artifact_digest(&receipt.key, &receipt.plan_digest, digest).as_bytes())?;
         staged.file.as_file().sync_all()?;
-        let dir = local::root(&self.root)?;
         context.check()?;
-        match hard_link(staged.file.path(), self.root.join(name(&receipt.key)?)) {
+        let staged_name = staged
+            .file
+            .path()
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or(Error::Identity("sink temporary file name"))?;
+        let staged_in_root = local::regular_at(&self.root, staged_name)?;
+        let staged_meta = staged.file.as_file().metadata()?;
+        let root_meta = staged_in_root.metadata()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if staged_meta.dev() != root_meta.dev() || staged_meta.ino() != root_meta.ino() {
+                return Err(Error::Identity("sink root changed during publication"));
+            }
+        }
+        let target = name(&receipt.key)?;
+        match linkat(
+            &self.root,
+            staged_name,
+            &self.root,
+            &target,
+            AtFlags::empty(),
+        ) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                if reopen(&self.root, &receipt.key, context)?.receipt != receipt {
+                if reopen_at(&self.root, &receipt.key, context)?.receipt != receipt {
                     return Err(Error::Conflict);
                 }
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(io::Error::from(e).into()),
         }
-        dir.sync_all().map_err(|_| Error::Ambiguous)?;
+        self.root.sync_all().map_err(|_| Error::Ambiguous)?;
         Ok(receipt)
     }
 
     fn abort(self) {
         drop(self);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use arrow::{array::Int64Array, datatypes::Field};
+    use std::{sync::Arc, time::Duration};
+
+    #[test]
+    fn publication_stays_anchored_when_root_path_is_replaced() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("output");
+        let moved = parent.path().join("approved-output");
+        std::fs::create_dir(&root).unwrap();
+        let sink = LocalSink::new(&root).unwrap();
+        let context = Context::new(Duration::from_secs(10)).unwrap();
+        let schema = Schema::new(vec![Field::new("value", DataType::Int64, false)]);
+        let mut pending = sink
+            .prepare("artifact", &"a".repeat(64), &schema, &context)
+            .unwrap();
+        let batch =
+            RecordBatch::try_new(Arc::new(schema), vec![Arc::new(Int64Array::from(vec![7]))])
+                .unwrap();
+        pending.write(&batch, &context).unwrap();
+
+        std::fs::rename(&root, &moved).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("victim.txt"), b"must remain untouched").unwrap();
+
+        pending.commit(&context).unwrap();
+        assert!(moved.join("artifact.ade-ipc").is_file());
+        assert!(!root.join("artifact.ade-ipc").exists());
+        assert_eq!(
+            std::fs::read(root.join("victim.txt")).unwrap(),
+            b"must remain untouched"
+        );
+        assert_eq!(
+            sink.reopen("artifact", &context).unwrap().receipt.key,
+            "artifact"
+        );
     }
 }

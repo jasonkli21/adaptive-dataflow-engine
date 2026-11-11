@@ -139,6 +139,9 @@ impl Capture {
         let physical = snapshot.physical()?;
         Ok(Stage {
             normalized: true,
+            download_bytes: bytes,
+            normalization_write_bytes: 0,
+            peak_owned_stage_bytes: bytes,
             elapsed: self.started.elapsed(),
             _dir: self.dir,
             snapshot,

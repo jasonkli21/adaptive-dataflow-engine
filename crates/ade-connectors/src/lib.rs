@@ -47,6 +47,25 @@ pub enum Error {
     Native(&'static str),
 }
 
+impl Error {
+    /// Stable machine-readable classification for evidence and caller policy.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::Admission(_) => "admission",
+            Self::Limit(_) => "resource_limit",
+            Self::Identity(_) => "identity_mismatch",
+            Self::Cancelled => "cancelled",
+            Self::Deadline => "deadline",
+            Self::Io(_) => "io",
+            Self::Protocol(_) => "protocol",
+            Self::Conflict => "publication_conflict",
+            Self::Ambiguous => "ambiguous_publication",
+            Self::Native(_) => "native_execution",
+        }
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error.kind())

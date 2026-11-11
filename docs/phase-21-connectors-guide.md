@@ -10,7 +10,10 @@ for each route.
 
 Use a private stage parent and an existing operator-controlled output directory
 on a local filesystem that provides atomic same-directory hard links and
-durable file and directory sync. Provide independently trusted BLAKE3 pins for
+durable file and directory sync. The sink root must be owned by the effective
+user and must not be group- or world-writable. Publication is anchored to the
+directory descriptor opened by `LocalSink`; filesystem actors with the same
+user identity remain trusted. Provide independently trusted BLAKE3 pins for
 the source descriptor and every Parquet file. Source descriptors have this
 shape. Replace the example digests and lengths with trusted values.
 
@@ -81,11 +84,17 @@ operator cleanup after the process exits.
 - **PostgreSQL.** Select a single ordinary table and an ordered list of
   non-null bigint results. The adapter checks identifiers, holds a
   `REPEATABLE READ READ ONLY` transaction during bounded extraction and
-  publishes a one-shot stage after successful commit. The TLS client verifies the configured server hostname.
+  publishes a one-shot stage after successful commit. This is caller-authorized
+  capture, not catalog-managed discovery or authorization: the caller must
+  authorize the exact endpoint, table, projection and schema before invoking
+  capture. The TLS client verifies the configured server hostname.
   Remote credentials come from `ADE_CONNECTOR_PG_PASSWORD`. Raw traffic is capped before the client buffers PostgreSQL messages. Generic JDBC,
   arbitrary SQL, cross-table transactions and CDC are outside this route.
 - **Arrow Flight.** A bounded `DoGet` uses an opaque ticket and materializes
-  one response as a one-shot stage. Schema, messages and batches are checked.
+  one response as a one-shot stage. This is caller-authorized capture, not
+  catalog-managed discovery or authorization: the caller must authorize the
+  exact server identity, ticket and schema before invoking capture. Schema,
+  messages and batches are checked.
   Dictionary and compressed IPC, application metadata, stream schema changes,
   Flight SQL and write operations are refused. Remote TLS verifies the server
   hostname against Web PKI. Flight and PostgreSQL both offer explicit owned
@@ -105,7 +114,13 @@ or protocol drift. Connector staging adds a write and native rereads.
 Iceberg also decodes and normalizes its data files. The local sink caps IPC
 payloads at 16 MiB. Native memory diagnostics cover the native ledger.
 Arrow/Parquet client internals and process RSS have separate measurements
-and limits. Request cancellation and deadlines cover network futures,
+and limits. Connector diagnostics separate `download_bytes`,
+`final_stage_bytes`, normalization writes, and the owned-file high-water
+estimate. The source and final Parquet representations are each capped at
+64 MiB; Iceberg normalization may temporarily hold portions of both
+representations, so its disk high-water can exceed either individual cap.
+Filesystem allocation blocks and directory metadata are outside this
+file-length estimate. Request cancellation and deadlines cover network futures,
 native decode batch boundaries and publication boundaries. An individual
 kernel file operation can finish before cancellation is observed.
 
@@ -124,10 +139,13 @@ python3 scripts/phase21/campaign.py --output NEW_TMP_DIR \
   --binary "$PWD/target/debug/examples/phase21-probe" \
   --postgres PG_BIN_DIR --weed WEED_BINARY --java JAVA_HOME --kafka KAFKA_HOME
 python3 scripts/phase21/verify.py NEW_ARCHIVE.tar.gz --pack NEW_TMP_DIR \
-  --repo . --binary target/debug/examples/phase21-probe --tamper
+  --mode current-source --repo . --binary target/debug/examples/phase21-probe --tamper
 ```
 
 Retain the archive SHA-256 in a separate trusted record. Offline replay
 requires the archive, its pin, this revision of the verifier and its Python
 libraries. The verifier checks raw semantic evidence and rejects rehashed
-mutations. Evidence for predecessor phases keeps its original qualification.
+mutations. To inspect an older archive without live attribution, use
+`--mode historical-archive`; this mode does not assert current source or binary
+identity and does not close current-source release gates. Evidence for
+predecessor phases keeps its original qualification.

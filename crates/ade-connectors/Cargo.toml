@@ -38,7 +38,7 @@ thiserror = "2"
 blake3 = "1"
 uuid = { version = "1", optional = true }
 tempfile = "3"
-rustix = { version = "1", features = ["fs"] }
+rustix = { version = "1", features = ["fs", "process"] }
 object_store = { version = "0.13.2", default-features = false, features = ["aws", "tls-webpki-roots"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"], optional = true }
 async-trait = { version = "0.1", optional = true }

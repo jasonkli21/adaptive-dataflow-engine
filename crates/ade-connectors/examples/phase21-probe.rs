@@ -313,6 +313,9 @@ async fn main() {
     match execute().await {
         Ok(output) => println!("{output}"),
         Err(error) => {
+            if let Some(connector) = error.downcast_ref::<Error>() {
+                eprintln!("ADE_ERROR_CODE={}", connector.code());
+            }
             eprintln!("{error}");
             std::process::exit(1);
         }

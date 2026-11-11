@@ -36,6 +36,9 @@ impl Iceberg {
             .collect::<Vec<_>>();
         let schema = ade_exec::physical::arrow_schema(&self.entry.schema);
         let mut remaining = ade_physical::MAX_SOURCE_BYTES;
+        let mut owned_bytes = staged.download_bytes;
+        let mut normalization_write_bytes = 0u64;
+        let mut peak_owned_stage_bytes = staged.peak_owned_stage_bytes;
         for (index, (path, physical)) in staged
             .files
             .iter_mut()
@@ -45,6 +48,7 @@ impl Iceberg {
             context.check()?;
             let name = format!("normalized-{index:04}.parquet");
             let destination = path.with_file_name(&name);
+            let original_bytes = physical.bytes;
             let (bytes, fingerprint) = normalize(
                 path,
                 &destination,
@@ -57,7 +61,19 @@ impl Iceberg {
             remaining = remaining
                 .checked_sub(bytes)
                 .ok_or(Error::Limit("Iceberg normalized bytes"))?;
+            peak_owned_stage_bytes = peak_owned_stage_bytes.max(
+                owned_bytes
+                    .checked_add(bytes)
+                    .ok_or(Error::Limit("Iceberg peak stage bytes"))?,
+            );
             fs::remove_file(&*path)?;
+            owned_bytes = owned_bytes
+                .checked_sub(original_bytes)
+                .and_then(|n| n.checked_add(bytes))
+                .ok_or(Error::Limit("Iceberg stage byte accounting"))?;
+            normalization_write_bytes = normalization_write_bytes
+                .checked_add(bytes)
+                .ok_or(Error::Limit("Iceberg normalization byte accounting"))?;
             *path = destination;
             physical.name = name;
             physical.bytes = bytes;
@@ -68,6 +84,8 @@ impl Iceberg {
             .validate()
             .map_err(|_| Error::Admission("normalized Iceberg physical source"))?;
         staged.normalized = true;
+        staged.normalization_write_bytes = normalization_write_bytes;
+        staged.peak_owned_stage_bytes = peak_owned_stage_bytes;
         staged.elapsed = started.elapsed();
         Ok(staged)
     }

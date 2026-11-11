@@ -344,6 +344,9 @@ impl Catalog {
         Ok(Stage {
             #[cfg(feature = "batch")]
             normalized,
+            download_bytes: snapshot.splits.iter().map(|split| split.bytes).sum(),
+            normalization_write_bytes: 0,
+            peak_owned_stage_bytes: snapshot.splits.iter().map(|split| split.bytes).sum(),
             elapsed: started.elapsed(),
             _dir: dir,
             snapshot,
@@ -393,6 +396,9 @@ pub struct Stage {
     #[cfg(feature = "batch")]
     pub(crate) normalized: bool,
     pub(crate) elapsed: Duration,
+    pub(crate) download_bytes: u64,
+    pub(crate) normalization_write_bytes: u64,
+    pub(crate) peak_owned_stage_bytes: u64,
     pub(crate) _dir: tempfile::TempDir,
     pub(crate) snapshot: ResolvedSnapshotV1,
     #[cfg(feature = "batch")]
@@ -408,7 +414,41 @@ impl Stage {
 
     #[must_use]
     pub fn staged_bytes(&self) -> u64 {
-        self.snapshot.splits.iter().map(|f| f.bytes).sum()
+        self.final_stage_bytes()
+    }
+
+    /// Bytes copied from source splits before any format normalization.
+    #[must_use]
+    pub fn download_bytes(&self) -> u64 {
+        self.download_bytes
+    }
+
+    /// Bytes written by a format-normalization pass.
+    #[must_use]
+    pub fn normalization_write_bytes(&self) -> u64 {
+        self.normalization_write_bytes
+    }
+
+    /// High-water estimate of bytes in owned stage files, excluding filesystem
+    /// allocation granularity and directory metadata.
+    #[must_use]
+    pub fn peak_owned_stage_bytes(&self) -> u64 {
+        self.peak_owned_stage_bytes
+    }
+
+    fn final_stage_bytes(&self) -> u64 {
+        #[cfg(feature = "batch")]
+        {
+            self.physical.files.iter().map(|file| file.bytes).sum()
+        }
+        #[cfg(not(feature = "batch"))]
+        {
+            self.files
+                .iter()
+                .filter_map(|p| p.metadata().ok())
+                .map(|m| m.len())
+                .sum()
+        }
     }
 
     #[must_use]

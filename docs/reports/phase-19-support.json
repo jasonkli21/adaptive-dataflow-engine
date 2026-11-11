@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "phase": 19,
+  "status": "COMPLETE_BOUNDED_INCREMENTAL_MAINTENANCE_V1",
+  "authorization": {
+    "date": "2026-11-11",
+    "phase18_acceptance": "WAIVED_BY_USER",
+    "phase18_current_status": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1"
+  },
+  "default_enabled": false,
+  "feature": "ade-incremental/maintained-v1",
+  "cli": "ade-maintain",
+  "source": {
+    "baseline_commit": "2af859a26ba1ed559f383dcb129858c4d0ad31f5",
+    "baseline_tree": "f2495895585f42b36bb6380badc74fefcedaec1b",
+    "inventory_sha256": "3612e92e03b911acfaaf11aa7ed1b5a4389fe6eda84270d794e199a8ff15e346",
+    "executables": {
+      "ade-maintain": "a0f1a01c5e820281e4c7498bae02794a6a356493ba90a92c93ae8d7aa7b3d927",
+      "baseline": "9126cf2e9fdabdfcc34c0dff84dabaa2ad0db9f954fc99ed043ec0588b64b0f5"
+    }
+  },
+  "supported": {
+    "input": "verified immutable local Parquet and signed finite delta files",
+    "views": [
+      "all_v1",
+      "filtered_v1"
+    ],
+    "routes": [
+      "restore",
+      "incremental_update",
+      "full_recompute"
+    ],
+    "durability": "operator-attested local generation with kernel lease and atomic selector",
+    "limits": {
+      "epochs": 32,
+      "shards": 128,
+      "delta_rows": 32768,
+      "delta_bytes": 2097152
+    }
+  },
+  "deferred": [
+    "general materialized SQL",
+    "joins",
+    "live Kafka CDC",
+    "remote or distributed state",
+    "physical rescale",
+    "automatic GC",
+    "production HA",
+    "external transactions",
+    "cyclic execution"
+  ],
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS",
+    "G10": "PASS",
+    "G11": "PASS",
+    "G12": "PASS",
+    "G13": "PASS",
+    "G14": "PASS",
+    "G15": "PASS"
+  },
+  "gate_qualifications": {
+    "G0": "PASS with explicit user waiver of current-source Phase 18 acceptance",
+    "G6": "Local process-kill proof and injected short write. Actual OS ENOSPC not run."
+  },
+  "performance": {
+    "sparse": {
+      "medians_ns": {
+        "adaptive": 67817916,
+        "incremental_update": 66082208,
+        "full_recompute": 530707750
+      },
+      "ratio": 0.1245171339593213
+    },
+    "dense": {
+      "medians_ns": {
+        "adaptive": 486664792,
+        "incremental_update": 477373750,
+        "full_recompute": 497182709
+      },
+      "ratio": 1.0194628255114573
+    },
+    "restored": {
+      "medians_ns": {
+        "adaptive": 31165709,
+        "restore": 33564834,
+        "full_recompute": 89409917
+      },
+      "ratio": 0.928522661545116
+    }
+  },
+  "evidence": "../evidence/phase19/manifest.json",
+  "evidence_archive_sha256": "54512c4f5c0985b3daea78d28f65f16713af296d157df8ffbe8d42ff97cc5d36"
+}

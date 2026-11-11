@@ -1,0 +1,43 @@
+[package]
+name = "ade-incremental"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+fault-injection = ["maintained-v1"]
+
+maintained-v1 = [
+    "dep:ade-exec", "dep:ade-logical", "dep:ade-physical", "dep:arrow",
+    "dep:blake3", "dep:ctrlc", "dep:rustix", "dep:serde", "dep:serde_json",
+    "dep:thiserror",
+]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", optional = true }
+ade-logical = { path = "../ade-logical", optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+arrow = { workspace = true, optional = true }
+blake3 = { version = "1", optional = true }
+ctrlc = { version = "3", optional = true }
+rustix = { version = "1", features = ["fs"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+
+[dev-dependencies]
+parquet.workspace = true
+
+[[bin]]
+name = "ade-maintain"
+path = "src/main.rs"
+required-features = ["maintained-v1"]
+
+[[example]]
+name = "baseline"
+required-features = ["maintained-v1"]

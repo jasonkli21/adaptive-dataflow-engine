@@ -338,3 +338,26 @@ host has OpenJDK 17 but no Kafka or MinIO service binaries. The
 current status remains `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. See
 `docs/reports/phase-18-g14-lowering-2026-11-10.md`; no Phase19 authorization is
 inferred.
+
+
+## Phase19 authorization and completion — 2026-11-11
+
+The user authorized Phase19 in this session without subagents and with one local
+commit. The user subsequently waived the current-source Phase18 acceptance
+dependency. Phase18 retains `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. Preserve its
+existing gate statuses and both historical archives.
+
+Phase19 is `COMPLETE_BOUNDED_INCREMENTAL_MAINTENANCE_V1` under ADR-0026 and
+`docs/reports/phase-19-implementation-report.md`. The default-off
+`ade-incremental/maintained-v1` runtime supports verified local Parquet and
+finite signed epochs, one bounded arrangement shared by two views, atomic local
+generations and real restore, incremental update and full replay. G0 uses the
+explicit waiver. The remaining gates use matched local source and executables.
+Preserve the original criteria, raw samples, interrupted runs, predecessor
+campaigns and independent verifier in `docs/evidence/phase19/`.
+
+The durability envelope is one operator-owned lineage, an independently pinned
+chain and an honest local filesystem. Legacy APIs, defaults and selectors keep
+their existing contracts. General materialized SQL, joins, Kafka CDC, remote
+arrangements, physical rescale, automatic GC, production HA and external
+transactions remain deferred. Phase20 requires separate authorization.

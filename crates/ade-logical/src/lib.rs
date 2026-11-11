@@ -1,4 +1,5 @@
 //! Pure semantic admission and bounded native-choice optimization. No I/O.
+pub mod maintained;
 use ade_physical::{Field, Operator, PlanV1, Schema, Source, Target, Type};
 use serde::{Deserialize, Serialize};
 

@@ -87,6 +87,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-incremental"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-logical",
+ "ade-physical",
+ "arrow",
+ "blake3",
+ "ctrlc",
+ "parquet",
+ "rustix",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "ade-logical"
 version = "0.1.0"
 dependencies = [

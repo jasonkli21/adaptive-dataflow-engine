@@ -136,28 +136,25 @@ impl KafkaSource {
         progress: &Progress,
         admission: Option<crate::unified::Admission>,
     ) -> Result<Self> {
-        if let Some(a) = &admission {
-            let mut original = config.clone();
-            original.starts = a
-                .source()
-                .original_starts
-                .iter()
-                .map(|o| crate::Start {
-                    partition: o.partition,
-                    offset: o.offset,
-                })
-                .collect();
-            a.validate_source(&original)?;
+        let config = if let Some(a) = &admission {
+            let bound = a.bind_source(&config)?;
+            let origins = &a.source().original_starts;
             crate::require(
-                config.starts.iter().all(|s| {
-                    progress
-                        .partitions
-                        .get(&s.partition)
-                        .is_some_and(|c| c.next_offset_suggestion == s.offset)
-                }),
-                "logical saved assignment mismatch",
+                progress.partitions.len() == origins.len()
+                    && config.starts.iter().all(|s| {
+                        progress.partitions.get(&s.partition).is_some_and(|cursor| {
+                            cursor.next_offset_suggestion == s.offset
+                                && origins.iter().any(|origin| {
+                                    origin.partition == s.partition && origin.offset == cursor.start
+                                })
+                        })
+                    }),
+                "logical original start/saved assignment mismatch",
             )?;
-        }
+            bound
+        } else {
+            config
+        };
         let mut source = Self::unassigned(config, session)?;
         source.unified = admission;
         source.verify(progress)?;

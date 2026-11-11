@@ -3,17 +3,23 @@
 **Current qualification: `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`.** The original
 candidate5 implementation report and evidence remain historical, source-bound
 records. Review remediation made bounded SQL binding target-neutral and aligned
-logical Kafka topic/cluster tokens with the native grammar. It did not complete
-execution-authoritative stream lowering or fresh G14/G16 evidence. See the
-[review remediation report](reports/phase-18-review-remediation-2026-10-31.md).
+logical Kafka topic/cluster tokens with the native grammar. The 2026-11-10 G14
+remediation now compiles a native stream spec from the logical plan and wires it
+into the existing Kafka, Engine, state, and pure-live v3 paths. The focused
+mutation suite passes when the librdkafka build uses Homebrew OpenSSL.
+Fresh service-bound G14/G16 evidence and G15 worker execution are still open;
+OpenJDK 17 is installed, but Kafka and MinIO are not. See the [G14 remediation
+report](reports/phase-18-g14-lowering-2026-11-10.md) and the [review remediation
+report](reports/phase-18-review-remediation-2026-10-31.md).
 
 The default-off `unified-planner` features in ade-frontend and ade-stream use the
 same neutral `ade-logical::LogicalPlanV1` admission, property inference and pure
 optimizer. Batch semantics lower to unchanged PlanV1 and native execution. Kafka
-plans currently validate against a separately supplied native runtime config and
-then use the existing demand/state/transactional machinery; that compatibility
-path is not yet an execution-authoritative stream lowering. No DataFusion physical
-execution fallback is part of the query route.
+semantics compile to a private `NativeStreamSpecV1`; semantic fields in the
+legacy runtime config are compatibility assertions, while the effective config
+and native event operator program are bound from the spec before source/root
+effects. The immutable spec cannot be deserialized as executable authority.
+No DataFusion physical execution fallback is part of the query route.
 
 ## Build and batch
 
@@ -58,7 +64,9 @@ as interchangeable optimizations.
 
 `ade-plan PLAN.json [CONTROLS.json]` performs strict shared admission and explains
 the inferred properties, candidate ledger, semantic digest and `bound_job_hex`.
-It does no Kafka/root I/O. The complete descriptor example is
+It does no Kafka/root I/O. At runtime, one `native_spec_hash` links admission
+telemetry to the generated spec without increasing per-record trace size. The
+complete descriptor example is
 `scripts/phase18/test-fixture.json` (its `plan` member); acceptance.py constructs
 actual source/state descriptors. Types in ade-logical/src/lib.rs are authoritative.
 
@@ -83,12 +91,26 @@ ade-state-stream-txn CONFIG3 read --logical-plan PURE_LIVE_PLAN
 ```
 
 All native lifecycle flags remain. `--disable-optimizer` selects the static native
-Kafka choice. Supplying a logical flag without its feature refuses. The current
-opt-in stream path validates source and transform fields against a separately
-supplied native config before effects; it does not yet generate the executable
-stream program from a portable lowering spec. That distinction is the open G14
-review item. Diagnostic timers remain native, bounded and nondurable; stateful
-timers remain refused.
+Kafka choice. Supplying a logical flag without its feature refuses. The config
+must match the logical source/operator semantics before effects; credentials,
+bootstrap endpoints, quotas, roots, checkpoint policy and mutable recovery cursors
+remain operational context. The bound config copies semantic fields from the
+spec. `Engine` consumes its compiled filter threshold, projection, event-time
+allowance and timer registrations; state configs consume the logical window,
+late policy and job identity; `KafkaSource` consumes the pinned inventory,
+original starts, history and cut. A restore cursor is allowed only when the
+selected progress record retains the plan's original start. V1/v2 keep their
+digest-derived native job UUID. V3 pure live keeps its original job UUID and
+CURRENT3/committed-reader contract. Transactional hybrid still refuses before
+effects. Diagnostic timers remain native, bounded and nondurable; stateful timers
+remain refused.
+
+The code-level lowering does not close G14. Fresh Kafka semantic-mutation/parity
+evidence across stateless, v1, v2 and v3 is still required. The focused
+feature tests and all-feature checks pass with the installed Homebrew OpenSSL
+paths. The host has OpenJDK 17 but no Kafka or MinIO binaries,
+so G15 worker-backed join execution and G16 paired real-Kafka V2 quota tests
+remain unverified.
 
 For every opt-in v1/v2 stateful descriptor, set the native config's `job_id` to the
 UUID representation of `bound_job_hex` from `ade-plan`. The logical `job` is the

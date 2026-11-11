@@ -5,7 +5,7 @@ pub mod savepoint;
 pub mod sink;
 
 use crate::{
-    Engine, Error, RawRecord, Result,
+    Engine, Error, NativeExecutionV1, RawRecord, Result,
     state::{self, check},
 };
 use ade_exec::CancellationToken;
@@ -101,6 +101,29 @@ impl Transaction {
     /// # Errors
     /// Validates the entire committed closure before rebuilding native owner stores.
     pub fn open(config: Config, resume: bool, token: CancellationToken) -> Result<Self> {
+        Self::open_with_native(config, resume, token, None)
+    }
+
+    /// Open a pure-live v3 transaction using the sealed logical stream program.
+    /// # Errors
+    /// Refuses delivery, history, or semantic drift before acquiring a root lease.
+    #[cfg(feature = "unified-planner")]
+    pub fn open_unified(
+        config: &Config,
+        resume: bool,
+        token: CancellationToken,
+        admission: &crate::unified::Admission,
+    ) -> Result<Self> {
+        let config = admission.bind_transactional(config)?;
+        Self::open_with_native(config, resume, token, Some(admission.native_execution()))
+    }
+
+    fn open_with_native(
+        config: Config,
+        resume: bool,
+        token: CancellationToken,
+        native: Option<NativeExecutionV1>,
+    ) -> Result<Self> {
         config.validate()?;
         let lease = epoch::Lease::acquire(&config)?;
         let selected = epoch::selection(&config.state.checkpoint_root)?;
@@ -114,7 +137,8 @@ impl Transaction {
             .map(|p| epoch::verify(&config, p))
             .transpose()?;
         let session = Uuid::new_v4();
-        let mut engine = Engine::new(config.state.source.clone(), session)?;
+        let native = native.unwrap_or_else(|| NativeExecutionV1::legacy(&config.state.source));
+        let mut engine = Engine::new_with_native(config.state.source.clone(), session, native)?;
         let state = state::State::transactional(config.state.clone(), session, token)?;
         engine.state = Some(state);
         if let Some(epochs) = closure {

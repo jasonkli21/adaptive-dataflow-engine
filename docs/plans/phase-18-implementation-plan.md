@@ -177,3 +177,40 @@ criteria, candidate identities and evidence archives are historical and remain
 unchanged. Completion needs a new pinned source/executable plus fresh G0–G16
 acceptance; historical G0–G13 results cannot be inherited by changed runtime
 bytes.
+
+## 9. Native stream lowering addendum — 2026-11-10
+
+The remediation at the `510671b` handoff baseline now replaces validator-only
+admission with a private `NativeStreamSpecV1` compiled from the strict logical
+plan. The spec is one-way serializable for inspection and has no deserializer or
+public constructor. A deterministic hash of that spec is emitted once in the
+unified admission diagnostic; per-record traces retain their prior shape so the
+spec hash does not add G16 quota amplification.
+
+The spec binds the complete Kafka descriptor (inventory, original starts,
+history, assigned/history-then-live mode and cut), EventV1 filter and exact
+projection, event-time allowance, native timers, optional keyed tumbling window,
+late policy, logical/native job identity and sink delivery. Source, state and
+transactional binders treat semantic fields in legacy config files as
+compatibility assertions, refuse stale values before effects, then construct the
+effective native configs from the compiled spec. Bootstrap/security, bounded
+client and diagnostic quotas, roots, checkpoint policy, and a saved recovery
+cursor remain operational inputs. The source checks that any saved cursor keeps
+the plan's original start in the selected progress record.
+
+`Engine` now executes filter, projection, allowance and timers from the compiled
+native program. Stateful v1/v2 and adaptive v2 use the plan-bound state config;
+pure-live v3 uses the same program under its original native job UUID, history
+fingerprint, CURRENT3 and committed reader. Transactional hybrid remains refused.
+No stream kernel, checkpoint selector, output protocol, or legacy default was
+changed.
+
+Focused regressions were added for stale-but-valid config refusal, a consistent
+filter/time/timer mutation changing native Engine behavior, unsupported
+projection refusal, source/state lowering and v3 delivery binding. This is a code
+change, not G14 closure: the focused unified-planner tests, all-feature workspace
+checks and lint pass when librdkafka uses the installed Homebrew OpenSSL paths.
+Fresh Kafka parity, G14 semantic-mutation service evidence, G15 worker execution,
+G16 paired quotas, and final-source G0–G13 acceptance remain required. The host
+has OpenJDK 17 but no Kafka or MinIO service binaries. The current status stays
+`PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`; no Phase19 work is authorized.

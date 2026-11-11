@@ -315,6 +315,28 @@ pub struct Progress {
     pub forwarded_records: u64,
     pub late_records: u64,
 }
+
+/// Closed native operator program used by both the legacy config route and the
+/// unified logical-plan lowering. The unified value is constructed only from a
+/// validated `NativeStreamSpecV1`; it is never accepted from serialized input.
+#[derive(Clone)]
+pub(crate) struct NativeExecutionV1 {
+    pub(crate) key_less_than: u64,
+    pub(crate) allowance_ms: i64,
+    /// Native `EventV1` input order is key, value, event time.
+    pub(crate) projection: [usize; 3],
+    pub(crate) timers: Vec<timers::Registration>,
+}
+impl NativeExecutionV1 {
+    fn legacy(config: &StreamConfigV1) -> Self {
+        Self {
+            key_less_than: config.key_less_than,
+            allowance_ms: config.allowance_ms,
+            projection: [1, 0, 2],
+            timers: config.timers.clone(),
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct Receipt {
     pub version: u32,
@@ -337,6 +359,7 @@ pub struct Engine {
     pub progress: Progress,
     pub timers: timers::Timers,
     config: StreamConfigV1,
+    native: NativeExecutionV1,
     pending: Option<Receipt>,
     #[cfg(feature = "stateful")]
     pub state: Option<state::State>,
@@ -348,9 +371,32 @@ impl Engine {
     /// # Errors
     /// Validates config and timer inventory without external effects.
     pub fn new(config: StreamConfigV1, session: Uuid) -> Result<Self> {
+        let native = NativeExecutionV1::legacy(&config);
+        Self::new_with_native(config, session, native)
+    }
+
+    /// Construct an engine from the sealed unified stream program. The config
+    /// contributes connection and quota context after semantic binding only.
+    /// # Errors
+    /// Rejects stale semantic config before constructing the native engine.
+    #[cfg(feature = "unified-planner")]
+    pub fn new_unified(
+        config: &StreamConfigV1,
+        session: Uuid,
+        admission: &unified::Admission,
+    ) -> Result<Self> {
+        let config = admission.bind_stateless(config)?;
+        Self::new_with_native(config, session, admission.native_execution())
+    }
+
+    pub(crate) fn new_with_native(
+        config: StreamConfigV1,
+        session: Uuid,
+        native: NativeExecutionV1,
+    ) -> Result<Self> {
         config.validate()?;
         let mut timers = timers::Timers::new(64, 8192, 1024)?;
-        for timer in &config.timers {
+        for timer in &native.timers {
             timers.register(timer.clone())?;
         }
         let partitions = config
@@ -380,6 +426,7 @@ impl Engine {
             },
             timers,
             config,
+            native,
             pending: None,
             #[cfg(feature = "stateful")]
             state: None,
@@ -427,7 +474,7 @@ impl Engine {
             .max_forwarded_time
             .unwrap_or(event.event_time_ms)
             .max(event.event_time_ms)
-            .checked_sub(self.config.allowance_ms)
+            .checked_sub(self.native.allowance_ms)
             .ok_or(Error::Overflow("watermark"))?;
         self.progress
             .forwarded_records
@@ -456,8 +503,8 @@ impl Engine {
             ],
         )
         .map_err(|_| Error::Event)?;
-        let filtered = ade_exec::stateless::filter_u64_lt(&batch, 0, self.config.key_less_than)?;
-        let projected = ade_exec::stateless::project(&filtered, &[1, 0, 2])?;
+        let filtered = ade_exec::stateless::filter_u64_lt(&batch, 0, self.native.key_less_than)?;
+        let projected = ade_exec::stateless::project(&filtered, &self.native.projection)?;
         self.arrow_peak_bytes = self.arrow_peak_bytes.max(
             batch.get_array_memory_size()
                 + filtered.get_array_memory_size()
@@ -539,7 +586,7 @@ impl Engine {
             .max(r.event_time_ms);
         cursor.max_forwarded_time = Some(max);
         cursor.watermark = Some(
-            max.checked_sub(self.config.allowance_ms)
+            max.checked_sub(self.native.allowance_ms)
                 .ok_or(Error::Overflow("watermark"))?,
         );
         self.progress.frontier = self

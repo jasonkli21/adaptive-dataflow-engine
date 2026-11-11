@@ -44,10 +44,10 @@ fn execute() -> ade_stream::Result<()> {
     file.take(16385)
         .read_to_end(&mut bytes)
         .map_err(|_| ade_stream::Error::Admission("config read"))?;
-    let config = StreamConfigV1::parse(&bytes)?;
+    let mut config = StreamConfigV1::parse(&bytes)?;
     #[cfg(feature = "unified-planner")]
     if let Some(a) = &unified {
-        a.validate_stateless(&config)?;
+        config = a.bind_stateless(&config)?;
     }
     let mut stop = Stop::default();
     if args.len() == 3 {
@@ -67,13 +67,20 @@ fn execute() -> ade_stream::Result<()> {
         .map_err(|_| ade_stream::Error::Admission("signal handler"))?;
     let clock = MonotonicClock::default();
     let session = uuid::Uuid::new_v4();
+    #[cfg(feature = "unified-planner")]
+    let mut engine = if let Some(a) = &unified {
+        Engine::new_unified(&config, session, a)?
+    } else {
+        Engine::new(config.clone(), session)?
+    };
+    #[cfg(not(feature = "unified-planner"))]
     let mut engine = Engine::new(config.clone(), session)?;
     let mut diagnostics = stderr_sink()?;
     #[cfg(feature = "unified-planner")]
     if let Some(a) = &unified {
         trace(
             &mut diagnostics,
-            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+            &serde_json::json!({"type":"unified_decision","decision":a.decision(),"native_spec_hash":a.native_spec_hash()}),
         )?;
     }
     #[cfg(feature = "unified-planner")]

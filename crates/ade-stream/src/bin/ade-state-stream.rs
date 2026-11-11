@@ -52,7 +52,7 @@ fn execute() -> Result<()> {
     let mut config = Config::parse(&bytes)?;
     #[cfg(feature = "unified-planner")]
     if let Some(a) = &unified {
-        a.validate_state(&config, false)?;
+        config = a.bind_state(&config, false)?;
     }
     #[cfg(feature = "adaptive-checkpoint")]
     let mut policy_path = None;
@@ -166,6 +166,30 @@ fn execute() -> Result<()> {
             )?;
             None
         };
+        #[cfg(feature = "unified-planner")]
+        if let Some(a) = &unified {
+            Engine::adaptive_stateful_unified(
+                &config,
+                policy,
+                session,
+                token.clone(),
+                recover,
+                copy,
+                certificate,
+                a,
+            )?
+        } else {
+            Engine::adaptive_stateful(
+                config.clone(),
+                policy,
+                session,
+                token.clone(),
+                recover,
+                copy,
+                certificate,
+            )?
+        }
+        #[cfg(not(feature = "unified-planner"))]
         Engine::adaptive_stateful(
             config.clone(),
             policy,
@@ -184,7 +208,16 @@ fn execute() -> Result<()> {
             "adaptive options require policy",
         )?;
         (
-            Engine::stateful(config.clone(), session, token.clone(), restore)?,
+            {
+                #[cfg(feature = "unified-planner")]
+                if let Some(a) = &unified {
+                    Engine::stateful_unified(&config, session, token.clone(), restore, a)?
+                } else {
+                    Engine::stateful(config.clone(), session, token.clone(), restore)?
+                }
+                #[cfg(not(feature = "unified-planner"))]
+                Engine::stateful(config.clone(), session, token.clone(), restore)?
+            },
             if restore { "legacy_restore" } else { "fresh" }.into(),
         )
     };
@@ -194,6 +227,13 @@ fn execute() -> Result<()> {
         recovery = engine.finish_adaptive_recovery(sources)?;
     }
     #[cfg(not(feature = "adaptive-checkpoint"))]
+    #[cfg(feature = "unified-planner")]
+    let mut engine = if let Some(a) = &unified {
+        Engine::stateful_unified(&config, session, token.clone(), restore, a)?
+    } else {
+        Engine::stateful(config.clone(), session, token.clone(), restore)?
+    };
+    #[cfg(not(feature = "unified-planner"))]
     let mut engine = Engine::stateful(config.clone(), session, token.clone(), restore)?;
     if restore || engine.progress.forwarded_records > 0 {
         for start in &mut config.source.starts {
@@ -223,7 +263,7 @@ fn execute() -> Result<()> {
     if let Some(a) = &unified {
         trace(
             &mut diagnostics,
-            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+            &serde_json::json!({"type":"unified_decision","decision":a.decision(),"native_spec_hash":a.native_spec_hash()}),
         )?;
     }
     #[cfg(feature = "unified-planner")]

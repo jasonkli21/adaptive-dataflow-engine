@@ -91,3 +91,33 @@ G15 requires target-neutral finite binding and optimizer-selected lowering.
 G16 requires near-minimum V2 diagnostic-quota parity or a pre-effects bounded
 admission rule. No old PlanV1, StreamConfigV1, state, or CURRENT3 format changes
 are authorized by this amendment. Missing live-service evidence remains NOT_RUN.
+
+## Native lowering implementation amendment — 2026-11-10
+
+The G14 remediation compiles a private, non-deserializable
+`NativeStreamSpecV1` from admitted logical-plan bytes. It is the single semantic
+source for Kafka identity/mode/cut, EventV1 filter/projection/time/timers,
+optional keyed-window policy, native job identity and sink delivery. A
+deterministic spec digest is emitted once at admission. The source, stateless
+engine, stateful/adaptive state engine and pure-live v3 transaction consume the
+spec or native configs lowered from it; no new source/kernel/checkpoint path is
+introduced.
+
+Existing config fields remain compatibility assertions for legacy command
+lines. They must match before effects, then binding copies the accepted semantic
+values from the spec into the effective native config. Credentials, endpoint,
+quota, root, checkpoint policy and the saved progress cursor stay operational
+inputs. A saved cursor is accepted only when its native progress record retains
+the exact logical original start. V1/v2 identities remain digest-derived; v3
+retains its original job UUID and CURRENT3 semantics. Hybrid v3 remains refused.
+
+This resolves the validator-only source structure at the code level; it does not
+change the gate's evidence requirement. The focused mutation tests pass when the
+librdkafka build uses the installed Homebrew OpenSSL headers and libraries. Real Kafka parity, v1/v2/v3 source-bound
+semantic mutations, G15 worker-backed execution, G16 quotas and final-source
+G0–G13/Phase17 service reacceptance remain unverified after this stream-runtime
+change. The 2026-10-31 Phase17 archive remains valid for its matched runtime, not
+this current source. The host has OpenJDK 17 but no Kafka or MinIO service
+binaries.
+The qualified status remains `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1` until the
+additive acceptance criteria pass. No Phase19 authorization is inferred.

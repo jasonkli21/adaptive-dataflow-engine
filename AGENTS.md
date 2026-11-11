@@ -309,9 +309,11 @@ Phase18 candidate5 is historically recorded as COMPLETE_BOUNDED_UNIFIED_PLANNER_
 under ADR-0025 and `docs/reports/phase-18-implementation-report.md`:38 real-service
 cases,2,061 records,1,897 offset classifications,64 windows and12 descriptive batch
 samples. The same147 Rust/Cargo inputs and executables freshly reaccepted Phase17
-G0–G15:137 cases,152 reader observations,387 cuts,70 sessions and actual ENOSPC.
-The independent review of `43672fd` found that stream semantic ownership and
-target-neutral batch admission were not fully proved. The current qualification is
+G0–G15:137 cases,152 reader observations,387 cuts,70 sessions and actual ENOSPC
+on that baseline runtime. The 2026-11-10 changes below alter stream runtime
+inputs; this archive remains historical for that baseline and current-source
+Phase17 service reacceptance is NOT_RUN. The independent review of `43672fd`
+found that stream semantic ownership and target-neutral batch admission were not fully proved. The current qualification is
 `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1` until additive G14–G16 source-bound evidence
 passes. This review remediation adds target-neutral batch binding and native Kafka
 identity grammar parity; it does not complete executable stream lowering or the
@@ -323,3 +325,16 @@ unified lineages bind source/cut semantics in the native job UUID. Static and ol
 API/format defaults remain. Physical rescale/production HA and earlier debt stay
 separate; no Phase19 is authorized. The current source-bound results are in
 `docs/reports/phase-18-review-remediation-2026-10-31.md`.
+
+The 2026-11-10 handoff remediation adds a plan-derived, non-deserializable
+`NativeStreamSpecV1` consumed by the existing stateless, stateful/adaptive and
+pure-live v3 paths. It binds semantic config fields before source/root effects,
+uses the compiled native filter/time/projection/timer program, and preserves
+legacy configs as fail-closed compatibility assertions. This is not G14
+acceptance: the focused feature tests and all-feature checks pass with the
+Homebrew OpenSSL paths, but fresh Kafka semantic parity, G15 worker execution,
+G16 quota campaigns and final-source G0–G13 acceptance remain outstanding. The
+host has OpenJDK 17 but no Kafka or MinIO service binaries. The
+current status remains `PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. See
+`docs/reports/phase-18-g14-lowering-2026-11-10.md`; no Phase19 authorization is
+inferred.

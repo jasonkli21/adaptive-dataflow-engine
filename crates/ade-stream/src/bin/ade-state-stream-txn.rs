@@ -44,14 +44,10 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
             "CONFIG3 run|resume|read|export|import|transition; physical rescale refused",
         ));
     };
-    let config = Config::parse(&store_bytes(Path::new(config_path), 32768)?)?;
+    let mut config = Config::parse(&store_bytes(Path::new(config_path), 32768)?)?;
     #[cfg(feature = "unified-planner")]
     if let Some(a) = &unified {
-        a.validate_state(&config.state, true)?;
-        ade_stream::require(
-            a.source().immutable_history == config.trusted_history,
-            "logical v3 history mismatch",
-        )?;
+        config = a.bind_transactional(&config)?;
     }
     let diagnostics = std::cell::RefCell::new(Limited {
         inner: Nonblocking::new(std::io::stderr())?,
@@ -61,7 +57,7 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
     if let Some(a) = &unified {
         runtime::trace(
             &mut *diagnostics.borrow_mut(),
-            &serde_json::json!({"type":"unified_decision","decision":a.decision()}),
+            &serde_json::json!({"type":"unified_decision","decision":a.decision(),"native_spec_hash":a.native_spec_hash()}),
         )?;
     }
     let token = CancellationToken::default();
@@ -222,6 +218,22 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
                     && pause_ms.is_none_or(|n| n > 0),
                 "run options",
             )?;
+            #[cfg(feature = "unified-planner")]
+            let mut txn = if let Some(a) = &unified {
+                Transaction::open_unified(
+                    &config,
+                    command == "resume",
+                    CancellationToken::default(),
+                    a,
+                )?
+            } else {
+                Transaction::open(
+                    config.clone(),
+                    command == "resume",
+                    CancellationToken::default(),
+                )?
+            };
+            #[cfg(not(feature = "unified-planner"))]
             let mut txn = Transaction::open(
                 config.clone(),
                 command == "resume",
@@ -234,6 +246,22 @@ fn execute(status: &std::cell::Cell<&str>) -> Result<()> {
                 start.offset =
                     txn.engine.progress.partitions[&start.partition].next_offset_suggestion;
             }
+            #[cfg(feature = "unified-planner")]
+            let mut source = if let Some(a) = &unified {
+                KafkaSource::connect_unified(
+                    source_config,
+                    txn.engine.progress.session,
+                    &txn.engine.progress,
+                    Some(a.clone()),
+                )?
+            } else {
+                KafkaSource::connect(
+                    source_config,
+                    txn.engine.progress.session,
+                    &txn.engine.progress,
+                )?
+            };
+            #[cfg(not(feature = "unified-planner"))]
             let mut source = KafkaSource::connect(
                 source_config,
                 txn.engine.progress.session,

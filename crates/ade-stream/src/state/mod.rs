@@ -1,7 +1,7 @@
 //! Phase15 opt-in stateful composition; local working state is never a checkpoint.
 pub mod checkpoint;
 pub mod store;
-use crate::{Engine, Error, Progress, Receipt, Result, Start, StreamConfigV1};
+use crate::{Engine, Error, NativeExecutionV1, Progress, Receipt, Result, Start, StreamConfigV1};
 use ade_exec::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -443,19 +443,56 @@ impl State {
 impl Engine {
     /// # Errors
     /// Opens fresh/verified restored state before Kafka assignment/output.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Preserve the established public stateful constructor signature"
+    )]
     pub fn stateful(
-        mut config: Config,
+        config: Config,
         session: Uuid,
         token: CancellationToken,
         restore: bool,
     ) -> Result<Self> {
+        Self::stateful_with_native(&config, session, token, restore, None)
+    }
+
+    /// Open state using semantic fields lowered from the sealed unified plan.
+    /// # Errors
+    /// Refuses config/plan drift before state-root access.
+    #[cfg(feature = "unified-planner")]
+    pub fn stateful_unified(
+        config: &Config,
+        session: Uuid,
+        token: CancellationToken,
+        restore: bool,
+        admission: &crate::unified::Admission,
+    ) -> Result<Self> {
+        let config = admission.bind_state(config, false)?;
+        Self::stateful_with_native(
+            &config,
+            session,
+            token,
+            restore,
+            Some(admission.native_execution()),
+        )
+    }
+
+    pub(crate) fn stateful_with_native(
+        config: &Config,
+        session: Uuid,
+        token: CancellationToken,
+        restore: bool,
+        native: Option<NativeExecutionV1>,
+    ) -> Result<Self> {
+        let native = native.unwrap_or_else(|| NativeExecutionV1::legacy(&config.source));
         let (state, progress) = State::open(config.clone(), session, token, restore)?;
+        let mut source = config.source.clone();
         if let Some(p) = &progress {
-            for start in &mut config.source.starts {
+            for start in &mut source.starts {
                 start.offset = p.partitions[&start.partition].next_offset_suggestion;
             }
         }
-        let mut engine = Self::new(config.source, session)?;
+        let mut engine = Self::new_with_native(source, session, native)?;
         if let Some(p) = progress {
             engine.progress = p;
         }
@@ -485,12 +522,71 @@ impl Engine {
         from: crate::adaptive::policy::Placement,
         certificate: Option<crate::adaptive::snapshot::Selector>,
     ) -> Result<(Self, String)> {
+        Self::adaptive_stateful_with_native(
+            &config,
+            policy,
+            session,
+            token,
+            recover,
+            from,
+            certificate,
+            None,
+        )
+    }
+
+    /// Open adaptive state using the sealed unified plan's native event program.
+    /// # Errors
+    /// Refuses config/plan drift before state-root or remote effects.
+    #[cfg(feature = "unified-planner")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Preserve the native adaptive state parameters plus sealed plan authority"
+    )]
+    pub fn adaptive_stateful_unified(
+        config: &Config,
+        policy: crate::adaptive::Policy,
+        session: Uuid,
+        token: CancellationToken,
+        recover: bool,
+        from: crate::adaptive::policy::Placement,
+        certificate: Option<crate::adaptive::snapshot::Selector>,
+        admission: &crate::unified::Admission,
+    ) -> Result<(Self, String)> {
+        let config = admission.bind_state(config, false)?;
+        Self::adaptive_stateful_with_native(
+            &config,
+            policy,
+            session,
+            token,
+            recover,
+            from,
+            certificate,
+            Some(admission.native_execution()),
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "One pre-effects v2 admission transition retains its existing native checks"
+    )]
+    pub(crate) fn adaptive_stateful_with_native(
+        config: &Config,
+        policy: crate::adaptive::Policy,
+        session: Uuid,
+        token: CancellationToken,
+        recover: bool,
+        from: crate::adaptive::policy::Placement,
+        certificate: Option<crate::adaptive::snapshot::Selector>,
+        native: Option<NativeExecutionV1>,
+    ) -> Result<(Self, String)> {
         use crate::adaptive::{
             Adaptive,
             policy::{Observation, Placement},
             snapshot,
         };
-        policy.validate_config(&config)?;
+        let native = native.unwrap_or_else(|| NativeExecutionV1::legacy(&config.source));
+        policy.validate_config(config)?;
         #[cfg(feature = "remote-checkpoint")]
         if (!recover && policy.remote.is_some())
             || (recover && from == crate::adaptive::policy::Placement::Remote)
@@ -518,13 +614,13 @@ impl Engine {
                 )?;
                 if config.checkpoint_root.join("CURRENT2").exists() {
                     check(
-                        snapshot::selection(&config)?.certificate_blake3 == s.certificate_blake3,
+                        snapshot::selection(config)?.certificate_blake3 == s.certificate_blake3,
                         "newer/different selected certificate",
                     )?;
                 }
                 s
             } else {
-                snapshot::selection(&config)?
+                snapshot::selection(config)?
             };
             Some(selected)
         } else {
@@ -538,7 +634,7 @@ impl Engine {
             disk_loss = true;
         }
         let (state, _) = State::open_version(config.clone(), session, token.clone(), false, true)?;
-        let mut engine = Self::new(config.source.clone(), session)?;
+        let mut engine = Self::new_with_native(config.source.clone(), session, native)?;
         engine.state = Some(state);
         let mut a = Adaptive {
             policy,
@@ -581,7 +677,7 @@ impl Engine {
                         &s.certificate_blake3,
                     )?;
             }
-            let manifest = snapshot::verify(&mut a, &config, &s.certificate, from, &token)?;
+            let manifest = snapshot::verify(&mut a, config, &s.certificate, from, &token)?;
             a.current = Some(s.certificate);
             a.current_hash = Some(s.certificate_blake3);
             a.pending_recovery = Some(manifest);

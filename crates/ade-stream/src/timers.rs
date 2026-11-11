@@ -9,7 +9,7 @@ pub enum Kind {
     Processing,
     Event,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registration {
     pub kind: Kind,

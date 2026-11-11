@@ -135,11 +135,70 @@
     }
   },
   "supported": {
-    "batch": "target-neutral semantic binding for admitted Phase11 families; optimizer choice and pre-output capability refusal tested; native no-override join execution not source-bound in this remediation",
+    "batch": "Target-neutral semantic binding and no-worker/forced-local pre-output refusal pass focused tests; native worker-backed join execution and oracle parity are not source-bound.",
     "hybrid": "historical candidate5 same-topic Kafka prefix/tail evidence is preserved; it is not yet proof of logical-authoritative native stream lowering",
     "optimizer": "bounded deterministic legality-first fixed proxy, forced/static control; two actual aggregate targets",
-    "stream": "default-off shared admission checked against native EventV1 filter/project, timers and keyed tumbling sum/count; G14 executable lowering remains open",
+    "stream": "Default-off logical invocation now compiles NativeStreamSpecV1 and binds its source, filter/project, event-time, timers, optional keyed tumbling state, and sink semantics into the existing native runtime. Five focused stream tests pass; real Kafka G14 parity remains blocked.",
     "v3": "pure-live local committed prefix through unchanged CURRENT3 reader"
   },
-  "version": 1
+  "version": 1,
+  "current_source_addendum": {
+    "baseline_commit": "510671b2b72272d25495a719ab45c168b38c54f7",
+    "qualification": "NativeStreamSpecV1 lowering is implemented and focused code checks pass; source-bound G0-G16 acceptance is incomplete.",
+    "gates": {
+      "G0": "BLOCKED",
+      "G1": "PARTIAL",
+      "G2": "HISTORICAL_ONLY",
+      "G3": "PARTIAL",
+      "G4": "BLOCKED",
+      "G5": "HISTORICAL_ONLY",
+      "G6": "HISTORICAL_ONLY",
+      "G7": "PARTIAL",
+      "G8": "NOT_RUN",
+      "G9": "HISTORICAL_ONLY",
+      "G10": "PARTIAL",
+      "G11": "PARTIAL",
+      "G12": "HISTORICAL_ONLY",
+      "G13": "PASS",
+      "G14": "BLOCKED",
+      "G15": "BLOCKED",
+      "G16": "BLOCKED"
+    },
+    "code_level_results": {
+      "G14": "NativeStreamSpecV1 binds the existing source, Engine, state/adaptive and pure-live v3 paths; 5 ade-stream unified integration tests pass.",
+      "G15": "Target-neutral no-worker pre-output refusal test passes; worker-backed join execution and oracle parity were not run.",
+      "G16": "No paired 8 KiB/16 KiB V2 broker measurements were run."
+    },
+    "verification": {
+      "cargo_fmt_check": "PASS",
+      "ade_stream_no_default_lib": "PASS (0 unit tests)",
+      "ade_logical": "PASS (8 contract tests)",
+      "ade_stream_unified_all_features": "PASS (5 tests)",
+      "frontend_no_worker_refusal": "PASS (1 test)",
+      "workspace_check_all_targets_default_and_all_features": "PASS",
+      "workspace_clippy_all_targets_all_features_deny_warnings": "PASS",
+      "scripts_unittest": "PASS (64 tests)",
+      "phase18_candidate5_archive_replay": "PASS (38 cases)",
+      "phase17_reacceptance_archive_replay": "PASS (137 cases)",
+      "phase17_and_phase18_current_source_service_campaigns": "NOT_RUN",
+      "workspace_all_features_tests": "BLOCKED (67 ade-distributed tests passed, 29 socket tests failed PermissionDenied; later targets not run)",
+      "smoke": "BLOCKED (ade-worker local socket bind returned Operation not permitted)",
+      "all_features_binaries_examples_build": "PASS"
+    },
+    "environment": {
+      "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+      "openjdk": "17.0.20.1 (Homebrew)",
+      "kafka": "NOT_FOUND",
+      "minio": "NOT_FOUND",
+      "openssl": "/opt/homebrew/opt/openssl@3"
+    },
+    "blockers": [
+      "Fresh Phase17 and Phase18 Kafka/MinIO acceptance could not run because Kafka and MinIO service binaries are absent.",
+      "The normal sandbox denies local worker socket creation: ade-worker returned Operation not permitted; 29 ade-distributed socket tests and the worker smoke path were blocked.",
+      "G14 real Kafka semantic-mutation/parity and G16 paired quota campaigns remain unverified.",
+      "No current-source versioned G14-G16 acceptance criteria/fixture runner/verifier or evidence archive was produced."
+    ],
+    "report": "phase-18-g14-lowering-2026-11-10.md",
+    "phase19_authorized": false
+  }
 }

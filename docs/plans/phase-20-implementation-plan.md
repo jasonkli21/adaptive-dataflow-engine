@@ -211,3 +211,44 @@ records the exact final source inventory and G0–G15 witnesses. The
 source-matched [evidence archive](../evidence/phase20/README.md) preserves
 the original criteria, raw samples, earlier campaigns, and the offline
 semantic verifier's results.
+
+## Independent review reconciliation — 2026-11-11
+
+The independent review handoff at
+`docs/reports/phase-20-independent-review-and-remediation-2026-11-11.md`
+identified two verifier defects and a qualification gap. The original
+acceptance archive, criteria, fixture lock, attempts and implementation report
+remain historical evidence and are not rewritten. The original verifier did
+not portably replay its own archive and did not require every mandatory case's
+expected disposition. Its former G14 `PASS` and the unqualified overall
+`COMPLETE_BOUNDED_CYCLIC_DATAFLOW_V1` are therefore superseded pending fresh
+source-bound replay of the repaired verifier and applicable current-source
+gates.
+
+The current admitted program is explicitly limited to the exact
+Expand → Reduce → Delay template and the two named graph algorithms. Runtime
+dispatch is specialized by algorithm; the physical node/arc descriptors are
+not a general user-composable operator API. Phase 20 evidence does not prove
+arbitrary cyclic regions, nested/multiple loops, distributed progress or
+general iterative ML. This is a bounded claim qualification, not a claim that
+the reusable operator-dispatch design outcome has been met. A broader reusable
+operator boundary is a separately authorized follow-up; no Phase 21 is
+inferred.
+
+The verifier remediation freezes each of the original 375 process scenarios
+in `scripts/phase20/case-contract.json`: canonical request identity (only
+machine-specific source/root parent paths are normalized), operation, required
+exit disposition, required refusal diagnostic, stdout policy, exact case
+inventory and expected root inventory. Malformed JSON is bound by exact raw
+bytes. This lets fresh isolated campaigns use their own temporary directory
+prefixes while keeping fixture basenames and all semantic/limit fields bound.
+The verifier derives successful output and
+round semantics from the independent graph oracle. This lock is a new
+source-controlled verifier contract; it does not change or replace the
+original criteria or evidence. A numeric tolerance is used only for serialized
+population standard deviation (`rel_tol=1e-12`, `abs_tol=1e-9`); samples,
+medians and frozen timing/work predicates remain exact.
+
+Until the additive remediation report records a successful full replay and
+final-source acceptance, gates not freshly run remain `NOT_RUN` and Phase 20's
+current status is `PENDING_INDEPENDENT_REACCEPTANCE`.

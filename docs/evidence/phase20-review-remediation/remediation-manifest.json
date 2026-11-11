@@ -1,0 +1,179 @@
+{
+  "status": "DETACHED_ARCHIVE_REPLAY_PASS_ONE_LOCAL_ENVIRONMENT; FULL_REACCEPTANCE_PENDING",
+  "date": "2026-11-11",
+  "review_baseline": "74eb752a8ef464600d4183b612eb9e3bc7bf64d8",
+  "historical_archive": {
+    "path": "docs/evidence/phase20/acceptance.tar.gz",
+    "sha256": "534703e4c37d6c61a86e93c8028a5b56141d5c8214ca0330ba2d9699b46f8441",
+    "member_manifest_sha256": "6cf00fba9c8ec3d3687bd269180dcf0892526e7140a33bb399370404837a1084",
+    "criteria_sha256": "ffe6c0037b18d940d9426f66222708ebd85da7bb8c4c2da78e339f96d80647de",
+    "fixture_lock_sha256": "cc72307084dc3032555d4e3b96745114a07b326e65471cbf654d5aaba998ce04",
+    "source_inventory_sha256": "01fa4216ea0af0482975f8829ca990fe3eb9dc7a8bf71d7be017fd2b03dd96b3",
+    "source_inputs_matching_current_checkout": 179,
+    "source_inputs_total": 180,
+    "source_inputs_changed": [
+      "scripts/phase20/verify.py"
+    ],
+    "measured_binary_sha256": "ae2de07d49ca896df7dd58ec559cd532d0a86f0fee49ca3c24e956d94c25fad2",
+    "observed_binary_sha256": "ae2de07d49ca896df7dd58ec559cd532d0a86f0fee49ca3c24e956d94c25fad2"
+  },
+  "verifier_inputs": {
+    "scripts/phase20/verify.py": "7e42cff0012b4e849f03c7c28de393702eb03201cf8777609221f6a906374486",
+    "scripts/phase20/case_contract.py": "3ac513b8c3b7a623593e64141cbc8cc4aa8ab500a4a3e8f6518bf815020087e3",
+    "scripts/phase20/case-contract.json": "7833005256a6bafb4d94effba46bd672c079d03879374073aab2b527f899810d",
+    "scripts/tests/test_phase20_case_contract.py": "eb6cc2bd16fa084983d52c186fd4643f9281fb3b0a1f2ccba45fb80f08df4adb"
+  },
+  "runtime": {
+    "os": "macOS 27.0.1 arm64",
+    "python": "3.10.20",
+    "pyarrow": "24.0.0",
+    "rustc": "1.99.1",
+    "cargo": "1.99.1",
+    "blake3_adapter": "temporary subprocess adapter to cached Rust blake3 1.8.7",
+    "pinned_python_wheels_installed": false
+  },
+  "replay": {
+    "commands": 380,
+    "terminal_reads_or_verifies": 161,
+    "refusals_or_kills": 129,
+    "roots": 77,
+    "selected_cuts": 146,
+    "rounds": 33978,
+    "feedback_rows": 1099948,
+    "measured_pairs": 15,
+    "rehashed_semantic_mutations_rejected": 11,
+    "command": "PYTHONPATH=/tmp/ade20-python /Users/jasonkli/projects/axiom-pipeline-interview-main/.venv/bin/python -B scripts/phase20/verify.py docs/evidence/phase20/acceptance.tar.gz docs/evidence/phase20/manifest.json --tamper --evidence-dir docs/evidence/phase20-review-remediation/attacks"
+  },
+  "focused_tests": {
+    "phase20_contract_tests": "8 passed",
+    "python_regressions": "72 passed"
+  },
+  "repository_checks": {
+    "status": "PASS",
+    "script": "scripts/phase20/checks.sh",
+    "step_count": 15,
+    "all_exit_codes_zero": true,
+    "exit_manifest": "checks/exits.tsv",
+    "logs": {
+      "format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "incremental-no-default.log": "22e0df986057b9ba5be07526ac5fb348862a3dedef42108383cc3e088acbb889",
+      "iterate-cyclic-tree.log": "b2a760ed39f0721d04f30182434820b136bd0e6857285a45a640f3fe1ffd09f7",
+      "iterate-default-tree.log": "d8b0d11c4ec7f62efd16c8764f5b020a8154040bcf64e973515ad58b90900c1a",
+      "iterate-no-default.log": "99f71393b9903dca098310bb446022a4bdee195ea9996f351a787195555210a6",
+      "phase19-extract-original.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "phase19-historical.log": "64bae6d8174a19b9f91d7e1068d3ad6785e2f251e7952d2cdfc576c28362f44c",
+      "phase19-review-remediation-historical.log": "821eab50caf9821be12e3ca6bd05f4abf6118fb00dbdee7e252e03552eb8906f",
+      "prior-evidence.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "python-regressions.log": "fccab1aaae5dbf3326c3cbb862f375cfd2808e706b86c4243a89e44d79bdcaf0",
+      "smoke-build.log": "482d4f80a17042f11207f551ffb582c93594e1c71f2e509fbea6db9254305c32",
+      "smoke.log": "a32d64985c180027e0703e1cd18bc7559d764a99ff63c87cf1a378636838e38b",
+      "workspace-check.log": "e3c4d09139da23ab1d3bbed0d50194f0b9a4ed75b8e5559f3edd42a474011502",
+      "workspace-clippy.log": "2afde374d9acf84c612d3a09beaa74d8427b6e511c83300c8f7cbab0d016a482",
+      "workspace-test.log": "6f8097204baa675b67f23de006d9c589df153f87207853b5d5af93745d4e8d7e",
+      "exits.tsv": "05deda246f5dc8d5d5c40f2ce6a87d082a3f55c479626c0d4269f4506d17c40d"
+    }
+  },
+  "preserved_attempt_files": {
+    "attempts/consolidated-check-concurrent-flake/attempt.json": "e98dd7faeab6f4b3ae75fc70a247d1b5a22d4c868c0efee7f809eaa612698ae1",
+    "attempts/consolidated-check-concurrent-flake/exits.tsv": "57f58441985ee6eabd2a38b6c50acd8d92076d668207a43f638cffb1941ee631",
+    "attempts/consolidated-check-concurrent-flake/format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "attempts/consolidated-check-concurrent-flake/incremental-no-default.log": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe",
+    "attempts/consolidated-check-concurrent-flake/iterate-cyclic-tree.log": "b2a760ed39f0721d04f30182434820b136bd0e6857285a45a640f3fe1ffd09f7",
+    "attempts/consolidated-check-concurrent-flake/iterate-default-tree.log": "d8b0d11c4ec7f62efd16c8764f5b020a8154040bcf64e973515ad58b90900c1a",
+    "attempts/consolidated-check-concurrent-flake/iterate-no-default.log": "ee1d3fffa2022e962e63e0dbe4d35c9c198450a20c29fc09030f635dbb38bfcd",
+    "attempts/consolidated-check-concurrent-flake/phase19-extract-original.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "attempts/consolidated-check-concurrent-flake/phase19-historical.log": "64bae6d8174a19b9f91d7e1068d3ad6785e2f251e7952d2cdfc576c28362f44c",
+    "attempts/consolidated-check-concurrent-flake/phase19-review-remediation-historical.log": "821eab50caf9821be12e3ca6bd05f4abf6118fb00dbdee7e252e03552eb8906f",
+    "attempts/consolidated-check-concurrent-flake/prior-evidence.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "attempts/consolidated-check-concurrent-flake/python-regressions.log": "926cac2b4087c3442def9013726fa24af6369a4e98afc730b16c85c197652705",
+    "attempts/consolidated-check-concurrent-flake/smoke-build.log": "0a7cd88fcbd126b83b252918a5a91abf635de91463483decd2379c97f36502e9",
+    "attempts/consolidated-check-concurrent-flake/smoke.log": "29375c0293aeb06497ad7fe1349108cc0f50b76a16dc0918ff3b4f35a95b7060",
+    "attempts/consolidated-check-concurrent-flake/workspace-check.log": "d0be492c8076781d1c3a7659b3159fa15ff5b734951862a2b34028f674b51e0e",
+    "attempts/consolidated-check-concurrent-flake/workspace-clippy.log": "32e8394ae11fdb1f63ebbd40321338fb3aecfdf5084794744bd6c15c88f54f5c",
+    "attempts/consolidated-check-concurrent-flake/workspace-test.log": "edc600972e99e2d892a3dc5e8a32ab88cddc1514c336210e5f8049e295ab0691",
+    "attempts/pyarrow24-fixture-lock-mismatch/attempt.json": "995a7af5154180dd1c5abd16060caaa60461a8b54bfd439922144dc4869e1feb",
+    "attempts/pyarrow24-fixture-lock-mismatch/attempt.log": "b5c337bcdcd2fa186074b672f3e7733e12ea6dd106b3c34c18ead606f7c7bc74",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/chain/edges-0.parquet": "18c9d03686cc7cd336b61ed74d384251f51c675f665e8e139f4ad083d34dbc6c",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/chain/vertices-0.parquet": "5fb4801e282fd2ff3e0d57aa2aa0918dcfb91a6bacc2f4f17c3d80323f362bef",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/dense/edges-0.parquet": "613a25bbe5d304abcc6b2fd482cfb42822b6314f6a5c5581004bfa19cf05d29c",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/dense/vertices-0.parquet": "3946fa33f758d06829c878e2927cb0fb9ccf8efaf3b4b6d39aa4590ef87f8d33",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/empty/edges-0.parquet": "dde5d7e9447cc65c60179e37c431f0d59fe94bdde828f01672c3d9dc18a1d482",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/empty/vertices-0.parquet": "893469130507aa3b4c6ba3cc76068427f9a392fddd4bd38ef2179b01a02942f0",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/isolated/edges-0.parquet": "dde5d7e9447cc65c60179e37c431f0d59fe94bdde828f01672c3d9dc18a1d482",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/isolated/vertices-0.parquet": "f1f53e96d09dc9d900f3460cb5cb7418d8a11ee2b0c0cc87296c5a0fb2a21b48",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/max/edges-0.parquet": "0436a276b5c7bd3e4550449f98276bc555a25ec56c95e625e2b5d357469c0bab",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/max/vertices-0.parquet": "b0dbc3180d3a32c2231ccdb37089353da1376fb06ce4e2278a087a2646ea14ab",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/max_chain/edges-0.parquet": "93ac856a223dcddc963e0c6b07b3f4154397e85f712aee0b98f1efdfdacbeb0d",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/max_chain/vertices-0.parquet": "b0dbc3180d3a32c2231ccdb37089353da1376fb06ce4e2278a087a2646ea14ab",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/mixed/edges-0.parquet": "5c8949b9741cece143efe7af8e4d6cfe82a5166fff4385a04d50b79be1e8a7a8",
+    "attempts/pyarrow24-fixture-lock-mismatch/fixtures/mixed/vertices-0.parquet": "8040cd3b2fb359dbf21632c7bd936a986fe3bb162e456465a1420648160b1ff8"
+  },
+  "attack_archives": [
+    {
+      "archive": "forged-feedback-credit.tar.gz",
+      "archive_sha256": "ac0c91efffd959c63ebfde3942030027e618617781f30f4d85522dd3869916d1",
+      "manifest": "forged-feedback-credit.manifest.json",
+      "manifest_sha256": "728aa0e19a56e51c9f35f04ca7c80c50dc54a6b251f5d204052d7ef26f5317bf"
+    },
+    {
+      "archive": "forged-terminal-rows.tar.gz",
+      "archive_sha256": "bb72f7bd0be312063e7bf59a24da568f7e00c9cfdb0e1cdd37345f42b40b62d3",
+      "manifest": "forged-terminal-rows.manifest.json",
+      "manifest_sha256": "e6531234bd02465ed872baeb86910a83c449ba3fee0ae9851df20cd43fff1fcc"
+    },
+    {
+      "archive": "material-standard-deviation-forgery.tar.gz",
+      "archive_sha256": "5463096578d52529cd6be83b6e30348b9d4bce2c5e78b19302c15d7cddd009b4",
+      "manifest": "material-standard-deviation-forgery.manifest.json",
+      "manifest_sha256": "9a3582c808abd37b103b382743fc6d144456ce3a44c31f17e648837189f0951b"
+    },
+    {
+      "archive": "omitted-required-case.tar.gz",
+      "archive_sha256": "2c92762b60d8ad5160b37305507ac904e4ba51fcaf0f5e92ed723039793b8979",
+      "manifest": "omitted-required-case.manifest.json",
+      "manifest_sha256": "3548c3523d21deea8aa6ef49d1becde5867c06319d6e7c3cf1105ed748b9c0a5"
+    },
+    {
+      "archive": "refusal-emits-unexpected-stdout.tar.gz",
+      "archive_sha256": "7dc9b31b12feff09a0b133a6a654f4c33b51f0abcd8d8e4308a9c4e022810ac5",
+      "manifest": "refusal-emits-unexpected-stdout.manifest.json",
+      "manifest_sha256": "823473a6dbe041cec7dae56cfa327a3519c609e75518ad8e96a754633a89e128"
+    },
+    {
+      "archive": "refusal-reason-and-stdout-forged.tar.gz",
+      "archive_sha256": "98d3d3a4ebd0fcdb3c1ee77791761e5280eed1393814f8f8ce3cf10db0861f2d",
+      "manifest": "refusal-reason-and-stdout-forged.manifest.json",
+      "manifest_sha256": "dde49546286d4e64cca6f97772dad578126202d3729431f41ec539e6d40ce02e"
+    },
+    {
+      "archive": "refusal-request-replaced-by-valid-request.tar.gz",
+      "archive_sha256": "e83a90789e9ed69ee11d0bd852dc5d38327be2001dbb5ac5b57f5e9e8e980b4c",
+      "manifest": "refusal-request-replaced-by-valid-request.manifest.json",
+      "manifest_sha256": "f2650f1e4554008899f0dbe5c908acc538ae8b6c1cbb609f9a62c80ca439557d"
+    },
+    {
+      "archive": "required-success-changed-to-failure.tar.gz",
+      "archive_sha256": "675b82ee0fa70dcc69d2ede526b9f8922288a25a4bfc529ae41c711921534883",
+      "manifest": "required-success-changed-to-failure.manifest.json",
+      "manifest_sha256": "5da2a45c528ced4d5d1aa2d11dd56cdb90d5d5a28751bbaa153bc7348731b8d7"
+    },
+    {
+      "archive": "restart-process-identity-forged.tar.gz",
+      "archive_sha256": "98abaf03eed674669f74093c1d0e478acddc027bd5fdc904bb536abb522dd15c",
+      "manifest": "restart-process-identity-forged.manifest.json",
+      "manifest_sha256": "5bf5dbd9c6eb4951e407f4697893e2973c4c1f6e19bbee09ca72b1c579bb78a2"
+    },
+    {
+      "archive": "round-sequence-forged.tar.gz",
+      "archive_sha256": "ffacf1a758acd9c3709d59e0a26f7d86887f2390726bd8f5377d8927b23685b1",
+      "manifest": "round-sequence-forged.manifest.json",
+      "manifest_sha256": "b06c4ee092cb596956dc2de7cb58cecf14ac8df5f8c54a0e39da691d25870422"
+    },
+    {
+      "archive": "selected-receipt-sequence-forged.tar.gz",
+      "archive_sha256": "0ef0c73dca634395095ceeafe9a43b1f9af5723594a6ba12b2334d3778e49d31",
+      "manifest": "selected-receipt-sequence-forged.manifest.json",
+      "manifest_sha256": "8e2f93b98bcd2799e70ee2333cf42369cdf490f29528b58ae39b586c0844f883"
+    }
+  ]
+}

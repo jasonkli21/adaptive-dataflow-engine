@@ -1,5 +1,5 @@
 {
-  "qualification": "COMPLETE_BOUNDED_CYCLIC_DATAFLOW_V1",
+  "qualification": "PENDING_INDEPENDENT_REACCEPTANCE",
   "date": "2026-11-11",
   "feature": "ade-iterate/cyclic-v1",
   "default_enabled": false,
@@ -14,24 +14,6 @@
   "criteria_sha256": "ffe6c0037b18d940d9426f66222708ebd85da7bb8c4c2da78e339f96d80647de",
   "fixture_lock_sha256": "cc72307084dc3032555d4e3b96745114a07b326e65471cbf654d5aaba998ce04",
   "archive_sha256": "534703e4c37d6c61a86e93c8028a5b56141d5c8214ca0330ba2d9699b46f8441",
-  "gates": {
-    "G0": "PASS",
-    "G1": "PASS",
-    "G2": "PASS",
-    "G3": "PASS",
-    "G4": "PASS",
-    "G5": "PASS",
-    "G6": "PASS",
-    "G7": "PASS",
-    "G8": "PASS",
-    "G9": "PASS",
-    "G10": "PASS",
-    "G11": "PASS",
-    "G12": "PASS",
-    "G13": "PASS",
-    "G14": "PASS",
-    "G15": "PASS"
-  },
   "algorithms": [
     "reachability_bfs_v1",
     "weak_components_min_label_v1"
@@ -78,5 +60,87 @@
     "arbitrary power loss",
     "external transactions"
   ],
-  "toolchain_archive_sha256": "de09b7b8eb6f253eda82f8ff5f9241dc4237e8927563a25269c269af06bf9d9e"
+  "toolchain_archive_sha256": "de09b7b8eb6f253eda82f8ff5f9241dc4237e8927563a25269c269af06bf9d9e",
+  "review_remediation": "docs/reports/phase-20-review-remediation-2026-11-11.md",
+  "historical_gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS",
+    "G10": "PASS",
+    "G11": "PASS",
+    "G12": "PASS",
+    "G13": "PASS",
+    "G14": "PASS",
+    "G15": "PASS"
+  },
+  "gates": {
+    "G0": "NOT_RUN",
+    "G1": "NOT_RUN",
+    "G2": "NOT_RUN",
+    "G3": "NOT_RUN",
+    "G4": "NOT_RUN",
+    "G5": "NOT_RUN",
+    "G6": "NOT_RUN",
+    "G7": "NOT_RUN",
+    "G8": "NOT_RUN",
+    "G9": "NOT_RUN",
+    "G10": "NOT_RUN",
+    "G11": "NOT_RUN",
+    "G12": "NOT_RUN",
+    "G13": "PASS",
+    "G14": "NOT_RUN",
+    "G15": "NOT_RUN"
+  },
+  "current_review": {
+    "verdict": "REMEDIATION_REQUIRED",
+    "findings": {
+      "F20-01": "IMPLEMENTED_AND_VERIFIED_AGAINST_REHASHED_ARCHIVE_ATTACKS",
+      "F20-02": "IMPLEMENTED_AND_VERIFIED_LOCALLY; LINUX_PYTHON_3_12_REPLAY_NOT_RUN",
+      "F20-03": "CLAIM_NARROWED_TO_CLOSED_TWO_ALGORITHM_TEMPLATE"
+    },
+    "limitations": [
+      "Linux/Python 3.12 portability replay and pinned PyArrow 21 environment were unavailable.",
+      "Fresh source-matched native Phase 20 campaign and final-source G0-G15 acceptance remain outstanding.",
+      "The original verifier input fingerprint differs at scripts/phase20/verify.py; 179 of its 180 original source inputs still match current checkout.",
+      "No general composable cyclic operator API, nested/multiple loops, distributed progress or general iterative ML is claimed."
+    ],
+    "detached_archive_replay": {
+      "status": "PASS_ON_ONE_LOCAL_ENVIRONMENT",
+      "environment": "macOS 27.0.1 arm64, Python 3.10.20, PyArrow 24.0.0, Rust BLAKE3 1.8.7 adapter",
+      "commands": 380,
+      "feedback_rows": 1099948,
+      "rounds": 33978,
+      "selected_cuts": 146,
+      "rehash_attacks": 11
+    },
+    "repository_checks": {
+      "status": "PASS",
+      "source": "scripts/phase20/checks.sh on current remediation checkout",
+      "exit_manifest": "docs/evidence/phase20-review-remediation/checks/exits.tsv",
+      "checks": [
+        "format",
+        "workspace-check",
+        "workspace-clippy",
+        "workspace-test",
+        "incremental-no-default",
+        "iterate-no-default",
+        "iterate-default-tree",
+        "iterate-cyclic-tree",
+        "smoke-build",
+        "smoke",
+        "python-regressions",
+        "phase19-extract-original",
+        "phase19-historical",
+        "phase19-review-remediation-historical",
+        "prior-evidence"
+      ]
+    }
+  }
 }

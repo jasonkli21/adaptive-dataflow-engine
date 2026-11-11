@@ -15,6 +15,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from oracle import result
+from case_contract import (request_bytes, standard_deviation_matches, validate_case, validate_category_totals,
+                           validate_inventory, validate_root_inventory)
 
 BFS = "reachability_bfs_v1"
 COMPONENTS = "weak_components_min_label_v1"
@@ -128,10 +130,11 @@ def expected_footer(rows, algo, rounds):
 
 
 class Evidence:
-    def __init__(self, work, criteria, fixture_lock):
+    def __init__(self, work, criteria, fixture_lock, contract=None):
         self.work = work
         self.criteria = criteria
         self.fixture_lock = fixture_lock
+        self.contract = contract
         self.cache = {}
         self.cases = {}
         self.requests = {}
@@ -162,9 +165,19 @@ class Evidence:
         return self.cache[key]
 
     def cases_and_credits(self):
+        if self.contract is not None:
+            validate_inventory(self.cases, self.contract)
         for key, case in self.cases.items():
             command = case["argv"][1]
             request = self.requests.get(key)
+            if self.contract is not None:
+                raw_request = request_bytes(self.work / "requests" / (key + ".json"))
+                terminal_bytes = None
+                if request and self.contract["cases"][key]["stdout_policy"] == "terminal_prefix":
+                    *_, rows, rounds, footer = self.reference(request)
+                    terminal_bytes = b"".join(raw(row) + b"\n" for row in rows + [footer])
+                validate_case(key, case, raw_request, self.contract,
+                              terminal_bytes)
             ledger = [e["stats"] for e in json_lines(case["stderr"]) if e["event"] == "round"]
             if case["exit"] != 0:
                 assert '"kind":"complete"' not in case["stdout"]
@@ -189,7 +202,7 @@ class Evidence:
                     assert value["terminal"] == footer and value["rounds_executed"] == len(ledger)
                     assert value["edge_work"] == sum(item["edges_examined"] for item in ledger)
                     if ledger:
-                        assert selected(case) == value["pin"]
+                        assert selected(case) == value["pin"], "selected receipt differs from run summary"
                     else:
                         assert request["expected"] == value["pin"]
                 assert value["source"] == source_id and value["plan"] == plan_id
@@ -201,7 +214,8 @@ class Evidence:
             for round_num, item in enumerate(ledger, start):
                 current, next_rows, proposals, scan = rounds[round_num]
                 edges_examined = scan if request.get("mode") == "scan_all" else proposals
-                assert item["round"] == round_num and item["feedback_round"] == round_num + 1
+                assert item["round"] == round_num and item["feedback_round"] == round_num + 1, \
+                    f"round trace differs at {key}:{round_num}"
                 assert item["frontier_rows"] == current and item["next_rows"] == next_rows
                 assert (item["edges_examined"], item["proposals"], item["suppressed"]) == (
                     edges_examined, proposals, proposals - next_rows), "round work differs"
@@ -211,10 +225,15 @@ class Evidence:
                                             "peak_in_flight": peak, "producer_open": False}, "credit conservation differs"
                 self.counts["rounds"] += 1
                 self.counts["feedback_rows"] += next_rows
+        if self.contract is not None:
+            validate_category_totals(self.cases, self.contract)
         self.counts["commands"] += len(self.cases)
 
     def roots(self, alternate=None):
         roots = (self.work / "roots").iterdir() if alternate is None else [alternate]
+        if alternate is None and self.contract is not None:
+            validate_root_inventory([p.name for p in roots if p.is_dir()], self.contract)
+            roots = (self.work / "roots").iterdir()
         requests = {}
         pins = defaultdict(dict)
         for case, request in ((self.cases[key], req) for key, req in self.requests.items()):
@@ -246,7 +265,9 @@ class Evidence:
             retained = sum(dict((f["inode"], f["bytes"]) for f in files.values()).values())
             assert len(files) <= self.criteria["limits"]["root_entries"]
             assert retained <= self.criteria["limits"]["disk_bytes"]
-            assert {"sequence": 0, "round": 0, "chain": chain} in pins[name][0]
+            assert (0 in pins[name] and
+                    {"sequence": 0, "round": 0, "chain": chain} in pins[name][0]), \
+                f"{name}: genesis pin receipt missing or altered"
             vertices, edges, _, _, footer = self.reference(request)
             selectors = sorted(root.glob("s20-*"))
             rounds_at = {read(path)["round"] for path in selectors}
@@ -289,7 +310,7 @@ class Evidence:
             candidate = selected(stopped, "prepared") if point in {"selected", "directory_synced"} else selected(stopped)
             resumed = named["crash-resume-" + point]
             assert self.requests[resumed["name"]]["expected"] == candidate
-            assert resumed["pid"] != stopped["pid"]
+            assert resumed["pid"] != stopped["pid"], f"resume process was reused at {point}"
             assert named["crash-not-terminal-" + point]["exit"] != 0
             assert named["crash-terminal-" + point]["exit"] == 0
             self.counts["kill_boundaries"] += 1
@@ -307,7 +328,8 @@ class Evidence:
             name = "restart-" + algo
             stopped, resumed = named[name], named[name + "-resume"]
             assert stopped["exit"] == -9 and selected(stopped)["round"] == 2 and resumed["exit"] == 0
-            assert len({stopped["pid"], resumed["pid"], named[name + "-terminal"]["pid"]}) == 3
+            assert len({stopped["pid"], resumed["pid"], named[name + "-terminal"]["pid"]}) == 3, \
+                f"{name}: restart sequence reused a process"
             assert named[name + "-checkpoint-not-result"]["exit"] != 0
             assert named[name + "-terminal-verify"]["exit"] == 0
             assert named[name + "-reread"]["stdout"] == named[name + "-terminal"]["stdout"]
@@ -353,8 +375,12 @@ class Evidence:
             for mode in ("indexed", "scan_all"):
                 for key in ("compute_ns", "wall_ns"):
                     values = [p[mode][key] for p in measured]
-                    assert recorded[name]["stats"][f"{mode}_{key}"] == {
-                        "median": statistics.median(values), "stdev": statistics.pstdev(values)}
+                    claimed = recorded[name]["stats"][f"{mode}_{key}"]
+                    expected_median = statistics.median(values)
+                    expected_stdev = statistics.pstdev(values)
+                    assert claimed["median"] == expected_median, f"{name}/{mode}/{key}: median differs"
+                    assert standard_deviation_matches(claimed["stdev"], expected_stdev), \
+                        f"{name}/{mode}/{key}: standard deviation differs materially"
             scan_work = sum(p["scan_all"]["edge_work"] for p in measured)
             index_work = sum(p["indexed"]["edge_work"] for p in measured)
             work_ratio = scan_work / index_work
@@ -413,7 +439,8 @@ def validate(work, repo=None, binary=None):
             assert sha(repo / name) == fingerprint, f"source differs: {name}"
     if binary:
         assert sha(binary) == provenance["binary_sha256"]
-    evidence = Evidence(work, criteria, lock)
+    contract = read(Path(__file__).with_name("case-contract.json"))
+    evidence = Evidence(work, criteria, lock, contract)
     evidence.cases_and_credits()
     evidence.roots()
     evidence.faults()
@@ -432,34 +459,138 @@ def validate(work, repo=None, binary=None):
     return evidence.counts + enospc.counts
 
 
-def tamper(work, storage):
-    for label, suffix, change in [
-        ("forged terminal rows", "mixed-bfs-0-terminal", lambda c: c.update(
-            stdout=c["stdout"].replace('"distance":0', '"distance":9', 1))),
-        ("forged feedback credit", "mixed-bfs-0", lambda c: c.update(
-            stderr=c["stderr"].replace('"acknowledged":2', '"acknowledged":1', 1))),
-    ]:
-        path = next((work / "commands").glob(f"????-{suffix}.json"))
-        previous = path.read_bytes()
-        case = json.loads(previous)
-        change(case)
-        assert raw(case) != raw(json.loads(previous))
-        path.write_bytes(raw(case))
+def tamper(work, storage, evidence_dir=None):
+    def exercise(label, path, mutate, expected):
+        previous = path.read_bytes() if path.exists() else None
+        mutate()
         try:
             archive, manifest = storage / "tampered.tar.gz", storage / "tampered.json"
             package(work, archive, manifest)
+            if evidence_dir is not None:
+                stem = "".join(c.lower() if c.isalnum() else "-" for c in label).strip("-")
+                shutil.copyfile(archive, evidence_dir / f"{stem}.tar.gz")
+                shutil.copyfile(manifest, evidence_dir / f"{stem}.manifest.json")
             with tempfile.TemporaryDirectory(dir=storage) as extracted:
                 target = Path(extracted)
                 unpack(archive, manifest, target)
                 try:
                     validate(target)
-                except AssertionError as error:
-                    assert str(error) in {"terminal ledger differs", "credit conservation differs"}, str(error)
+                except (AssertionError, ValueError) as error:
+                    assert expected in str(error), f"{label}: wrong rejection: {error}"
                     print(f"rehashed {label}: refused ({error})")
                 else:
                     raise AssertionError(f"accepted rehashed {label}")
         finally:
-            path.write_bytes(previous)
+            if previous is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(previous)
+
+    def mutate_case(name, change):
+        path = work / "commands" / (name + ".json")
+        def apply():
+            case = read(path)
+            change(case)
+            path.write_bytes(raw(case))
+        return path, apply
+
+    exercise("forged terminal rows", *mutate_case("0036-mixed-bfs-0-terminal",
+        lambda c: c.update(stdout=c["stdout"].replace('"distance":0', '"distance":9', 1))),
+        "terminal ledger differs")
+    exercise("forged feedback credit", *mutate_case("0035-mixed-bfs-0",
+        lambda c: c.update(stderr=c["stderr"].replace('"acknowledged":2', '"acknowledged":1', 1))),
+        "credit conservation differs")
+    exercise("required success changed to failure", *mutate_case("0035-mixed-bfs-0",
+        lambda c: c.update(exit=1, stdout="", stderr=c["stderr"] + "INCOMPLETE_LIMIT: fabricated\n")),
+        "exit disposition differs")
+    exercise("refusal reason and stdout forged", *mutate_case("0096-duplicate_vertex",
+        lambda c: c.update(stdout='{"vertex":999,"distance":999}\n', stderr="some unrelated failure\n")),
+        "required diagnostic missing")
+    exercise("refusal emits unexpected stdout", *mutate_case("0096-duplicate_vertex",
+        lambda c: c.update(stdout='{"vertex":999,"distance":999}\n')),
+        "unexpected stdout")
+
+    request_path = work / "requests" / "0096-duplicate_vertex.json"
+    saved_request = request_path.read_bytes()
+    try:
+        request_path.write_bytes((work / "requests" / "0002-empty-components-0.json").read_bytes())
+        exercise("refusal request replaced by valid request",
+                 work / "commands" / "0096-duplicate_vertex.json", lambda: None,
+                 "request identity differs")
+    finally:
+        request_path.write_bytes(saved_request)
+
+    missing = work / "commands" / "0096-duplicate_vertex.json"
+    saved_case = missing.read_bytes()
+    try:
+        missing.unlink()
+        archive, manifest = storage / "tampered.tar.gz", storage / "tampered.json"
+        package(work, archive, manifest)
+        if evidence_dir is not None:
+            shutil.copyfile(archive, evidence_dir / "omitted-required-case.tar.gz")
+            shutil.copyfile(manifest, evidence_dir / "omitted-required-case.manifest.json")
+        with tempfile.TemporaryDirectory(dir=storage) as extracted:
+            target = Path(extracted)
+            unpack(archive, manifest, target)
+            try:
+                validate(target)
+            except ValueError as error:
+                assert "case inventory" in str(error), str(error)
+                print(f"rehashed omitted required case: refused ({error})")
+            else:
+                raise AssertionError("accepted rehashed omitted required case")
+    finally:
+        missing.write_bytes(saved_case)
+
+    def alter_selected_receipt(case):
+        changed = False
+        lines = case["stderr"].splitlines()
+        for index, line in enumerate(lines):
+            if not line.startswith("{"):
+                continue
+            event = json.loads(line)
+            if event.get("event") == "selected":
+                event["pin"]["sequence"] += 1
+                lines[index] = raw(event).decode()
+                changed = True
+                break
+        assert changed, "selected receipt mutation fixture missing"
+        case["stderr"] = "\n".join(lines) + "\n"
+
+    exercise("selected receipt sequence forged",
+             *mutate_case("0002-empty-components-0", alter_selected_receipt),
+             "genesis pin receipt missing or altered")
+    exercise("restart process identity forged",
+             *mutate_case("0214-restart-reachability_bfs_v1",
+                          lambda c: c.update(pid=read(work / "commands" /
+                              "0216-restart-reachability_bfs_v1-resume.json")["pid"])),
+             "restart sequence reused a process")
+
+    def alter_round_sequence(case):
+        lines = case["stderr"].splitlines()
+        for index, line in enumerate(lines):
+            if not line.startswith("{"):
+                continue
+            event = json.loads(line)
+            if event.get("event") == "round":
+                event["stats"]["round"] += 1
+                lines[index] = raw(event).decode()
+                case["stderr"] = "\n".join(lines) + "\n"
+                return
+        raise AssertionError("round trace mutation fixture missing")
+
+    exercise("round sequence forged",
+             *mutate_case("0035-mixed-bfs-0", alter_round_sequence),
+             "round trace differs")
+
+    performance_path = work / "performance.json"
+    def alter_standard_deviation():
+        recorded = read(performance_path)
+        recorded["sparse"]["stats"]["indexed_compute_ns"]["stdev"] += 1.0
+        performance_path.write_bytes(raw(recorded))
+
+    exercise("material standard deviation forgery", performance_path,
+             alter_standard_deviation, "standard deviation differs materially")
 
 
 def main():
@@ -472,6 +603,8 @@ def main():
     parser.add_argument("--repo", type=Path)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--tamper", action="store_true")
+    parser.add_argument("--evidence-dir", type=Path,
+                        help="retain the rehashed archives created by --tamper")
     args = parser.parse_args()
     if args.pack:
         package(args.pack, args.archive, args.manifest)
@@ -483,7 +616,9 @@ def main():
         unpack(args.archive, args.manifest, work)
         print(json.dumps(dict(validate(work, args.repo, args.binary)), sort_keys=True))
         if args.tamper:
-            tamper(work, storage)
+            if args.evidence_dir is not None:
+                args.evidence_dir.mkdir(parents=True, exist_ok=True)
+            tamper(work, storage, args.evidence_dir)
 
 
 if __name__ == "__main__":

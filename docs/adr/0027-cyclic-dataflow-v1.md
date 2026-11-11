@@ -58,3 +58,19 @@ queue allocations. Filesystem block allocation, Arrow/Parquet internals,
 allocator overhead, cache, RSS and time blocked in filesystem syscalls
 are outside those measures. The frozen bounds and comparison criteria
 are in `scripts/phase20/criteria.json`.
+
+## Independent review reconciliation — 2026-11-11
+
+The accepted physical input is a **closed admitted template** for exactly the
+two named algorithms above. `BoundCycle` preserves the validated algorithm and
+delay selection; the executor has specialized expansion/reduction branches.
+The node and arc descriptors are not a user-composable operator dispatch API,
+and the evidence does not establish arbitrary cyclic regions, nested loops,
+multiple SCCs, distributed progress, or general iterative ML. The shared
+feedback ledger and delayed-frontier execution are reusable implementation
+mechanisms inside this closed route, but their composability is unproved.
+
+This limitation narrows the Phase 20 qualification and operator-facing claim;
+it does not widen Phase 20 into a general cyclic runtime. Any general typed
+operator-dispatch boundary requires a separately authorized design and new
+source-bound proof. No Phase 21 work is authorized by this clarification.

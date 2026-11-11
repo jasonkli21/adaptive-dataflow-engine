@@ -1,0 +1,10 @@
+{
+  "attempt": "current-source Phase 20 campaign using the available PyArrow 24 environment",
+  "command": "PYTHONPATH=/tmp/ade20-python /Users/jasonkli/projects/axiom-pipeline-interview-main/.venv/bin/python -B scripts/phase20/campaign.py target/release/ade-iterate /private/tmp/ade20-remediation-campaign",
+  "exit": 1,
+  "failure_stage": "Campaign.__init__: generated fixture lock did not equal frozen scripts/phase20/fixtures.lock.json",
+  "native_cases_started": false,
+  "binary_sha256": "ae2de07d49ca896df7dd58ec559cd532d0a86f0fee49ca3c24e956d94c25fad2",
+  "frozen_fixture_lock_sha256": "cc72307084dc3032555d4e3b96745114a07b326e65471cbf654d5aaba998ce04",
+  "environment": "macOS 27.0.1 arm64, Python 3.10.20, PyArrow 24.0.0; pinned PyArrow 21 wheel unavailable because network access is blocked"
+}

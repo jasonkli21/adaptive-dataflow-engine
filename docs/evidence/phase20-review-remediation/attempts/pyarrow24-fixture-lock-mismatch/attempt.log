@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase20/campaign.py", line 593, in <module>
+    main()
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase20/campaign.py", line 566, in main
+    driver = Campaign(binary, work)
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase20/campaign.py", line 97, in __init__
+    assert self.lock == json.loads((HERE / "fixtures.lock.json").read_text())
+AssertionError

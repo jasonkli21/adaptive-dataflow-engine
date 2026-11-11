@@ -393,3 +393,16 @@ operator-owned lineage on an honest filesystem. Process-kill and real
 temporary-filesystem ENOSPC evidence establish local behavior. Production
 HA, disk-loss recovery, distributed feedback and arbitrary power-loss
 behavior remain outside this contract.
+
+## Phase20 independent review remediation — 2026-11-11
+
+The independent review found F20-01/F20-02 verifier defects and F20-03 scope
+overstatement. The historical Phase20 implementation report and original
+acceptance archive remain unchanged. Current status is
+`PENDING_INDEPENDENT_REACCEPTANCE` under
+`docs/reports/phase-20-review-remediation-2026-11-11.md`; its former all-PASS
+matrix is historical, not current-source acceptance. The current path is a
+closed, specialized two-algorithm template, not a general composable cyclic
+operator API. Preserve the original timing guards and criteria. No Phase21,
+general cyclic runtime, nested loops, distributed progress or general
+iterative ML authorization is inferred.

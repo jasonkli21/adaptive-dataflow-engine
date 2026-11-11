@@ -1,5 +1,13 @@
 # Finite cyclic graph jobs
 
+> **Qualification:** The Phase 20 API currently admits one closed
+> Expand → Reduce → Delay template for directed BFS and weak components.
+> Its executor dispatch is specialized by algorithm. The plan descriptors do
+> not expose user-composable operators or establish arbitrary/nested cycles,
+> distributed progress, or general iterative ML. Independent reacceptance of
+> the archived evidence is pending; see the
+> [review remediation report](reports/phase-20-review-remediation-2026-11-11.md).
+
 Enable the command explicitly from the repository root.
 
 ```sh

@@ -1,0 +1,7 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ade-bench` (bin "ade-bench") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.59s

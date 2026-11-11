@@ -1,0 +1,3097 @@
+{
+  "version": 1,
+  "source_archive_sha256": "534703e4c37d6c61a86e93c8028a5b56141d5c8214ca0330ba2d9699b46f8441",
+  "cases": {
+    "0001-empty-components-0-explain": {
+      "operation": "explain",
+      "request_sha256": "fb357af19412d2132e4f409bcdc502543494a83ba564b177a42088af40cbde3d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1821dab693b0a11a762fd9956c5e076bc333d6a60a41bb7f09f86fe5f2b73400"
+    },
+    "0002-empty-components-0": {
+      "operation": "run",
+      "request_sha256": "fb357af19412d2132e4f409bcdc502543494a83ba564b177a42088af40cbde3d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1821dab693b0a11a762fd9956c5e076bc333d6a60a41bb7f09f86fe5f2b73400"
+    },
+    "0003-empty-components-0-terminal": {
+      "operation": "read",
+      "request_sha256": "4e61fb23227ba37a0a45339d2f07a8a92c23399992e2e5881810cca42e52fac9",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e76c1d535bc1519fa3866bc3c8aa1bab7ac1ebc5d11c8b6b0791d52a9773da9e"
+    },
+    "0004-empty-components-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "4e61fb23227ba37a0a45339d2f07a8a92c23399992e2e5881810cca42e52fac9",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e76c1d535bc1519fa3866bc3c8aa1bab7ac1ebc5d11c8b6b0791d52a9773da9e"
+    },
+    "0005-empty-components-0-exact-bounds": {
+      "operation": "read",
+      "request_sha256": "ad7fbfacbf02022cb4f75796ae59003012475c629c1b7a69476bf67340dfd068",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "f1bd9c9a5164ccf6edcbc0312f9e22d02e367010c0369a7e969428b445a0e834"
+    },
+    "0006-empty-components-0-below-source_bytes": {
+      "operation": "read",
+      "request_sha256": "29bd17c7ac5e76227f9a81550d0b0103fe38178bf749df8e3e1440de7f209678",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: source bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "5a73ed39da6948a8838756a0aff85d48147c326c55c724b0011ec327005e5c46"
+    },
+    "0007-empty-components-0-below-state_bytes": {
+      "operation": "read",
+      "request_sha256": "ba169d408642779817ca3010278b30269b24544d471e669d173d28eaaabd5940",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: managed state bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "9498a43381d80d8d4bd08233e71c6fdadd797b473bf66f35e9353152631a691c"
+    },
+    "0008-empty-components-0-below-disk_bytes": {
+      "operation": "read",
+      "request_sha256": "3c3be08b2f5813c7a79a77f94accbd832e5ee719f0348e7e38f2d19c27303d98",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "2baa6b376d352d02d0b24639802bb9bd337af7d180ed6d05828c915924442935"
+    },
+    "0009-empty-components-0-below-output_bytes": {
+      "operation": "read",
+      "request_sha256": "d951fbf10372d80e6ef7b2ed71f4a74340951ca654c26dbaeb80d5e9307e9434",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "f654bff36a46f62bacc15ca115fd39cfeec5e6b3f8158623aa11e381fd8b66fd"
+    },
+    "0010-empty-components-0-exact-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "804369989e8889011d835dca3fdea89065d83db2437f09f615525323bba6a7ca",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a22afc3df4d4ab93b8d0857f7f2497ecf277805f968dc9dacb997822b430911e"
+    },
+    "0011-empty-components-0-short-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "bb28310f327d363358e5d6a754aa532498b9138f551b461bf2f3223993bdea35",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "fadecb148aeaff4ca75400b21d1800cbd06fc593c0f82bb134ba6993407d379c"
+    },
+    "0012-isolated-bfs-3-explain": {
+      "operation": "explain",
+      "request_sha256": "15bdb71791b7fe50ab9a631de9ae66fbf4e7af8eb4174c25aaec72d96cd19fb2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3a8de7fe9cdf89412068e470f568c89e8e1fb8b0b5b5d9c057fe805313f2b59d"
+    },
+    "0013-isolated-bfs-3": {
+      "operation": "run",
+      "request_sha256": "15bdb71791b7fe50ab9a631de9ae66fbf4e7af8eb4174c25aaec72d96cd19fb2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3a8de7fe9cdf89412068e470f568c89e8e1fb8b0b5b5d9c057fe805313f2b59d"
+    },
+    "0014-isolated-bfs-3-terminal": {
+      "operation": "read",
+      "request_sha256": "4f42036da7a6d7b80672714c886d326fa98f838d419014ea7caa60533b0faf50",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "4fd500bd0a4b3aac270d0ad7b3bb7571ddbcead9fa4d1610ee4636142386840e"
+    },
+    "0015-isolated-bfs-3-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "4f42036da7a6d7b80672714c886d326fa98f838d419014ea7caa60533b0faf50",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "4fd500bd0a4b3aac270d0ad7b3bb7571ddbcead9fa4d1610ee4636142386840e"
+    },
+    "0016-isolated-bfs-3-exact-bounds": {
+      "operation": "read",
+      "request_sha256": "a04d4a1760994e714fe39b6eef4c1a451dce4323f58e6c1bce7bf3bd804b1e76",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "81d6a521f4fc71a1ebbd8db79c3b3f268d5510bc199c111a46631583be9117f0"
+    },
+    "0017-isolated-bfs-3-below-source_bytes": {
+      "operation": "read",
+      "request_sha256": "311e52c3223d2d44834a2e1ad1b6a1f1705943dd1d1918f3eb74758eabfd3dc5",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: source bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "95b2f0cf50ef19401ba338b31ee97eaa6b84416e11afc489769900b98114b1b1"
+    },
+    "0018-isolated-bfs-3-below-state_bytes": {
+      "operation": "read",
+      "request_sha256": "08aae55fbe40949df7f32f91ea64329fc4755e93e94bbb3aea9ad0a905a3c802",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: managed state bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "559b8aa23edcb3485036d00afd4db84875ea4e9650500e3fdf536a3c8e05999f"
+    },
+    "0019-isolated-bfs-3-below-disk_bytes": {
+      "operation": "read",
+      "request_sha256": "1c4f08e3144bf60c2e66fe13bf3ecde5a3d8aed5106418cc7f1fb2616ebbe46e",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "f0562676d3faf632bdb9e338d4eecf172bd9577bbd604721da8c202b7ace6a70"
+    },
+    "0020-isolated-bfs-3-below-output_bytes": {
+      "operation": "read",
+      "request_sha256": "9a9534967ec408ac265835cd5720c396655e24143256b29aedb8780bcf7e7d45",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c8ba1b99d03056977643860bf6f7eb64fee00ae0713de8554cec05a0d7b3ad7f"
+    },
+    "0021-isolated-bfs-3-exact-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "95efef00c7808fbddc70455fe43af1b4ce1c028ad7347ea86a7dea67c357dbc2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "24316a7b62bb07b746eae3e6d992486e38257cb5e67a869b658024b9f50eda29"
+    },
+    "0022-isolated-bfs-3-short-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "ea1bdb1e61198d9302b3c17758ac567af8d6f795251b463282203ee0486f35f8",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "91c644392dfcc86814cbe4c6f4d9269e1303cc49123412b25f46760b89ea6cf1"
+    },
+    "0023-isolated-components-0-explain": {
+      "operation": "explain",
+      "request_sha256": "1bd4a0b8b8d008e56c32b422c58eb4eec92f6fb73925f1f439b86a34c283b2d0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "262e45090fe0e74cece494ed48cbb592ceb863de0513089e464d6f8cc21e22ad"
+    },
+    "0024-isolated-components-0": {
+      "operation": "run",
+      "request_sha256": "1bd4a0b8b8d008e56c32b422c58eb4eec92f6fb73925f1f439b86a34c283b2d0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "262e45090fe0e74cece494ed48cbb592ceb863de0513089e464d6f8cc21e22ad"
+    },
+    "0025-isolated-components-0-terminal": {
+      "operation": "read",
+      "request_sha256": "23b533af3f1a959ef67c0dc8fc6523751d51352321ca0a55551cde44bcb79b62",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c3f71ee8d8f936358a6cb4122bdd09c19e6cfed69ed8dddb809fcef2336ab5ac"
+    },
+    "0026-isolated-components-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "23b533af3f1a959ef67c0dc8fc6523751d51352321ca0a55551cde44bcb79b62",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c3f71ee8d8f936358a6cb4122bdd09c19e6cfed69ed8dddb809fcef2336ab5ac"
+    },
+    "0027-isolated-components-0-exact-bounds": {
+      "operation": "read",
+      "request_sha256": "2cc969e7ca3e069645b06830f68e25740aad18d329b0d28c5fb3505a914e332f",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3e99c51fc7718b475f100221242aeb3e3a0f8e75cb0097d67411477a54aa7a0d"
+    },
+    "0028-isolated-components-0-below-source_bytes": {
+      "operation": "read",
+      "request_sha256": "245980d4af778e7aab8b7ad527675dbfa8314d31dc84e87aa52d795b627944f8",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: source bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "eeb0912348f920787e00f052af9444fb3608944241e8aa61a5d7ef48dd0da105"
+    },
+    "0029-isolated-components-0-below-state_bytes": {
+      "operation": "read",
+      "request_sha256": "fd9d2c145c49fa2353364c38e6c385aa2544b136cd1bf59323b44819ad1dfe37",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: managed state bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "0149e5d9efbd68a08f65c65f73c7f95bf84ea7db90b4f87e3d9cd54a35828ec5"
+    },
+    "0030-isolated-components-0-below-disk_bytes": {
+      "operation": "read",
+      "request_sha256": "90bd7d6c66271a01f9c209f9dcd11981735c44077724c2a587c43233527c8f9a",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "3ff6a404947ccff7badf32b00a17d2e93bb553c6c34a869f3a12525557ef6bcf"
+    },
+    "0031-isolated-components-0-below-output_bytes": {
+      "operation": "read",
+      "request_sha256": "e9f593148ced1bafe496443dc9d665d62d4dd84f45f2dc15ab285ca51684269f",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "6dbce6f34e49750a5fd5ea2c83bc0f9b8e2137a7f42a89aee8e8583d3dcebff0"
+    },
+    "0032-isolated-components-0-exact-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "19cda980f9d9984760d01f2a43f2d50f72c80648969a8746818e3e3721a7701b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "896f1dc5e0c404e9a223ba9a0fc53b5516de9c4cd556dc719ce60cc42b89f112"
+    },
+    "0033-isolated-components-0-short-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "27a9f1707601f97846f90764810b270126a21693bd5d48d9c4b4ab99f1fe5a4a",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "30a891bb6a12da6673d03a085cb3ea98c4e0eb3cf65ac1a6c8198719966cc945"
+    },
+    "0034-mixed-bfs-0-explain": {
+      "operation": "explain",
+      "request_sha256": "7af900d922f6271cb1be1209aa07f3f1e36630a296798e64d81e95bc0b2a2978",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "5fc384825b71800764f45b0ea51de65ef8c959357675601134b963c2139cc388"
+    },
+    "0035-mixed-bfs-0": {
+      "operation": "run",
+      "request_sha256": "7af900d922f6271cb1be1209aa07f3f1e36630a296798e64d81e95bc0b2a2978",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "5fc384825b71800764f45b0ea51de65ef8c959357675601134b963c2139cc388"
+    },
+    "0036-mixed-bfs-0-terminal": {
+      "operation": "read",
+      "request_sha256": "dbd140926e8150be8bc586c4c4bf90f28ba6f2a77c7be19356b6a87f4f55da18",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "455ad29e328197e8c08849b13ed81a4b5838fde0f18530f69831ffc2482d5aa1"
+    },
+    "0037-mixed-bfs-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "dbd140926e8150be8bc586c4c4bf90f28ba6f2a77c7be19356b6a87f4f55da18",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "455ad29e328197e8c08849b13ed81a4b5838fde0f18530f69831ffc2482d5aa1"
+    },
+    "0038-mixed-bfs-3-explain": {
+      "operation": "explain",
+      "request_sha256": "c8c580075b7011ab5234f364550f181cbda4a7b2d8b35736f5d21103217c0c9a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "150ec20e0960ab9039caecfec5415cff61e2eceb3beb1974e27ff30850d1899c"
+    },
+    "0039-mixed-bfs-3": {
+      "operation": "run",
+      "request_sha256": "c8c580075b7011ab5234f364550f181cbda4a7b2d8b35736f5d21103217c0c9a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "150ec20e0960ab9039caecfec5415cff61e2eceb3beb1974e27ff30850d1899c"
+    },
+    "0040-mixed-bfs-3-terminal": {
+      "operation": "read",
+      "request_sha256": "2e136d70db0f2467bfc0225f050d68bd9916c8933a857171f28e9dba29732929",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8dc28b3e8995c8d9ce74dff5319e7b5140be810a8f837c47cc0158e1b7326566"
+    },
+    "0041-mixed-bfs-3-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "2e136d70db0f2467bfc0225f050d68bd9916c8933a857171f28e9dba29732929",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8dc28b3e8995c8d9ce74dff5319e7b5140be810a8f837c47cc0158e1b7326566"
+    },
+    "0042-mixed-bfs-9-explain": {
+      "operation": "explain",
+      "request_sha256": "6870a1a5cb63694161e234a9fe1a062a984c3742ab77ffbf73af8bb0c749a78a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "09aa4e6958d7f2c7c7bb38fb3db748f7d6b678377babe1e28a9d2f23430242f3"
+    },
+    "0043-mixed-bfs-9": {
+      "operation": "run",
+      "request_sha256": "6870a1a5cb63694161e234a9fe1a062a984c3742ab77ffbf73af8bb0c749a78a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "09aa4e6958d7f2c7c7bb38fb3db748f7d6b678377babe1e28a9d2f23430242f3"
+    },
+    "0044-mixed-bfs-9-terminal": {
+      "operation": "read",
+      "request_sha256": "5ff934c53de1c1af4faf2e8efb2d385c10f45de08b0db43ebfdb0e111797b5db",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0957c6632b98624bc4058a812a90e2c37e7ae5f25eae70163671c601cf8d3618"
+    },
+    "0045-mixed-bfs-9-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "5ff934c53de1c1af4faf2e8efb2d385c10f45de08b0db43ebfdb0e111797b5db",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0957c6632b98624bc4058a812a90e2c37e7ae5f25eae70163671c601cf8d3618"
+    },
+    "0046-mixed-components-0-explain": {
+      "operation": "explain",
+      "request_sha256": "b5ad46409d78ffc96f62ae9c6fac5d6903aed1ce96f0169fa673afea412e43b2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "4e5657fd2133d509888a38d46bfd0b01a1ae914b07309ecf3d5944b5f8b0abec"
+    },
+    "0047-mixed-components-0": {
+      "operation": "run",
+      "request_sha256": "b5ad46409d78ffc96f62ae9c6fac5d6903aed1ce96f0169fa673afea412e43b2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "4e5657fd2133d509888a38d46bfd0b01a1ae914b07309ecf3d5944b5f8b0abec"
+    },
+    "0048-mixed-components-0-terminal": {
+      "operation": "read",
+      "request_sha256": "f604919753d884c94c3cefe49387bdb4061b6932c8755b56058198b75e70380b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0b1a4ffd8bf47862f29bc9c17737c10ed989acb498bb269de8c0a6b72336e154"
+    },
+    "0049-mixed-components-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "f604919753d884c94c3cefe49387bdb4061b6932c8755b56058198b75e70380b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0b1a4ffd8bf47862f29bc9c17737c10ed989acb498bb269de8c0a6b72336e154"
+    },
+    "0050-chain-bfs-0-explain": {
+      "operation": "explain",
+      "request_sha256": "f7cf93d03a69b1e6e2beed4a18914d71401fe94a065c6e1e7212e726f7bfed02",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "693491062e150c229f21ec5cc360043f403486e19c1963917d8fa27a8ae6772c"
+    },
+    "0051-chain-bfs-0": {
+      "operation": "run",
+      "request_sha256": "f7cf93d03a69b1e6e2beed4a18914d71401fe94a065c6e1e7212e726f7bfed02",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "693491062e150c229f21ec5cc360043f403486e19c1963917d8fa27a8ae6772c"
+    },
+    "0052-chain-bfs-0-terminal": {
+      "operation": "read",
+      "request_sha256": "0f163a337c68632c2d7870f30c51e83de9781c42bb19892245fba89baf0b10ed",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9dfb73cc6357e82ba5060ce9e698e260781eb38c7e5339ff793f9e71f6864041"
+    },
+    "0053-chain-bfs-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "0f163a337c68632c2d7870f30c51e83de9781c42bb19892245fba89baf0b10ed",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9dfb73cc6357e82ba5060ce9e698e260781eb38c7e5339ff793f9e71f6864041"
+    },
+    "0054-dense-components-0-explain": {
+      "operation": "explain",
+      "request_sha256": "fb4e479d32f16a08b51d2930919528e4cec387e11d6b7003c934e8a9c94308b3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3377649ca7a5b69c5236adf6715bfb5c79d186af2a76e30eec00fba1856239f2"
+    },
+    "0055-dense-components-0": {
+      "operation": "run",
+      "request_sha256": "fb4e479d32f16a08b51d2930919528e4cec387e11d6b7003c934e8a9c94308b3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3377649ca7a5b69c5236adf6715bfb5c79d186af2a76e30eec00fba1856239f2"
+    },
+    "0056-dense-components-0-terminal": {
+      "operation": "read",
+      "request_sha256": "a400e9c1645c25aa1ebe4911e1c0f3bf219dbb38bab84d717f54616cf442c7bc",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b2be05ef6e46a3d877b89001bb2aefc9013ca847d1b3aacc72c1e10f79111a16"
+    },
+    "0057-dense-components-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "a400e9c1645c25aa1ebe4911e1c0f3bf219dbb38bab84d717f54616cf442c7bc",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b2be05ef6e46a3d877b89001bb2aefc9013ca847d1b3aacc72c1e10f79111a16"
+    },
+    "0058-max-bfs-0-explain": {
+      "operation": "explain",
+      "request_sha256": "a21fa45c87d8e8870c4b91f870e1acfc73b6176119e4a454606130571ae6ee96",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "28b02aa27c158bbade0a43342ad31920b719a84c9199ad33bab0aeb8d4fe0b1d"
+    },
+    "0059-max-bfs-0": {
+      "operation": "run",
+      "request_sha256": "a21fa45c87d8e8870c4b91f870e1acfc73b6176119e4a454606130571ae6ee96",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "28b02aa27c158bbade0a43342ad31920b719a84c9199ad33bab0aeb8d4fe0b1d"
+    },
+    "0060-max-bfs-0-terminal": {
+      "operation": "read",
+      "request_sha256": "f89c0786c129642f5f32b34ecb5eb9234e7a14748910025a79ce439432e603f1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bec2af91ec4a95404b460aae478db0cadf4c6b4e62de9564d486389b50f50551"
+    },
+    "0061-max-bfs-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "f89c0786c129642f5f32b34ecb5eb9234e7a14748910025a79ce439432e603f1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bec2af91ec4a95404b460aae478db0cadf4c6b4e62de9564d486389b50f50551"
+    },
+    "0062-max-bfs-0-exact-bounds": {
+      "operation": "read",
+      "request_sha256": "70e6f9411ef1808ad34c471ab8cf4cfa577e5eaa9f7d574366a54ecb59f0775d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8fe9e438b87c6fd91692296811216db3faa93b30c7b5f56dd03faddd8924af99"
+    },
+    "0063-max-bfs-0-below-source_bytes": {
+      "operation": "read",
+      "request_sha256": "5ccb75ee2c185a6599a40bac5db457262b0b4d74158011ceee302a51dbf63a3d",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: source bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "03485d4c34ea6ec89ac0c9c6bdbe363ac1aa4ecb197d4d25ae2b5cabdc1a599b"
+    },
+    "0064-max-bfs-0-below-state_bytes": {
+      "operation": "read",
+      "request_sha256": "cf5cab19fd5930428b41604fb34d216b94e39d1954852d3b22c1e3dc102ece2a",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: managed state bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "9be15d6e8539a62c4b2abfba7fa4bc879d64a5b3df66303b64b889963e83c469"
+    },
+    "0065-max-bfs-0-below-disk_bytes": {
+      "operation": "read",
+      "request_sha256": "aa89b22e24c1caecfe37f93022f778f8a4e89cfc765c2d4a97a39addccb449ad",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "815d0fa8b50f9f0a9864fc1b7f3fb4677fc52d288f03d2d19ffdf92c32e41f67"
+    },
+    "0066-max-bfs-0-below-output_bytes": {
+      "operation": "read",
+      "request_sha256": "7d00a6599a3db461db5b21d66e34d3e69acf2e329bf7cca2fd6f1e711e2c58d2",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "81ab1b363fe60100095ba2b9213392db1b24c6f8c91ff4b09cb06dd94b7e84dd"
+    },
+    "0067-max-bfs-0-exact-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "a9db6b91bad8b653da48e4face37e3b5f6099abfc92036de35c48c0cb6addfe8",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "409d84e0bf0926a3505fc6463c34b357e9403affec8d74f04b13a6b29337153f"
+    },
+    "0068-max-bfs-0-short-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "fbafdb07d4f55cb3af571ccd597b3bbb7b64a6a4573cea84b2ea1a267e4777fe",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4b9f98032fe08e9a1bfa2c3f2dccb418911fefc3aea72ae8c0a11c5ccc59cca7"
+    },
+    "0069-max-components-0-explain": {
+      "operation": "explain",
+      "request_sha256": "cab483dc04f4e8f316190fe1c47a81ecebd08980e737599d86f17bd12c1387a2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "f15e5542e82b979cea8b8d915b1f1cafd249c65c499ec9116d0ff758315cc036"
+    },
+    "0070-max-components-0": {
+      "operation": "run",
+      "request_sha256": "cab483dc04f4e8f316190fe1c47a81ecebd08980e737599d86f17bd12c1387a2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "f15e5542e82b979cea8b8d915b1f1cafd249c65c499ec9116d0ff758315cc036"
+    },
+    "0071-max-components-0-terminal": {
+      "operation": "read",
+      "request_sha256": "802ae431672d871a9dd69db370fbc50712927de4370b91d0e1767980fee80bb2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d46f35d010d5009f9f60df798d422e1163b014454e27c05b38cbdfb84025fd16"
+    },
+    "0072-max-components-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "802ae431672d871a9dd69db370fbc50712927de4370b91d0e1767980fee80bb2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d46f35d010d5009f9f60df798d422e1163b014454e27c05b38cbdfb84025fd16"
+    },
+    "0073-max-components-0-exact-bounds": {
+      "operation": "read",
+      "request_sha256": "e6e8cc4137bd966d5b2a55db76b1c768acba2f67d98d38e2df840122d319091c",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "84294a6b204e2d782b792b1549a12707d005542424401f46feececa252bf1aab"
+    },
+    "0074-max-components-0-below-source_bytes": {
+      "operation": "read",
+      "request_sha256": "bf2a22b4da1e9895b7b60c43c815bba2d80dbf2dbf9142fec6b638931562949a",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: source bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e67d296aa47bf9f74f0485e21d38157437d5f80f4252a92f3af74dd273cf410f"
+    },
+    "0075-max-components-0-below-state_bytes": {
+      "operation": "read",
+      "request_sha256": "81bca236772db32d23fea1e21704307664cb06155c1ef96cd281ff37422ac62e",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: managed state bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e5c39bb7ca514387f3d8f3bfb21a3dc2e83f771c4075ebb89b78bdc3ec939a69"
+    },
+    "0076-max-components-0-below-disk_bytes": {
+      "operation": "read",
+      "request_sha256": "0d2fb65638532b8f0e1457ed55b37d560a53b68d3af22c84a46663620397f654",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "763984b7b389b87d700baec1b4374d5a143e1b18904533fc325ef71079c161a2"
+    },
+    "0077-max-components-0-below-output_bytes": {
+      "operation": "read",
+      "request_sha256": "d882f15306c51847ac64d5f091a6f94988ead3034e481d4edc4d30eb7c24a6cf",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "d5d0b81150a2b5b082903a1320697866b9ff1cd67034b5bb43241fbb5cc2c13f"
+    },
+    "0078-max-components-0-exact-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "5f65461bc79316a6da63da8d97a646005a6c40d7e7da28a7492b886d0fbf7df1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1338ca0a731f882a06d13bd44975e3ae0e5a44dbee8d2d762dec43c801dfddba"
+    },
+    "0079-max-components-0-short-verify-footer": {
+      "operation": "verify",
+      "request_sha256": "6e7a6c7e146962dc22adcc6f86cc5b5e9db7ceb91f3bb1f8cfcd1d4be4450268",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "dd7c7ce071b778de469da97fdcc92c5a3c42d3bb0247ca77911ac79d765ad95b"
+    },
+    "0080-max_chain-bfs-0-explain": {
+      "operation": "explain",
+      "request_sha256": "242249c2f03658bc4d044d3513fc7b3640ddb9db19f173dd719c67020a43324e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "45fa967caee8e2041a69464fb46f18de412d0001f0992cf2cc92489fff396aa5"
+    },
+    "0081-max_chain-bfs-0": {
+      "operation": "run",
+      "request_sha256": "242249c2f03658bc4d044d3513fc7b3640ddb9db19f173dd719c67020a43324e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "45fa967caee8e2041a69464fb46f18de412d0001f0992cf2cc92489fff396aa5"
+    },
+    "0082-max_chain-bfs-0-terminal": {
+      "operation": "read",
+      "request_sha256": "d1a35dbb69be6905d0cc57e06b0e522c67f4a6060492a745c859eb9d92a414e8",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d1da20505bb5040da7bff3d679a7e2378978ba051e4330d967ac6786a67957e2"
+    },
+    "0083-max_chain-bfs-0-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "d1a35dbb69be6905d0cc57e06b0e522c67f4a6060492a745c859eb9d92a414e8",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d1da20505bb5040da7bff3d679a7e2378978ba051e4330d967ac6786a67957e2"
+    },
+    "0084-canonical-reachability_bfs_v1": {
+      "operation": "run",
+      "request_sha256": "69099deee0ce929d45cec2e7c418e570d12cec0315861f46c74aae5cd5085644",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e5b902193890a2805c6270e5fe5b69ce3cb78837e158fbbb0568a3b9fecf619a"
+    },
+    "0085-perturbed-reachability_bfs_v1": {
+      "operation": "run",
+      "request_sha256": "8dd80b7976adfa383c2836e110b1aeb4d6e49cf7779d878207c24ec4b00358a1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b7e83b2c8e1b7ced97e4e9c5ae8554530d3e6a8e0182386cc499a73ef8d84743"
+    },
+    "0086-canonical-terminal-reachability_bfs_v1": {
+      "operation": "read",
+      "request_sha256": "9c8898dd542c4593b232b955765147ee9129e6b450a065e91ab7d935ceeae5b6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1a765a9b53c535d941936f22102602bff9f00b86588ccc5b3df5e4c2c746d78f"
+    },
+    "0087-canonical-terminal-reachability_bfs_v1-verify": {
+      "operation": "verify",
+      "request_sha256": "9c8898dd542c4593b232b955765147ee9129e6b450a065e91ab7d935ceeae5b6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1a765a9b53c535d941936f22102602bff9f00b86588ccc5b3df5e4c2c746d78f"
+    },
+    "0088-perturbed-terminal-reachability_bfs_v1": {
+      "operation": "read",
+      "request_sha256": "74e044015374b3af8fa941eeeb80d895298932172097ddd02a71871fa04ad51b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2a649ae193e9580b6c3183296b086251900bcb111381fe3469f86cca93bcbb2a"
+    },
+    "0089-perturbed-terminal-reachability_bfs_v1-verify": {
+      "operation": "verify",
+      "request_sha256": "74e044015374b3af8fa941eeeb80d895298932172097ddd02a71871fa04ad51b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2a649ae193e9580b6c3183296b086251900bcb111381fe3469f86cca93bcbb2a"
+    },
+    "0090-canonical-weak_components_min_label_v1": {
+      "operation": "run",
+      "request_sha256": "355dae2edf03aa20b18777e44aee02eba3318f699ff638d8302d70eb3656781a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d85eddbdc17f8db2c4405bbbab919a63b0aa4d08980695b84049e67a560930b9"
+    },
+    "0091-perturbed-weak_components_min_label_v1": {
+      "operation": "run",
+      "request_sha256": "b1b87b8b71b74e6a8320d7da9a1e350496177cc3b4a2f7ce2873a2795f6e9e58",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "236f430b0b2e41e74353c2b993a95e284d6b055bb678b36b511ebfdf9f02208b"
+    },
+    "0092-canonical-terminal-weak_components_min_label_v1": {
+      "operation": "read",
+      "request_sha256": "75f523b35f824ef68ac7a1d1077958f7b065406a28097e58af9265e0e17ffc88",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b274d3d7dbf56789ed89cd62a01f585c0fd0cc3cdf27bb0e394623ec727d507"
+    },
+    "0093-canonical-terminal-weak_components_min_label_v1-verify": {
+      "operation": "verify",
+      "request_sha256": "75f523b35f824ef68ac7a1d1077958f7b065406a28097e58af9265e0e17ffc88",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b274d3d7dbf56789ed89cd62a01f585c0fd0cc3cdf27bb0e394623ec727d507"
+    },
+    "0094-perturbed-terminal-weak_components_min_label_v1": {
+      "operation": "read",
+      "request_sha256": "277493f994d250f6a22b7f6f900ec7d07284f588355963baaf89b1e1c78c4163",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "48f00746bc01799bda467d32c518581688d148dc7864cce474441ca4f260d040"
+    },
+    "0095-perturbed-terminal-weak_components_min_label_v1-verify": {
+      "operation": "verify",
+      "request_sha256": "277493f994d250f6a22b7f6f900ec7d07284f588355963baaf89b1e1c78c4163",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "48f00746bc01799bda467d32c518581688d148dc7864cce474441ca4f260d040"
+    },
+    "0096-duplicate_vertex": {
+      "operation": "run",
+      "request_sha256": "1a2546f68461ed551908a5eec88f00e12c6f87211a452135396f15c7174dc3bc",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: duplicate vertex",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c74c72dc6d177ecf36c685c975d67f6485c3f8fcdd6161bdef56b8cf9a1e1291"
+    },
+    "0097-duplicate_edge": {
+      "operation": "run",
+      "request_sha256": "5b0fb0a844f668423add34fb0f9c5c8c6f9d8a9b35cace149cbf7a59f42e8d25",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: duplicate directed edge",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "fe8392e8d78026a775599ddb57fdf04874473d09070f259dbc0e17ebdb023708"
+    },
+    "0098-unknown_endpoint": {
+      "operation": "run",
+      "request_sha256": "cdf9acde543130aed2e4bb5a4ddd3f27f691d01305b6bee842761661fc1e918c",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: unknown destination endpoint",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "b5192e5308dfb75f16da62bc036c035bf3dfee171e06d42aabbee58d1f360410"
+    },
+    "0099-vertices_over_cap": {
+      "operation": "run",
+      "request_sha256": "6ac8361a834e7b4edb74a2e0db44a98178c661d5d35c98afd93f2ff053c8d73a",
+      "exit": 1,
+      "stderr_contains": "logical v1 admission: graph row cap",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "3b63edaf184cceab435e8aaf8dfb63be9ff9cda0de78c0155ae911fcedc6eb12"
+    },
+    "0100-edges_over_cap": {
+      "operation": "run",
+      "request_sha256": "8d8833528642071be1f5f9e6a170fe913c2667ebce069fc5579c22c19cbd9624",
+      "exit": 1,
+      "stderr_contains": "logical v1 admission: graph row cap",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "ef0106e81b392aad4a97be5b80fbe988f408e55eed66bb6cae86eb5cf4abaedf"
+    },
+    "0101-wrong_schema": {
+      "operation": "run",
+      "request_sha256": "1e7d542eee8c35fdd37abf2f81c1c0c6abf1b4d50bb9bb315dce5ecb4644b389",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: graph Parquet schema or declared rows",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "5251b42f3c0dbb3eb3ff18464d6f1febedb2d45174e76fc6c43118d11d1e5877"
+    },
+    "0102-null_schema": {
+      "operation": "run",
+      "request_sha256": "94fd1a773585842f0402c93d614169132ff21e69ac10d172da256dd3f40f71b9",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: graph Parquet schema or declared rows",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8e4584c689ce102b07117a94ee4c32fe50aa1ef62e72e67284836f697cd48855"
+    },
+    "0103-missing_file": {
+      "operation": "run",
+      "request_sha256": "5ed968ec1d04f555a2cc0ca78e696505093927928c0eea1db28a92804b7c768d",
+      "exit": 1,
+      "stderr_contains": "No such file or directory (os error 2)",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "46abf375c02b99d81eb37eb0ce57811ec2dd3163a3258d9c5a47ec248e83dedc"
+    },
+    "0104-forged_hash": {
+      "operation": "run",
+      "request_sha256": "8c92462e77ceb4c620260ff1a80e31571521dfa238c08fabf8d726f233157dab",
+      "exit": 1,
+      "stderr_contains": "refused: graph file bytes or BLAKE3 changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "958be224c76cc7adfca72c6672cca6ac025fffdfbba4bc249229dd2f1cbb18aa"
+    },
+    "0105-mutated_content": {
+      "operation": "run",
+      "request_sha256": "087577440cc0e4d287ae5b8a9f73ed7805bfdc5c1f5c518651b7417c74841e59",
+      "exit": 1,
+      "stderr_contains": "refused: graph file bytes or BLAKE3 changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "fd41ab2456b626c9c0c2449dfea0a23f46703376516cc737bdec3493578574b6"
+    },
+    "0106-missing_seed": {
+      "operation": "run",
+      "request_sha256": "40c150b43a91f95f89de7ee35aa77b305244559f329815347d72dcde58bc2169",
+      "exit": 1,
+      "stderr_contains": "invalid local plan/schema: BFS seed is absent",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "ac399de178fd95c113e510d729e5e3c1c540305e210f58055375cbe0406882af"
+    },
+    "0107-unknown_json": {
+      "operation": "run",
+      "request_sha256": "0efdabf8e100cf86a311e776a518d27cfd00789e3fdf55d744579bb3ddd72dc9",
+      "exit": 1,
+      "stderr_contains": "unknown field `unknown`, expected one of `version`, `plan`, `inventory`, `source_dir`, `root`, `expected`, `limits`, `checkpoint_every`, `mode`, `reverse`, `trace` at line 1 column 775",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "92e6878416cf7e8d85702a594b5b4e00e8c69c75b4a31a85f58709eddbf70201"
+    },
+    "0108-duplicate_json": {
+      "operation": "run",
+      "request_sha256": "73a9433df41f35b98a623da601bba0f437f2bdb7b254b585dca49a4fc5eaa12d",
+      "exit": 1,
+      "stderr_contains": "duplicate field `version` at line 1 column 22",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "6e05b6fcdf94252e4513abc58186321b8685c91e4c96eaf615ac1ea5bf48d0ec"
+    },
+    "0109-forced_mode": {
+      "operation": "run",
+      "request_sha256": "083887f636a28949f895086b97461b47d1f9e2c81701a3cea62c9d2693097f2d",
+      "exit": 1,
+      "stderr_contains": "unknown variant `unbounded`, expected `indexed` or `scan_all` at line 1 column 785",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c6da2dfb2dab43aa1388a85ffd64e0f5e24562a22298560c854024476b1c57c0"
+    },
+    "0110-traversal": {
+      "operation": "run",
+      "request_sha256": "5133efcc7bdd23c6945ad4f0bd65e31bc166395aa9f0a59d4a336b5a0b651a22",
+      "exit": 1,
+      "stderr_contains": "refused: parent path component",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "1bd5200ed14b1726860f4bd19f566b8fd8f43e411cec2d65f7db35ba76a09462"
+    },
+    "0111-zero_delay": {
+      "operation": "run",
+      "request_sha256": "30927b3aa431347f66bc036472f6193f042c1743cf2b32028d87851d188152b1",
+      "exit": 1,
+      "stderr_contains": "physical v1 admission: unsupported cyclic topology, version, delay or port",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "3d24e05f26281277448af72d86dcb84298cc3136ef87c52cbf4167656580455d"
+    },
+    "0112-instant_cycle": {
+      "operation": "run",
+      "request_sha256": "d040f40b9c6b94e3ea9b86c984413cf699c046c308adfe91a5ade03475ef8b73",
+      "exit": 1,
+      "stderr_contains": "physical v1 admission: unsupported cyclic topology, version, delay or port",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "91bce058eb30c9622ba3de36b30bb67f7868bd4394b27791dac4331fcfd51ec1"
+    },
+    "0113-mismatched_port": {
+      "operation": "run",
+      "request_sha256": "8301d555030b833d2ecc2987da1965d88df434c8639c281057af9b69f91b1b9d",
+      "exit": 1,
+      "stderr_contains": "physical v1 admission: unsupported cyclic topology, version, delay or port",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "9c69e074425d4d1743748cc7abcbfd0cf0b118329d991acbafe7edabaf141cf6"
+    },
+    "0114-dangling": {
+      "operation": "run",
+      "request_sha256": "b9189dc8feb53d12e6bd9b2b84e4271d3c8be30553259cc715e78643ae8980ef",
+      "exit": 1,
+      "stderr_contains": "physical v1 admission: unsupported cyclic topology, version, delay or port",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "57bf800bc5763efa9a4f352f52271b5517eda5264b4fcf372d416f35fdb1172c"
+    },
+    "0115-multiple_delays": {
+      "operation": "run",
+      "request_sha256": "e8683a9c6592748210b3193c954a609510814a0d10b52b5506ba5be1e79e96d5",
+      "exit": 1,
+      "stderr_contains": "physical v1 admission: unsupported cyclic topology, version, delay or port",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "05f06afb5cadc6b746dd843a86505c9ca5ed7dbf601c10ce896e449e386c924c"
+    },
+    "0116-nested_loop": {
+      "operation": "run",
+      "request_sha256": "92235f88deb4a066cae855e2d80603798164afd53c4786c7f10def3782397dbc",
+      "exit": 1,
+      "stderr_contains": "trailing characters at line 1 column 135",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "a2a61a39e2a1c3bb9e9666ea8f675d71ce44c839c04b224e9d861cdee69c4bfc"
+    },
+    "0117-above-rounds": {
+      "operation": "run",
+      "request_sha256": "a985ec728333ab83929814026e6264d038f4afedae51d15ba41e0e1ccc750308",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "22d581fb6d68517f1b945627b69ce9b78731a05f607275c1c387a770ab728f75"
+    },
+    "0118-above-source_bytes": {
+      "operation": "run",
+      "request_sha256": "789e8c69f3e352ea28559cdea6cebc98610052f27ed8869540eaba6e6e88238a",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "01ac300e17b5ab36bef7b2ae089b8e266b13a6d17dd0242e27b2d2d039809cc4"
+    },
+    "0119-above-state_bytes": {
+      "operation": "run",
+      "request_sha256": "dc469ea7fd9c3f7ffd11b1158c851c46b6e6aa094a7d5291f584c82fa3a4bd3e",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "53f854779bdae8de882908e9fcebfe6ac724a53ebfa49c06241c63845839b037"
+    },
+    "0120-above-disk_bytes": {
+      "operation": "run",
+      "request_sha256": "10b0db1a18fe153c3979da031e274d2b923438a4655082ba6a71ab0561c88dfa",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "04bf4a848558e1eb77d1c57dcd3cdfbbb9a7ffbf34bd45fcf5f0c8a2096b9e9a"
+    },
+    "0121-above-output_bytes": {
+      "operation": "run",
+      "request_sha256": "8a60de2ce534747804b3d8b2b9c877950b0dbb9542945a47f635084b3808b7cb",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e36d4e6876f2bc961c52c8284ba73b149d51d77616c3ce7717b6b600b9727679"
+    },
+    "0122-above-deadline_ms": {
+      "operation": "run",
+      "request_sha256": "752375277b082dd2390781408415c99f25893079f4612afb1c9d1507ce5fc27b",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "27945d4d749b546704829d0d9ae5e0e7841650e0f5c277e6ec6093609c387941"
+    },
+    "0123-above-batch_rows": {
+      "operation": "run",
+      "request_sha256": "481c873a363a5c83d9bfda620ed5d39f2a45d7e39c308677c72e9719a38774a7",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "d3a700d522b3191d85f0216c9e68c5939bd3f11f27ada775b006a917a99f9dbd"
+    },
+    "0124-above-credits": {
+      "operation": "run",
+      "request_sha256": "a6e3fc25d7f4470c5ed2476d688ab981ad1a9585e69acb962b46b6b0f1d1c1e1",
+      "exit": 1,
+      "stderr_contains": "refused: limits outside cyclic v1 envelope",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c223b749ce75490d356c9f53cc7f31cc8ebed8f1b4bcfcf692f4439eecc13382"
+    },
+    "0125-inode-swap-source_decoded": {
+      "operation": "run",
+      "request_sha256": "6e41c6cbb716d0a45f4897a06e42a7cce29b9b3c1bdcb857fcab73729a3b543b",
+      "exit": 1,
+      "stderr_contains": "refused: graph file identity changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "856e44ca7918d55b1b4133acc89595d6343a14424c9b79118238aab46f0691d2"
+    },
+    "0126-inode-swap-before_round": {
+      "operation": "run",
+      "request_sha256": "79595576761b6bc8e1ab1398b4764f6eed6d87c207b580df7c2687b360b8efda",
+      "exit": 1,
+      "stderr_contains": "refused: graph file identity changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "1eff4270c79c433d4efee3061b46d95eaac15418b067055eaa282643daa9c0d4"
+    },
+    "0127-inode-swap-before_round-old-cut": {
+      "operation": "read",
+      "request_sha256": "cd79d6a54c380d326c62a66098bdfecd5071f0c6283594e45e0adb3c14b0e7a6",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "d730e1501c638e4334545e756e3c102d9a8672f8f72ef0ca7ebeba99fcc091d0"
+    },
+    "0128-inode-swap-before_select": {
+      "operation": "run",
+      "request_sha256": "90259995714e18f50c6941926dc8b6235bc417e404345613e714089ab4662294",
+      "exit": 1,
+      "stderr_contains": "refused: graph file identity changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "7d44f5d893aedbefeccdf18848f16dd2cb39c3c735723396cbf540a914db98cd"
+    },
+    "0129-inode-swap-before_select-old-cut": {
+      "operation": "read",
+      "request_sha256": "fc114836313b1fa8b0f74b319d14406f9b906ed5daea1606a0f61af866a7544f",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "45c8a200357678c77c812b4eb25003ef6c8766fdb2bc74243802de8269ec5b3f"
+    },
+    "0130-source-byte-bound-exact": {
+      "operation": "explain",
+      "request_sha256": "fc7d5ef973ab69561134f843820cbe918611eeff85d393588e71c1f16131f72a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bb57dce8682570dc7487f3aa3bc9e3b3e894b50be933d8cf30df4b6f793018a7"
+    },
+    "0131-source-byte-bound-above": {
+      "operation": "run",
+      "request_sha256": "5fad86f45a597b849a2361e13e5073999bc69f92142eff9cd1854f0b846c11ca",
+      "exit": 1,
+      "stderr_contains": "logical v1 admission: graph source byte cap",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e14c3ed0dee4565ea789b6ff40f7d9c5c77949ae3087a8a726efe27f98d6bce4"
+    },
+    "0132-request-exact": {
+      "operation": "explain",
+      "request_sha256": "ccf6729b66a1a3ebedfdf290882a94d9bd5764cdb91b2c603be4565df8a39c69",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "6e05b6fcdf94252e4513abc58186321b8685c91e4c96eaf615ac1ea5bf48d0ec"
+    },
+    "0133-request-above": {
+      "operation": "run",
+      "request_sha256": "b25ad7907c7ac48e424b1eff80b245af96383fcb08b9743dc37f476cdb3fcb0e",
+      "exit": 1,
+      "stderr_contains": "refused: request byte cap",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "6e05b6fcdf94252e4513abc58186321b8685c91e4c96eaf615ac1ea5bf48d0ec"
+    },
+    "0134-files-per-role-exact": {
+      "operation": "explain",
+      "request_sha256": "40af6ad96faa01a5b6b9af0dba3973ffbe893fb982238964b10eb30302b5fb9b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "6db63c6945aa6ecac5047a46e70ad379223f386dd6fefe7bf3e2cd7568d902af"
+    },
+    "0135-files-per-role-above": {
+      "operation": "run",
+      "request_sha256": "d9f12faf43f52a66e3b297c765a9def39f85a9b99b29ffce16981a999fcf0385",
+      "exit": 1,
+      "stderr_contains": "logical v1 admission: graph files per role",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "28ebeeb0d94d752aa8c9a9d8dbf87d09fc5cd52d7e6a5d53871f97502d281e0f"
+    },
+    "0136-round-limit": {
+      "operation": "run",
+      "request_sha256": "d143d1be7251ce9d2267f6a88817078ad21ca7791ccdb3c3cea3b67a3f4d0010",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "d097356e5a2bd23a4298fcff8d0c9a84bacdc706df84cb2314fac1240e44344c"
+    },
+    "0137-round-limit-not-terminal": {
+      "operation": "read",
+      "request_sha256": "0fc69db4eaaf6ee761f48c55a35cd0dc0803168b9886333b510870322263ee74",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "5d5a5ee36ef38a3d98e1d1ae6fcaded9a61d7035c9e8dbdfd89e0a14a63beb15"
+    },
+    "0138-round-limit-resume": {
+      "operation": "resume",
+      "request_sha256": "0fc69db4eaaf6ee761f48c55a35cd0dc0803168b9886333b510870322263ee74",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "5d5a5ee36ef38a3d98e1d1ae6fcaded9a61d7035c9e8dbdfd89e0a14a63beb15"
+    },
+    "0139-round-limit-terminal": {
+      "operation": "read",
+      "request_sha256": "2b485b78822c6c151254c98dd7ff66977bff3658a08b02c40c96657cc0f9fafb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ee681ed4d5e967802ae84426316dcaf48cde99e83e379a234169aebbf03c7ee0"
+    },
+    "0140-round-limit-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "2b485b78822c6c151254c98dd7ff66977bff3658a08b02c40c96657cc0f9fafb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ee681ed4d5e967802ae84426316dcaf48cde99e83e379a234169aebbf03c7ee0"
+    },
+    "0141-deadline": {
+      "operation": "run",
+      "request_sha256": "bfbc01cc5cc3c99a8cdea6e79ccac75c31f2f065571b7be5ece10b1507ed7d26",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: deadline",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4ed608722bb592eb6b7d80f6666485fe537ced75fab75cace5bffb6bc8674ee9"
+    },
+    "0142-deadline-not-terminal": {
+      "operation": "read",
+      "request_sha256": "e7f8e268a13681aee4bbc50ba1f744760c577b353f3fff1d0fc0ffb0f0359342",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "64bdfec71a06e9669dde381d80f6d8f23ed1616cf8717ba370a58227d4c1e11e"
+    },
+    "0143-deadline-resume": {
+      "operation": "resume",
+      "request_sha256": "e7f8e268a13681aee4bbc50ba1f744760c577b353f3fff1d0fc0ffb0f0359342",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "64bdfec71a06e9669dde381d80f6d8f23ed1616cf8717ba370a58227d4c1e11e"
+    },
+    "0144-deadline-terminal": {
+      "operation": "read",
+      "request_sha256": "b086a0ef4fd913814b1e448bddddbc5eedb294e9bfd2a6236d5069f9a1e451d5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0872ae71fe63f4e73e84e9523635eb0273a0b36daf2b6224c77d9f7301370242"
+    },
+    "0145-deadline-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "b086a0ef4fd913814b1e448bddddbc5eedb294e9bfd2a6236d5069f9a1e451d5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0872ae71fe63f4e73e84e9523635eb0273a0b36daf2b6224c77d9f7301370242"
+    },
+    "0146-cancel": {
+      "operation": "run",
+      "request_sha256": "761f4c04404a70748916e54080d9a2dade4f2d0da08df996d5e63a85f5474be2",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_CANCELLED",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "f3720400755e0d9e8b13d9557d3a6ff0d02a47b34372390b3f85abb6fef48385"
+    },
+    "0147-cancel-not-terminal": {
+      "operation": "read",
+      "request_sha256": "2f7b6aad46b11a3c34f2b92f55b0431432bb135539ec09566851cc38487be648",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "23b2d2dfb4fa04238eb25987af5de338c3d7b7171d6af622cc9ecc7a0b3d6f9c"
+    },
+    "0148-cancel-resume": {
+      "operation": "resume",
+      "request_sha256": "2f7b6aad46b11a3c34f2b92f55b0431432bb135539ec09566851cc38487be648",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "23b2d2dfb4fa04238eb25987af5de338c3d7b7171d6af622cc9ecc7a0b3d6f9c"
+    },
+    "0149-cancel-terminal": {
+      "operation": "read",
+      "request_sha256": "7552d4cf454265ea6529595a1b4f2ecf6506fce9672d00d3cfc1b10c6ac81053",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1aebe45e1946a8a7ae5281df3ebc7bdd2a3f551ad20648b8b08355d2001b152e"
+    },
+    "0150-cancel-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "7552d4cf454265ea6529595a1b4f2ecf6506fce9672d00d3cfc1b10c6ac81053",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1aebe45e1946a8a7ae5281df3ebc7bdd2a3f551ad20648b8b08355d2001b152e"
+    },
+    "0151-short-write": {
+      "operation": "run",
+      "request_sha256": "dda26b5b0be2b06c26f6086e7cdb49aa0f670d73b51921774f4eb51ea54e7407",
+      "exit": 1,
+      "stderr_contains": "injected short write",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "6239db922d539b6be448a140097be4a64a2d6713750c3f94bd36a0f6f061baf2"
+    },
+    "0152-short-write-not-terminal": {
+      "operation": "read",
+      "request_sha256": "4faf897bb6b1d7c6b23e8e50df6b49bdaf920ef1d8c3a6c93f128e18e8724133",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "586ed6d4975e894695190f701b2cf01d0d81a9ba52086821583cff0b70663d1e"
+    },
+    "0153-short-write-resume": {
+      "operation": "resume",
+      "request_sha256": "4faf897bb6b1d7c6b23e8e50df6b49bdaf920ef1d8c3a6c93f128e18e8724133",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "586ed6d4975e894695190f701b2cf01d0d81a9ba52086821583cff0b70663d1e"
+    },
+    "0154-short-write-terminal": {
+      "operation": "read",
+      "request_sha256": "d560d66903f46acfed61d39e4c9e8c6ef12106292379dd5ac17ee48e4712c4be",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1c2d8f6c1578b499da0d2df16df61f196d4210a2bb53a8d3f6aaa7b007666fb7"
+    },
+    "0155-short-write-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "d560d66903f46acfed61d39e4c9e8c6ef12106292379dd5ac17ee48e4712c4be",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1c2d8f6c1578b499da0d2df16df61f196d4210a2bb53a8d3f6aaa7b007666fb7"
+    },
+    "0156-disk-quota": {
+      "operation": "run",
+      "request_sha256": "5031b7efbc7f27e5f70f42ffd4c562049719ec3d8d4be28e79e1fecc9877998d",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: retained disk bytes or root metadata",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "de8b5a5463bd1ee51bb32ae824a6dc4d51ffb895dd9a4a30599930b16435b2ee"
+    },
+    "0157-disk-quota-not-terminal": {
+      "operation": "read",
+      "request_sha256": "b51c59ee3ec19ef97d1a6769f5507a2217f707385cf281922e5af89d27bbc7b0",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "79e7fd22695c10d92e47af8678ea99bc5dcb28f91038886b98af9bec07285b45"
+    },
+    "0158-disk-quota-resume": {
+      "operation": "resume",
+      "request_sha256": "b51c59ee3ec19ef97d1a6769f5507a2217f707385cf281922e5af89d27bbc7b0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "79e7fd22695c10d92e47af8678ea99bc5dcb28f91038886b98af9bec07285b45"
+    },
+    "0159-disk-quota-terminal": {
+      "operation": "read",
+      "request_sha256": "852d5e829e6b0baf23ff7068691c34267f58db4452a23252a2ac35bc492e9335",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ff2595aa773067ed7f0e0edee8e90e09e6e5deb12e96d349cff789853575350a"
+    },
+    "0160-disk-quota-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "852d5e829e6b0baf23ff7068691c34267f58db4452a23252a2ac35bc492e9335",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ff2595aa773067ed7f0e0edee8e90e09e6e5deb12e96d349cff789853575350a"
+    },
+    "0161-output-limit": {
+      "operation": "run",
+      "request_sha256": "92fbedc07b0d4276deff659a73558a7028c4c14f121d9b1f351a8eaaa3213491",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: serialized output bytes including footer",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "a86ec5de60640688a71f0432f7d95c28a686bca8ecba5853b0b9d9b1528aaa25"
+    },
+    "0162-output-limit-not-terminal": {
+      "operation": "read",
+      "request_sha256": "ecefb7d355437ffc28c24d1ecbfd85eef2ecc113797188d32cafe9de03aac4f8",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "70288c382a8d35db4bfce2255d8d5c663a1e6944f76b32a5b9808f822fd5e8fb"
+    },
+    "0163-crash-stage_open": {
+      "operation": "run",
+      "request_sha256": "d1c137bc8a351f2106612594feb76ddc482ff603386d1c044c1db0a475786387",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault stage_open 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "31bbe71e8655cc78739fe42bf287009bda8177251a0894e5f37d1f7044ca3139"
+    },
+    "0164-crash-not-terminal-stage_open": {
+      "operation": "read",
+      "request_sha256": "9f6308deb0f412ecee1b83600d8917e653b17fea4e561337ba8dfdaa8a51aba4",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "1cd9bb3e83b3599bfac913e91f6fed7b0711ad666dc3233deaa1180757bb23da"
+    },
+    "0165-crash-resume-stage_open": {
+      "operation": "resume",
+      "request_sha256": "9f6308deb0f412ecee1b83600d8917e653b17fea4e561337ba8dfdaa8a51aba4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1cd9bb3e83b3599bfac913e91f6fed7b0711ad666dc3233deaa1180757bb23da"
+    },
+    "0166-crash-terminal-stage_open": {
+      "operation": "read",
+      "request_sha256": "6f5044cee530c21b575d07a5178a460b1e51e30b9c9845514fdd5d4545cb6260",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1af7e3b379c8dcb756a93361dc750613da2482e7de0e318394a322723b14d9c3"
+    },
+    "0167-crash-terminal-stage_open-verify": {
+      "operation": "verify",
+      "request_sha256": "6f5044cee530c21b575d07a5178a460b1e51e30b9c9845514fdd5d4545cb6260",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1af7e3b379c8dcb756a93361dc750613da2482e7de0e318394a322723b14d9c3"
+    },
+    "0168-crash-stage_written": {
+      "operation": "run",
+      "request_sha256": "4b63dba01877756109741b191055f9488a6c8f542d982c9b1bc24fef35b97e49",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault stage_written 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4a417489e39189a51b14021e4b1cba0807dbe9e8ab8a922b530beccdfc90bb87"
+    },
+    "0169-crash-not-terminal-stage_written": {
+      "operation": "read",
+      "request_sha256": "4c17a05ce17c6375198b4c49707e68b80cc777377c906eeb976c5fe54373cc42",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e2993248787de6fa4f72698b5cbca20237573ed83be53ab8626eb8216b1d2551"
+    },
+    "0170-crash-resume-stage_written": {
+      "operation": "resume",
+      "request_sha256": "4c17a05ce17c6375198b4c49707e68b80cc777377c906eeb976c5fe54373cc42",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e2993248787de6fa4f72698b5cbca20237573ed83be53ab8626eb8216b1d2551"
+    },
+    "0171-crash-terminal-stage_written": {
+      "operation": "read",
+      "request_sha256": "244fc4db8a50c1999db86d97c42686734b25721a6ef15fd8d811553d3b31d23d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "97f4f97e8d66eb6ce961e2b51776c1721161a16ba634c4e664746ee532af9cfc"
+    },
+    "0172-crash-terminal-stage_written-verify": {
+      "operation": "verify",
+      "request_sha256": "244fc4db8a50c1999db86d97c42686734b25721a6ef15fd8d811553d3b31d23d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "97f4f97e8d66eb6ce961e2b51776c1721161a16ba634c4e664746ee532af9cfc"
+    },
+    "0173-crash-stage_synced": {
+      "operation": "run",
+      "request_sha256": "28595ece8d3174b63adf96590eda247857a86e41d60173888559d82319754caf",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault stage_synced 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "43896d8a73f59cafc0635f316de114541a7ae0d048262d770e0c9b50abd99e51"
+    },
+    "0174-crash-not-terminal-stage_synced": {
+      "operation": "read",
+      "request_sha256": "7347f0df8de1c7910ee09c84998778e1131397c187bb4f8249f4438524befaf4",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "2c4aa523c77c273706608cd1b0fa4735a9f23d7d2dadd3ce3b30bd5eea4ca7d4"
+    },
+    "0175-crash-resume-stage_synced": {
+      "operation": "resume",
+      "request_sha256": "7347f0df8de1c7910ee09c84998778e1131397c187bb4f8249f4438524befaf4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2c4aa523c77c273706608cd1b0fa4735a9f23d7d2dadd3ce3b30bd5eea4ca7d4"
+    },
+    "0176-crash-terminal-stage_synced": {
+      "operation": "read",
+      "request_sha256": "620d8fe08c502361b633152391dab3dd5a7ccceda7d1e37aa1d32dbeb94b37ad",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "232390908ff00160a714ab89995266077b11a9eb0f4f7dd21161da745e5a8c60"
+    },
+    "0177-crash-terminal-stage_synced-verify": {
+      "operation": "verify",
+      "request_sha256": "620d8fe08c502361b633152391dab3dd5a7ccceda7d1e37aa1d32dbeb94b37ad",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "232390908ff00160a714ab89995266077b11a9eb0f4f7dd21161da745e5a8c60"
+    },
+    "0178-crash-object_linked": {
+      "operation": "run",
+      "request_sha256": "3dda988328b8d2b29b2d1106e3f510906f3387d1feb98881cb1333b12244d5d9",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault object_linked 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "a800a9a8c236f307d37d6329b479d8d79175dd0224c2dcfd52b5ec233db80084"
+    },
+    "0179-crash-not-terminal-object_linked": {
+      "operation": "read",
+      "request_sha256": "273e4bf993cc90af6d86e7cd63fc48fe332f33c87249ad9ee70495fd0edc82e3",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c4e41796dc24436b490cd72830fa99e8b1116217149408af2ad9223c3172720b"
+    },
+    "0180-crash-resume-object_linked": {
+      "operation": "resume",
+      "request_sha256": "273e4bf993cc90af6d86e7cd63fc48fe332f33c87249ad9ee70495fd0edc82e3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c4e41796dc24436b490cd72830fa99e8b1116217149408af2ad9223c3172720b"
+    },
+    "0181-crash-terminal-object_linked": {
+      "operation": "read",
+      "request_sha256": "3aa76ad241d55914779650ebdd2bfc205e5d47ac6f8fd48b2bb7f47b0bba7cbb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e3a30933457d92e4df9e57458d54fb54df6d5cf01f3f1b63034b9f5a42259fb9"
+    },
+    "0182-crash-terminal-object_linked-verify": {
+      "operation": "verify",
+      "request_sha256": "3aa76ad241d55914779650ebdd2bfc205e5d47ac6f8fd48b2bb7f47b0bba7cbb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e3a30933457d92e4df9e57458d54fb54df6d5cf01f3f1b63034b9f5a42259fb9"
+    },
+    "0183-crash-witness_synced": {
+      "operation": "run",
+      "request_sha256": "435bb8ef1fc67be967d0338d4ccfba222aec95a732f0759e1efc9411a2dbda8f",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault witness_synced 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8974edfe1534d90859d9326525cc65a260fef8e4ed53ce6fd93c2b6b272fc154"
+    },
+    "0184-crash-not-terminal-witness_synced": {
+      "operation": "read",
+      "request_sha256": "1bc66f29adcf35a118dda37edc3d1aa6661f17eb55feee80f436f1209f69dc08",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "7ffd83d7071728a368254223f7584a13e4c98307da4b60771a82e2150a362ecf"
+    },
+    "0185-crash-resume-witness_synced": {
+      "operation": "resume",
+      "request_sha256": "1bc66f29adcf35a118dda37edc3d1aa6661f17eb55feee80f436f1209f69dc08",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7ffd83d7071728a368254223f7584a13e4c98307da4b60771a82e2150a362ecf"
+    },
+    "0186-crash-terminal-witness_synced": {
+      "operation": "read",
+      "request_sha256": "17d1764e36015ab57545d6d1bfea3e8a261db9ca069728182b31ce30a34f281a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bd48fddda9a72d12c078a4caf5877b918e92ca2e0c7d4ce8ebd053ed24d56d56"
+    },
+    "0187-crash-terminal-witness_synced-verify": {
+      "operation": "verify",
+      "request_sha256": "17d1764e36015ab57545d6d1bfea3e8a261db9ca069728182b31ce30a34f281a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bd48fddda9a72d12c078a4caf5877b918e92ca2e0c7d4ce8ebd053ed24d56d56"
+    },
+    "0188-crash-before_select": {
+      "operation": "run",
+      "request_sha256": "3c2b80a5d095631776d31659239e1273b0941efb4dc38d604fddce294006e7f7",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault before_select 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "0266038a1b7bd3620d7fd92134839ad1c28e422d253f8d832b0bcdd5bec4793d"
+    },
+    "0189-crash-not-terminal-before_select": {
+      "operation": "read",
+      "request_sha256": "6063bcf1fea50f3ce134579eef125ec1931e975159814a7484e96c1551b7c180",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "88a8865d60df28db9931cf926d64067943867ed6d4df0345d0edb1bb9e0483c6"
+    },
+    "0190-crash-resume-before_select": {
+      "operation": "resume",
+      "request_sha256": "6063bcf1fea50f3ce134579eef125ec1931e975159814a7484e96c1551b7c180",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "88a8865d60df28db9931cf926d64067943867ed6d4df0345d0edb1bb9e0483c6"
+    },
+    "0191-crash-terminal-before_select": {
+      "operation": "read",
+      "request_sha256": "3c960d73d5e559a0a9b299adef3f1a0d7d31e775623b84428520eda3955f4808",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "89dae8471b3bf6cb67d96eb92d9c53d0c8e61955f4a0616e75d45135e48d2624"
+    },
+    "0192-crash-terminal-before_select-verify": {
+      "operation": "verify",
+      "request_sha256": "3c960d73d5e559a0a9b299adef3f1a0d7d31e775623b84428520eda3955f4808",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "89dae8471b3bf6cb67d96eb92d9c53d0c8e61955f4a0616e75d45135e48d2624"
+    },
+    "0193-crash-selected": {
+      "operation": "run",
+      "request_sha256": "0db0a222a854d30678f82f90f26bc65e412efb913f4720458e51f009e42479d9",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault selected 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "325ce85ae76bd4eaddd1726c1824f3e8ec289f0dd76e59e5b89bdf139d5fbeb0"
+    },
+    "0194-stale-pin-selected": {
+      "operation": "read",
+      "request_sha256": "4570d5b36e1eccda5cdd06fdcb16347b273cc81eb1dca4583d7419e60c50d71c",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 selector differs from exact pin",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e5f72891bbb53e6e7ea226488f73c9b001190d3877c20fd3380f3f16b13b92c4"
+    },
+    "0195-crash-not-terminal-selected": {
+      "operation": "read",
+      "request_sha256": "3b3f4c39e1a9cae1ea18091caf60dbd8190fe17004eb0e7e6715e86872f6c822",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "b8df80337ba6cb8b8aee00453e2de63e0f7bb35579b3d049a22579c92f13b938"
+    },
+    "0196-crash-resume-selected": {
+      "operation": "resume",
+      "request_sha256": "3b3f4c39e1a9cae1ea18091caf60dbd8190fe17004eb0e7e6715e86872f6c822",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b8df80337ba6cb8b8aee00453e2de63e0f7bb35579b3d049a22579c92f13b938"
+    },
+    "0197-crash-terminal-selected": {
+      "operation": "read",
+      "request_sha256": "8d9ceba9dca599f3aa94c3f5b99098470bccf31f76091128a068b3aa93d8bc76",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9b7ae95acb6edd72185b71d3d79aa81f4d0a9960456f2fc4a4cd2c68bd679994"
+    },
+    "0198-crash-terminal-selected-verify": {
+      "operation": "verify",
+      "request_sha256": "8d9ceba9dca599f3aa94c3f5b99098470bccf31f76091128a068b3aa93d8bc76",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9b7ae95acb6edd72185b71d3d79aa81f4d0a9960456f2fc4a4cd2c68bd679994"
+    },
+    "0199-crash-directory_synced": {
+      "operation": "run",
+      "request_sha256": "82fbad3ab59e3c5c15a02ebe7ae8cfe97ce477e9c400c772599828aa6519d19d",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault directory_synced 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "3055bedf0b14899daa68da9271bb9a1aef26126b4060bcb64caa4c2abee703de"
+    },
+    "0200-stale-pin-directory_synced": {
+      "operation": "read",
+      "request_sha256": "95dca791cd68348ad3a805bfad5c6c35f57ece2c9cd7f8c896d2e65ee64388c2",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 selector differs from exact pin",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "cd389b0f1e606cc7294af066ca09da6dcefadbb2e282ac06ea17d02f2030e933"
+    },
+    "0201-crash-not-terminal-directory_synced": {
+      "operation": "read",
+      "request_sha256": "c3b7ceae4d2e87926157ae4f7c32b62920e9cb3d6b879c71e56ee0bb26aa37ba",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8296eaaa25c7aff7b4e7f0f6b5ba6b2fd3290232ced04e68ce0d320435deca8c"
+    },
+    "0202-crash-resume-directory_synced": {
+      "operation": "resume",
+      "request_sha256": "c3b7ceae4d2e87926157ae4f7c32b62920e9cb3d6b879c71e56ee0bb26aa37ba",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8296eaaa25c7aff7b4e7f0f6b5ba6b2fd3290232ced04e68ce0d320435deca8c"
+    },
+    "0203-crash-terminal-directory_synced": {
+      "operation": "read",
+      "request_sha256": "4643b98cb0eabe2c7d27232489805899be7f182c187d055cf3f8bac9296aaaa0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a61320e9421d959043fa95eb5bc16a8e29c4443caab6a73873408e7f2dd30d4d"
+    },
+    "0204-crash-terminal-directory_synced-verify": {
+      "operation": "verify",
+      "request_sha256": "4643b98cb0eabe2c7d27232489805899be7f182c187d055cf3f8bac9296aaaa0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a61320e9421d959043fa95eb5bc16a8e29c4443caab6a73873408e7f2dd30d4d"
+    },
+    "0205-terminal-crash-before_select": {
+      "operation": "run",
+      "request_sha256": "ded8ba2373f1faa4c878e3a11d7be46e37a89d1fe867e42eca3ed43784262d5b",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault before_select 4",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "e408c6f6a1ba00d188088f40b788af309151793477dcef2dc85e94243276264a"
+    },
+    "0206-terminal-crash-before_select-old-pin": {
+      "operation": "read",
+      "request_sha256": "2f497a9005502dbf12511de3777ccd8b7812e33e94ef6993b9306852cfed4f0e",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "cf947c0899a46f6cc22b87da8884004d6da4f635170d3cc83cfe33adc09ca3e0"
+    },
+    "0207-terminal-crash-before_select-resume": {
+      "operation": "resume",
+      "request_sha256": "2f497a9005502dbf12511de3777ccd8b7812e33e94ef6993b9306852cfed4f0e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "cf947c0899a46f6cc22b87da8884004d6da4f635170d3cc83cfe33adc09ca3e0"
+    },
+    "0208-terminal-crash-before_select-read": {
+      "operation": "read",
+      "request_sha256": "0f0a1b8e2dfe3deefc91c91f4abd29948faeac728d695391c3af79f347f9ab24",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "39eed6cf6ddb2fa760f8e6cf2965096e7e57a24977d879cb5c65071ca0b05d4e"
+    },
+    "0209-terminal-crash-before_select-read-verify": {
+      "operation": "verify",
+      "request_sha256": "0f0a1b8e2dfe3deefc91c91f4abd29948faeac728d695391c3af79f347f9ab24",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "39eed6cf6ddb2fa760f8e6cf2965096e7e57a24977d879cb5c65071ca0b05d4e"
+    },
+    "0210-terminal-crash-selected": {
+      "operation": "run",
+      "request_sha256": "03e03c13b5cccc8696ad7fb036891c15d59cbb16ee8318392dbbb4855362f5e3",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault selected 4",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "428db40ae2db6844b5840d43bee4954716933458ff32005acf3d1c11ee524785"
+    },
+    "0211-terminal-crash-selected-old-pin": {
+      "operation": "read",
+      "request_sha256": "0092388aeef5b66039544ee62c6882b4a4773d8e06f28ddab1643316e32fdc17",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 selector differs from exact pin",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "ac7be6495253977e6dc1a70840587dc4ebd77ed96d9ca31e54df7532acbb6286"
+    },
+    "0212-terminal-crash-selected-read": {
+      "operation": "read",
+      "request_sha256": "609e94f4674e141f72c7e50186b5e7fd136f57930fae3871f381427c7fee93cb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a33b5a51703e7e8b7acb51a000bd414d3b8db68b66fa8cb05c75adfb6dfdcfdf"
+    },
+    "0213-terminal-crash-selected-read-verify": {
+      "operation": "verify",
+      "request_sha256": "609e94f4674e141f72c7e50186b5e7fd136f57930fae3871f381427c7fee93cb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a33b5a51703e7e8b7acb51a000bd414d3b8db68b66fa8cb05c75adfb6dfdcfdf"
+    },
+    "0214-restart-reachability_bfs_v1": {
+      "operation": "run",
+      "request_sha256": "7109be559bfa45af94de25f92c4190242c3174add16b248f2abda908e101d7c1",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault before_round 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "426951b9c92b7be23b2840431a4b7047725a4432f764338b5081918f28c78878"
+    },
+    "0215-restart-reachability_bfs_v1-checkpoint-not-result": {
+      "operation": "verify",
+      "request_sha256": "c0b1aed9f13c321e39e3cdd6ac50003cba8ce1cd4f11aaed2f3fd9ea5e60d84b",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "c56a46ed542a036674739311b8ddbce1032ccc9dbe73cd3ece17d019b07e2905"
+    },
+    "0216-restart-reachability_bfs_v1-resume": {
+      "operation": "resume",
+      "request_sha256": "c0b1aed9f13c321e39e3cdd6ac50003cba8ce1cd4f11aaed2f3fd9ea5e60d84b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c56a46ed542a036674739311b8ddbce1032ccc9dbe73cd3ece17d019b07e2905"
+    },
+    "0217-restart-reachability_bfs_v1-terminal": {
+      "operation": "read",
+      "request_sha256": "0a1e0c04fb99acb89f59006bdbe22286d4b12a0801c9c2a79dce61452c6c6fb3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e71aa59d76e383332be789e04626d4a41980d57acad9d29ab320a38889de919f"
+    },
+    "0218-restart-reachability_bfs_v1-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "0a1e0c04fb99acb89f59006bdbe22286d4b12a0801c9c2a79dce61452c6c6fb3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e71aa59d76e383332be789e04626d4a41980d57acad9d29ab320a38889de919f"
+    },
+    "0219-restart-reachability_bfs_v1-idempotent": {
+      "operation": "resume",
+      "request_sha256": "0a1e0c04fb99acb89f59006bdbe22286d4b12a0801c9c2a79dce61452c6c6fb3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e71aa59d76e383332be789e04626d4a41980d57acad9d29ab320a38889de919f"
+    },
+    "0220-restart-reachability_bfs_v1-reread": {
+      "operation": "read",
+      "request_sha256": "0a1e0c04fb99acb89f59006bdbe22286d4b12a0801c9c2a79dce61452c6c6fb3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e71aa59d76e383332be789e04626d4a41980d57acad9d29ab320a38889de919f"
+    },
+    "0221-restart-reachability_bfs_v1-replay": {
+      "operation": "run",
+      "request_sha256": "4ea825bc65246f1db157a64eb666043128dce93301fcc780049b036e2e59e856",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1feffe1c2812bac0044a4be4b81c1c39b3e97c7c7825f63f4d6cff416a916166"
+    },
+    "0222-restart-reachability_bfs_v1-replayed": {
+      "operation": "read",
+      "request_sha256": "7cf5eea7e098e6b430a4758993cdc1bec2a81dc38f8610018152a6e8daa6c3f2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "97d2b0ea8a37638048d5a07af298ae4618ddde660e8ef99eef4c1b6249519b39"
+    },
+    "0223-restart-reachability_bfs_v1-replayed-verify": {
+      "operation": "verify",
+      "request_sha256": "7cf5eea7e098e6b430a4758993cdc1bec2a81dc38f8610018152a6e8daa6c3f2",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "97d2b0ea8a37638048d5a07af298ae4618ddde660e8ef99eef4c1b6249519b39"
+    },
+    "0224-restart-weak_components_min_label_v1": {
+      "operation": "run",
+      "request_sha256": "7cc61eb0f81c545f3c7cf8fb73ea54a6976f42aafe1ae8f2c92dc460f518ea55",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault before_round 2",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "5d6225c93306ceee1483729db687f14f563984c665d5846bc5fa55d60d516172"
+    },
+    "0225-restart-weak_components_min_label_v1-checkpoint-not-result": {
+      "operation": "verify",
+      "request_sha256": "a9346afb056f45c8369e2f6d068d0731bc4e77b6395f62864c99bfac529a32a4",
+      "exit": 1,
+      "stderr_contains": "refused: selected cut is provisional",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "ba447b3c2955074c880eac10e3c2cbc399903e61bb97c2949014f602ff3a3130"
+    },
+    "0226-restart-weak_components_min_label_v1-resume": {
+      "operation": "resume",
+      "request_sha256": "a9346afb056f45c8369e2f6d068d0731bc4e77b6395f62864c99bfac529a32a4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ba447b3c2955074c880eac10e3c2cbc399903e61bb97c2949014f602ff3a3130"
+    },
+    "0227-restart-weak_components_min_label_v1-terminal": {
+      "operation": "read",
+      "request_sha256": "66d10cdebd746463404e16e9d8dbdc879e3d409cf31cd0c520dd912c1671a539",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b8743ac3ad27efdcfa098b0dd2e1c952276637541836b7939437bdf4fd1a20b"
+    },
+    "0228-restart-weak_components_min_label_v1-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "66d10cdebd746463404e16e9d8dbdc879e3d409cf31cd0c520dd912c1671a539",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b8743ac3ad27efdcfa098b0dd2e1c952276637541836b7939437bdf4fd1a20b"
+    },
+    "0229-restart-weak_components_min_label_v1-idempotent": {
+      "operation": "resume",
+      "request_sha256": "66d10cdebd746463404e16e9d8dbdc879e3d409cf31cd0c520dd912c1671a539",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b8743ac3ad27efdcfa098b0dd2e1c952276637541836b7939437bdf4fd1a20b"
+    },
+    "0230-restart-weak_components_min_label_v1-reread": {
+      "operation": "read",
+      "request_sha256": "66d10cdebd746463404e16e9d8dbdc879e3d409cf31cd0c520dd912c1671a539",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7b8743ac3ad27efdcfa098b0dd2e1c952276637541836b7939437bdf4fd1a20b"
+    },
+    "0231-restart-weak_components_min_label_v1-replay": {
+      "operation": "run",
+      "request_sha256": "5cf4622f6a3faf39376b2a0d2fa3cea5698667286f117145384cb01258237480",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1b8d8a30955b1b2474a44466105f24202ff58e58ab5f8833ed12c36520a0c1a1"
+    },
+    "0232-restart-weak_components_min_label_v1-replayed": {
+      "operation": "read",
+      "request_sha256": "793853ba5ba1dca66a8f29f57092b5aa61f3f4e58a922ec2a2acd1e33b062048",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2374d6e1db90107b1e3096871a0200d020902bb4927d03b05048bad124947202"
+    },
+    "0233-restart-weak_components_min_label_v1-replayed-verify": {
+      "operation": "verify",
+      "request_sha256": "793853ba5ba1dca66a8f29f57092b5aa61f3f4e58a922ec2a2acd1e33b062048",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2374d6e1db90107b1e3096871a0200d020902bb4927d03b05048bad124947202"
+    },
+    "0234-fenced-writer": {
+      "operation": "run",
+      "request_sha256": "65982519994efafed98f15cd6352be46a264c414727077a508e18db02a982307",
+      "exit": -9,
+      "stderr_contains": "cycle20-fault before_round 1",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "9220de3445aa40e759898446328c7cfd33731b99a5487c791c9fcc02240a22df"
+    },
+    "0235-concurrent-read": {
+      "operation": "read",
+      "request_sha256": "57f5a11c1180cc00e490e15abfd137b0c9d2cbb6b85126207ed982f0cdec17d1",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root is fenced by another process",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4e8efed8ee1539a95294a368a8aa2ac1911b2d178f2f75332a39315099cc1433"
+    },
+    "0236-concurrent-resume": {
+      "operation": "resume",
+      "request_sha256": "57f5a11c1180cc00e490e15abfd137b0c9d2cbb6b85126207ed982f0cdec17d1",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root is fenced by another process",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4e8efed8ee1539a95294a368a8aa2ac1911b2d178f2f75332a39315099cc1433"
+    },
+    "0237-pin-omitted": {
+      "operation": "resume",
+      "request_sha256": "b4c0b513c8d15c32bf589a724a7250982d0b5831bbe2382b302c866ae45f02e4",
+      "exit": 1,
+      "stderr_contains": "refused: an independently retained exact pin is required",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "992fa0417c3120cc24037b13569ae099292a67c5a713962186efb6dfd046630f"
+    },
+    "0238-pin-round-changed": {
+      "operation": "resume",
+      "request_sha256": "48d1d85a7d3f26de5ad2a62b2182361a78471a682d8c892c4c5c691bbbec5bc6",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 selected chain/round differs from exact pin",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "542b6e8d4d1f2d17d2977464309446f6225d98dd89a5f0e506a78c7c065e7ea4"
+    },
+    "0239-changed-plan": {
+      "operation": "resume",
+      "request_sha256": "ccd25cbfce3c170d8ee9fb4269ce1fb925c1bfd228c6a85c5d76f584871590de",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root/plan/source binding changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "5a43a499cad4160711bbaed397beb3de2bd85fce358c223b7158a9b53611361c"
+    },
+    "0240-changed-source": {
+      "operation": "resume",
+      "request_sha256": "2b951dffaec5eb193deee7b91177decb37ab4000837b9a659049296f2a5498c3",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root/plan/source binding changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "083e26e89de315eec53b72188f5cbbb06acc5f7b7cb77284ff97a197a6cc4994"
+    },
+    "0241-fenced-resume": {
+      "operation": "resume",
+      "request_sha256": "57f5a11c1180cc00e490e15abfd137b0c9d2cbb6b85126207ed982f0cdec17d1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "4e8efed8ee1539a95294a368a8aa2ac1911b2d178f2f75332a39315099cc1433"
+    },
+    "0242-object-tamper": {
+      "operation": "read",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 checkpoint object digest mismatch",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0243-witness-tamper": {
+      "operation": "read",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 witness sequence, round or parent mismatch",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0244-selector-rollback": {
+      "operation": "read",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 selector differs from exact pin",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0245-external-root-file-alias": {
+      "operation": "read",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 1,
+      "stderr_contains": "refused: external cycle20 file alias",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0246-root-symlink": {
+      "operation": "read",
+      "request_sha256": "fe4f7dacf06f331222fd6829df69e89e447ef25b63d8c5f0f5ff1ebd49cea660",
+      "exit": 1,
+      "stderr_contains": "refused: symlink path",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "2dab0e160b0ff50aeb636a42478673cf70e19c117aa7adbe2c46a64a9cdefd82"
+    },
+    "0247-root-clone": {
+      "operation": "read",
+      "request_sha256": "fc5cc469602b706ccc237ceaf745bb41f59e1bc86dba133a03601b11627d93d6",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root/plan/source binding changed",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "4736b876cd0d26f383bbc97e528c907dc2e7f9c00528f1ff7b8f59da5b86d043"
+    },
+    "0248-fenced-terminal": {
+      "operation": "read",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0249-fenced-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "7b64df14101d7dd22f08cbbef52ef8ab09e388cb1104c07a9f1c5484f0ba9a15",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8d4e43cbe6d3dae20551083de807d69e8e5c69a2537def4b7334c1cd3c2bac69"
+    },
+    "0250-stalled-run": {
+      "operation": "run",
+      "request_sha256": "ea0fe6ec7a7d64da7491731547ac3a1fed56e5e3b475222adcacaa8295954b3e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "75785a48c8397c190a99550d7ace09876d99494f3275a2b60749b6089a9106e9"
+    },
+    "0251-stalled-stdout": {
+      "operation": "read",
+      "request_sha256": "0d8bdbcf0cf501b2682dd002cc5af334bfd302acf3b76f2993344f8ea2db2244",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: stalled stdout deadline",
+      "stdout_policy": "terminal_prefix",
+      "request_identity_sha256": "f21ab488a6c275005df582936a43fa376dc25ca9af957ae0ea961b3d01f83691"
+    },
+    "0252-stalled-concurrent-writer": {
+      "operation": "resume",
+      "request_sha256": "f564f9a523c16c0e5764f1669eeb259d831b04373d8bb4f7a433070b48cbe3f5",
+      "exit": 1,
+      "stderr_contains": "refused: cycle20 root is fenced by another process",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "b74739a23c8e9982f65f085cf2ac64ad3b75336b0ff9d08a555b7846cb5e69cf"
+    },
+    "0253-stalled-concurrent-reader": {
+      "operation": "read",
+      "request_sha256": "f564f9a523c16c0e5764f1669eeb259d831b04373d8bb4f7a433070b48cbe3f5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b74739a23c8e9982f65f085cf2ac64ad3b75336b0ff9d08a555b7846cb5e69cf"
+    },
+    "0254-stalled-recovered": {
+      "operation": "read",
+      "request_sha256": "f564f9a523c16c0e5764f1669eeb259d831b04373d8bb4f7a433070b48cbe3f5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b74739a23c8e9982f65f085cf2ac64ad3b75336b0ff9d08a555b7846cb5e69cf"
+    },
+    "0255-stalled-recovered-verify": {
+      "operation": "verify",
+      "request_sha256": "f564f9a523c16c0e5764f1669eeb259d831b04373d8bb4f7a433070b48cbe3f5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b74739a23c8e9982f65f085cf2ac64ad3b75336b0ff9d08a555b7846cb5e69cf"
+    },
+    "0256-perf-sparse-0-indexed": {
+      "operation": "run",
+      "request_sha256": "15d5614a1af27723898a86b0574338b3005775008919033c57f567cfe4cad232",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "81b0def99c581386efd67669833303cc1efef194836ddf9515ae69ba9701919c"
+    },
+    "0257-perf-sparse-0-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "0af34dc60aaeb9f4432262e9f20fe05cfd9b9af5cfd641e697004e750cb1162a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c1e0f6719f8a7d0ffff3c6f3c9cb17306c15445985cac414d860fb3e66d65f79"
+    },
+    "0258-perf-sparse-0-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "0af34dc60aaeb9f4432262e9f20fe05cfd9b9af5cfd641e697004e750cb1162a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c1e0f6719f8a7d0ffff3c6f3c9cb17306c15445985cac414d860fb3e66d65f79"
+    },
+    "0259-perf-sparse-0-scan_all": {
+      "operation": "run",
+      "request_sha256": "3b3942094736becfb9c2604f800a84452733dece4ef1701ce82dab8c84f082c0",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "64265acbeffe4920997d5dc656bb054d23efd2b2072337343e7cbe3a88583941"
+    },
+    "0260-perf-sparse-0-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "073e9acc43c3fe4ee971655ea12a564ee6da91e45d679ae10113ff560cf7cfab",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ff5aecadbcab00fdb0824dd25de372ab8f1ff87d02ad136ef541bd5eb3ab3c25"
+    },
+    "0261-perf-sparse-0-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "073e9acc43c3fe4ee971655ea12a564ee6da91e45d679ae10113ff560cf7cfab",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ff5aecadbcab00fdb0824dd25de372ab8f1ff87d02ad136ef541bd5eb3ab3c25"
+    },
+    "0262-perf-sparse-1-scan_all": {
+      "operation": "run",
+      "request_sha256": "1983db1654a3aa599571626cf9e4495d4477a4794c45b62cf3c76f3143fa8ec4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c966969a4f84144b07df86a5c4f9863f2d24c1b37ccf29c0267245a63d6b68bd"
+    },
+    "0263-perf-sparse-1-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "b7acd2b4daa34f9168739a9503ba53f08339de83559df8db109757b60df631ab",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8a2fbcc6d1275bf8c7eb2aca7e6fbe836d82c5ccb7b66aa6d8bd54505ad98ced"
+    },
+    "0264-perf-sparse-1-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "b7acd2b4daa34f9168739a9503ba53f08339de83559df8db109757b60df631ab",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8a2fbcc6d1275bf8c7eb2aca7e6fbe836d82c5ccb7b66aa6d8bd54505ad98ced"
+    },
+    "0265-perf-sparse-1-indexed": {
+      "operation": "run",
+      "request_sha256": "4299a743b0dadc69d4fd49ba6fea9ad9ca34316ca472b827c92865855c231309",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b8c2d7bb52ad40fce14a915e2990505ce426dcfdc46daacb78afa5e034f401e0"
+    },
+    "0266-perf-sparse-1-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "eeeedde191cad28e00b7866410c809784eff60bc43849b9a3230be64672243f4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3c52888940521ec585fabf25dd876c1c1a66fea8732df08c017bc9d6072bac6a"
+    },
+    "0267-perf-sparse-1-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "eeeedde191cad28e00b7866410c809784eff60bc43849b9a3230be64672243f4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3c52888940521ec585fabf25dd876c1c1a66fea8732df08c017bc9d6072bac6a"
+    },
+    "0268-perf-sparse-2-indexed": {
+      "operation": "run",
+      "request_sha256": "e84207826c4e55a1ddd57efb7d39d0ada6e05887963efd2b7ae7713d0c71af43",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "889b68fb1e2b2ac8bfc39f8c5f9e7ba852e190390be218419e1439c067d5e358"
+    },
+    "0269-perf-sparse-2-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "2c43518e62749e075ca5bd5e82585ee2edda86bc28c740df0ed2ec20f9656248",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "aac54aa0fbcdfbda472c65464134affb1f28e7e482ba58b4bd9e0ea09594ec21"
+    },
+    "0270-perf-sparse-2-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "2c43518e62749e075ca5bd5e82585ee2edda86bc28c740df0ed2ec20f9656248",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "aac54aa0fbcdfbda472c65464134affb1f28e7e482ba58b4bd9e0ea09594ec21"
+    },
+    "0271-perf-sparse-2-scan_all": {
+      "operation": "run",
+      "request_sha256": "439d07ec6aae1c2c92188fa90bf29405413d38696c886dc05cd243a5d5002dec",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3d62fc15122997e483be3046af662c9d156010c48e5ac9c1d578d0339f2542a7"
+    },
+    "0272-perf-sparse-2-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "b0a0c3a1f29c59acb4925c68f31999ef705bbedbf58348e83b57f694c31d9b05",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b71545864fedb6fa123c3da7731fb15221a63014ead0698495534041dc041d85"
+    },
+    "0273-perf-sparse-2-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "b0a0c3a1f29c59acb4925c68f31999ef705bbedbf58348e83b57f694c31d9b05",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b71545864fedb6fa123c3da7731fb15221a63014ead0698495534041dc041d85"
+    },
+    "0274-perf-sparse-3-scan_all": {
+      "operation": "run",
+      "request_sha256": "ff53b65f0d99d70b36e2e7e7f0eebbbd039c671572ee16d4390366997e6165f7",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "196630591cdff2b5713655c4955702be71a5195c80823ec6fbc8330d9c7d614f"
+    },
+    "0275-perf-sparse-3-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "a2868d1b3cc7b2ac183eeb8754b1e321531c9242cacfabb356702f4658796618",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9c6a7ed46fb24f4b661469d7522ffaebf9a935260a28f5f86dedee3912640741"
+    },
+    "0276-perf-sparse-3-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "a2868d1b3cc7b2ac183eeb8754b1e321531c9242cacfabb356702f4658796618",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "9c6a7ed46fb24f4b661469d7522ffaebf9a935260a28f5f86dedee3912640741"
+    },
+    "0277-perf-sparse-3-indexed": {
+      "operation": "run",
+      "request_sha256": "7a6df093f343e3afe69152ccf92db7990fe3a442485b186970d5dfceedbde80b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8b752e865a9311e5cf9c14f8113f86342f80b1493350d0839ad94298f55970a1"
+    },
+    "0278-perf-sparse-3-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "1ad905af3654a8715c632865a4b69544ef84d9859601e0f286a40fe9d7cd5626",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2d1692d863a098f82bfc533711ae982e940e00df648aea447df3ab5bb5ef1481"
+    },
+    "0279-perf-sparse-3-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "1ad905af3654a8715c632865a4b69544ef84d9859601e0f286a40fe9d7cd5626",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2d1692d863a098f82bfc533711ae982e940e00df648aea447df3ab5bb5ef1481"
+    },
+    "0280-perf-sparse-4-indexed": {
+      "operation": "run",
+      "request_sha256": "f610d8519214dade9fad6ba3c2b95838ced89da5f4a678c21f5bfc4f6bac772e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "18edffb2484a52921da83f0139217cb9b131c0a9deb66cb381efc74528f59b9c"
+    },
+    "0281-perf-sparse-4-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "8bce390ce96c9233b8ddfd2f13ae053af0b9ef8df00f2802bf08b6817bb605fe",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3b48909d1bc971fe348e1deb04f8b018c29653b4ccfda32dda756af8c55f41f3"
+    },
+    "0282-perf-sparse-4-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "8bce390ce96c9233b8ddfd2f13ae053af0b9ef8df00f2802bf08b6817bb605fe",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "3b48909d1bc971fe348e1deb04f8b018c29653b4ccfda32dda756af8c55f41f3"
+    },
+    "0283-perf-sparse-4-scan_all": {
+      "operation": "run",
+      "request_sha256": "68cc5044e7998bcd741b261155fc87d899217639c525ba4ac11408301ab130f1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "44ba05ecaf91c727f6323d0f90f5ebf7699e998ea0820ed1c30dcd2dc9080010"
+    },
+    "0284-perf-sparse-4-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "5c0928e82beec11c628752308bacd1ee0332f66e664d6f933471a9e6757bdb4b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "91302526b98d1dec96c1834ae0bca57389627577766e3a0f86f92d0f7b10483e"
+    },
+    "0285-perf-sparse-4-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "5c0928e82beec11c628752308bacd1ee0332f66e664d6f933471a9e6757bdb4b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "91302526b98d1dec96c1834ae0bca57389627577766e3a0f86f92d0f7b10483e"
+    },
+    "0286-perf-sparse-5-scan_all": {
+      "operation": "run",
+      "request_sha256": "ef63621c322c1b16bdf630a9618891e3d00e4a0517e1f04cc1fca46e1e1ceedb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1de28826b82c5d5b22e544f7e6ed17ff35c4e72b2de4c512cfda953558e99b06"
+    },
+    "0287-perf-sparse-5-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "7c94d220abf004038b799f0567b66e48be336c2cbf0b5d484ef9640eab4e07c7",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0f6117e259640c7d43893ecb25173717954bdf9d2f3aabc0992b67202db11ff9"
+    },
+    "0288-perf-sparse-5-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "7c94d220abf004038b799f0567b66e48be336c2cbf0b5d484ef9640eab4e07c7",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0f6117e259640c7d43893ecb25173717954bdf9d2f3aabc0992b67202db11ff9"
+    },
+    "0289-perf-sparse-5-indexed": {
+      "operation": "run",
+      "request_sha256": "7a52e6b908fe76977bca0a81bcf3d589e36b4e2601a6a5b80e1de39b7b29f04c",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "797aa9a3bf4dbb7a2944a7a78b90b1ffcdc7ceeb59dd9a7a15a260d15b2edc43"
+    },
+    "0290-perf-sparse-5-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "c190483be14c5defca8ef13092345db8f1ba850a1cf7fa691500eec1da676252",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c959ecc71faebdb016cf929bcee95568ca9b022657138a09a4f4e3a3de19eb8c"
+    },
+    "0291-perf-sparse-5-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "c190483be14c5defca8ef13092345db8f1ba850a1cf7fa691500eec1da676252",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c959ecc71faebdb016cf929bcee95568ca9b022657138a09a4f4e3a3de19eb8c"
+    },
+    "0292-perf-dense-0-indexed": {
+      "operation": "run",
+      "request_sha256": "c5994aa84d0f9c12c5562d7deb933e98cf50de31e04e768a9bc9239c0d017bd9",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "69d439e07cf3f119696b76c118c10b11453b9fa6095dc11f0918ef4d09781ebb"
+    },
+    "0293-perf-dense-0-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "50a81dd1bc72dc7c5d39e97e1d70c2f4be0f4a5775a53d52de2478dbe65e00cd",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "93f83b2f232811ae13237de961659b1c61ba4e80443929ab2e015d9c16c15952"
+    },
+    "0294-perf-dense-0-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "50a81dd1bc72dc7c5d39e97e1d70c2f4be0f4a5775a53d52de2478dbe65e00cd",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "93f83b2f232811ae13237de961659b1c61ba4e80443929ab2e015d9c16c15952"
+    },
+    "0295-perf-dense-0-scan_all": {
+      "operation": "run",
+      "request_sha256": "46450c8865dbb26a1102ada52d6cb57e4e2c305ad75a93f5c4307e5003430f62",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "881db7d93ee6c13e4cb87afc0f96ff8c40643a6617e096298e1e86cd4e16cc25"
+    },
+    "0296-perf-dense-0-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "eb052c6501f47622b0c02d8fa3f7b989014760be333a5772d91290f68ef4f359",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "f9d882c151b395614d425adab084c4bfd9df05dfd8e1e2cc18b9e063e533748e"
+    },
+    "0297-perf-dense-0-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "eb052c6501f47622b0c02d8fa3f7b989014760be333a5772d91290f68ef4f359",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "f9d882c151b395614d425adab084c4bfd9df05dfd8e1e2cc18b9e063e533748e"
+    },
+    "0298-perf-dense-1-scan_all": {
+      "operation": "run",
+      "request_sha256": "1d96a82ae42a0cb9c6178769dcc47fe517a755115c17c68620972a1d03ad1b4a",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "931d62549744bd78c5cfc7849139d805529f8fdbc0ff14d8ec365a7e9319feb6"
+    },
+    "0299-perf-dense-1-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "276b1b19bdb05984ce05a97a3a6b311bbd1a2010a5b8ff7e25e1a5eebb347944",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "5115afc2c4535ccc8c89113e92f66c16014f4ab37ef488916d4df14c322a1ec1"
+    },
+    "0300-perf-dense-1-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "276b1b19bdb05984ce05a97a3a6b311bbd1a2010a5b8ff7e25e1a5eebb347944",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "5115afc2c4535ccc8c89113e92f66c16014f4ab37ef488916d4df14c322a1ec1"
+    },
+    "0301-perf-dense-1-indexed": {
+      "operation": "run",
+      "request_sha256": "1a9de5701d360181f5c4ec9550004e4999a758cfe28254cf7153639c825681e4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b77a52bbfc62604f1b2ab6f6619e7618c2c67826e43b68238aa84624ea4fded4"
+    },
+    "0302-perf-dense-1-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "ac93607807c7075e67c1fd92d662c23eeeae329f20953eed2a691c07e81c3208",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "dfb7ccc791ee062d206999c651e677c75929d0ec9f4f3172d9cb0bffdc4b16e1"
+    },
+    "0303-perf-dense-1-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "ac93607807c7075e67c1fd92d662c23eeeae329f20953eed2a691c07e81c3208",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "dfb7ccc791ee062d206999c651e677c75929d0ec9f4f3172d9cb0bffdc4b16e1"
+    },
+    "0304-perf-dense-2-indexed": {
+      "operation": "run",
+      "request_sha256": "5944381f4b522901e2bc32e295f39ad12d37ffaea66fb15dcbeeb117f7fed48b",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "dff3187cd6499956a9eaf605ab15028c2a067939a8fd19d68d246a41e872f333"
+    },
+    "0305-perf-dense-2-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "e52e3739664692ac96f050bfd1334659798c889c94143d58c2db9ce7724b97d3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "fb5c6c2fdaf58bbb1f15e1ee825befba5b33aad73f0c497cd42eb11824413db3"
+    },
+    "0306-perf-dense-2-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "e52e3739664692ac96f050bfd1334659798c889c94143d58c2db9ce7724b97d3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "fb5c6c2fdaf58bbb1f15e1ee825befba5b33aad73f0c497cd42eb11824413db3"
+    },
+    "0307-perf-dense-2-scan_all": {
+      "operation": "run",
+      "request_sha256": "cd3cb9f0240f8a82f53ceb8ab5503e8dede0d3f5252c1f3b4c1b1fc3c90cfa29",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "dc505d708e354e9eaf420f5db25a2ad01fc1342a2adef47e265891b9ad25e184"
+    },
+    "0308-perf-dense-2-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "9da0e2e9b52f8f05520eb7e2ee17cbf7d485ae12dee8f1ac2b166c51ac849d53",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0cd4274a7542f7447dc234bc1e0919e42f31e231c5d63add52a7e5572e36ac03"
+    },
+    "0309-perf-dense-2-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "9da0e2e9b52f8f05520eb7e2ee17cbf7d485ae12dee8f1ac2b166c51ac849d53",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0cd4274a7542f7447dc234bc1e0919e42f31e231c5d63add52a7e5572e36ac03"
+    },
+    "0310-perf-dense-3-scan_all": {
+      "operation": "run",
+      "request_sha256": "4ee58dc0022301860e0575fe364902d3c405f654dd2189c11c8ca759acd41daa",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "02cd8ff234a73db224dd05344d3a57354b2b0714e1bdebb188b295a7741cf2bc"
+    },
+    "0311-perf-dense-3-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "f550867930d6e162b8bf3a38727d8d073a30e8b7553383ddbd753cd87cd8a5f6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8667ba088aaf53981be1a61dc7f9194c00e0597eea2c9d365ce90078364fc3a5"
+    },
+    "0312-perf-dense-3-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "f550867930d6e162b8bf3a38727d8d073a30e8b7553383ddbd753cd87cd8a5f6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8667ba088aaf53981be1a61dc7f9194c00e0597eea2c9d365ce90078364fc3a5"
+    },
+    "0313-perf-dense-3-indexed": {
+      "operation": "run",
+      "request_sha256": "3630fb2d282e8b03a782457783b28a14b76088790e4c527c83dbfd2c1f0ec53c",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "0a06b1492d8795b9178332b98b6f628f0c1ecd764ed50a58767a05f64f561439"
+    },
+    "0314-perf-dense-3-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "721771b9e65e1f885e40f3979f6128825b5368f69c6d9330735495d263bf3136",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "30e06623e323f9afec0bf6310162b5707d0f141b16d5b81dc205c2928e7b69c1"
+    },
+    "0315-perf-dense-3-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "721771b9e65e1f885e40f3979f6128825b5368f69c6d9330735495d263bf3136",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "30e06623e323f9afec0bf6310162b5707d0f141b16d5b81dc205c2928e7b69c1"
+    },
+    "0316-perf-dense-4-indexed": {
+      "operation": "run",
+      "request_sha256": "f0cb79033072c5b56233798c98e7a1fb471da1b059b6515f0b8f9b32169839ed",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "caa3de5a6b2773255eee63fa10a3a8332e093e1adaf1c6bdc19f3b31a17be753"
+    },
+    "0317-perf-dense-4-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "5dc5e03247fb253e25c03463cd97e04c2fd434af3ec219b0746b26559b245ba6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "756a1186311db2a87045a95f1eecfbf48ec1b629316284a9a3671359d990211a"
+    },
+    "0318-perf-dense-4-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "5dc5e03247fb253e25c03463cd97e04c2fd434af3ec219b0746b26559b245ba6",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "756a1186311db2a87045a95f1eecfbf48ec1b629316284a9a3671359d990211a"
+    },
+    "0319-perf-dense-4-scan_all": {
+      "operation": "run",
+      "request_sha256": "b093e069e0fdd621d1a64eb5a3486214511db399d6c66b616c4e85188abf09db",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8346c7386d9c2cec692d7eb28f82367607b75c5d8fa60527db6f55d642f36bf2"
+    },
+    "0320-perf-dense-4-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "00757d20b96d9b9d829aef687d0f99f6839f35f009160807a1fe0e709af2bf07",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ba4f51b153243b3363e4f9ab338b4422a6e16247a47dfc7a41b5a1a668d6e4d3"
+    },
+    "0321-perf-dense-4-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "00757d20b96d9b9d829aef687d0f99f6839f35f009160807a1fe0e709af2bf07",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ba4f51b153243b3363e4f9ab338b4422a6e16247a47dfc7a41b5a1a668d6e4d3"
+    },
+    "0322-perf-dense-5-scan_all": {
+      "operation": "run",
+      "request_sha256": "b76e2faf470a1cc4c76466e3b23bf5942cf6c6f39fa7a4d89688ca41148def36",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "96ab98c2c7f01606e5f161837d5ea285fb47d3ab348aff9ba9d8d516c08a2b29"
+    },
+    "0323-perf-dense-5-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "79c8c3ffc9b4d6716a1547193ea0ed6ae0f336def3e5c365b3d3170d870c1e27",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "cb106e7b9cfbd3c6ee68b2de14ba36773d3d4cd897284ef70771e5e54e9daab7"
+    },
+    "0324-perf-dense-5-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "79c8c3ffc9b4d6716a1547193ea0ed6ae0f336def3e5c365b3d3170d870c1e27",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "cb106e7b9cfbd3c6ee68b2de14ba36773d3d4cd897284ef70771e5e54e9daab7"
+    },
+    "0325-perf-dense-5-indexed": {
+      "operation": "run",
+      "request_sha256": "56beaa471ed42778b673324ac8db36f54f5d3b3659949bb055c81adf029ef8bd",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "2ab36339ac9cc49d9cb6dafd77ce13928c4a0ff2c526c7f7c039801847a7f977"
+    },
+    "0326-perf-dense-5-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "061a920048390686ca4f52aaec34eadbc5a2e119503a4a18fb14bf96d9809bcd",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d16964e312a3c2a6e7228835496b7ea3b20b5bbbbd354d921dbbe3e8d3379cff"
+    },
+    "0327-perf-dense-5-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "061a920048390686ca4f52aaec34eadbc5a2e119503a4a18fb14bf96d9809bcd",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d16964e312a3c2a6e7228835496b7ea3b20b5bbbbd354d921dbbe3e8d3379cff"
+    },
+    "0328-perf-resumed-0-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "200d1fed276a4bc6025846b344c1091a37d25485a56ff3e2aa033e3eaba52eb5",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "a14de5e755ad22aff88278816ff9f136bdd9ed05ceaeb49dae303fed42c7b1eb"
+    },
+    "0329-perf-resumed-0-indexed": {
+      "operation": "resume",
+      "request_sha256": "5d9f5bb6ec804f8f00b7c3acea6b1a9e6c501d483e36e94b7946a9e73870a78e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "36b76b95645293315187eb10747562404eab1278289e42d8e4e4c29e8fd96c5a"
+    },
+    "0330-perf-resumed-0-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "03f69692a7aff2a95e2f166e4d1f6a68048023846724a1ddebebcb4e64056223",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e38b85d8de24a25b2f544f5eb9f05b1fc6acd189182a1ce6db753f51dfb632e6"
+    },
+    "0331-perf-resumed-0-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "03f69692a7aff2a95e2f166e4d1f6a68048023846724a1ddebebcb4e64056223",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e38b85d8de24a25b2f544f5eb9f05b1fc6acd189182a1ce6db753f51dfb632e6"
+    },
+    "0332-perf-resumed-0-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "33d395317add128da4ce8ecd2a63c452107f31fa24efa06b17106be3bb27b213",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "58e24f74f2d95e7902c9c9e509823480f73dc076f9170c48f7bebe5c7549ec85"
+    },
+    "0333-perf-resumed-0-scan_all": {
+      "operation": "resume",
+      "request_sha256": "aed7d937e5b5425cb81ececa5c2d4ef6779893deb7f5cc6b20441e45fb60605f",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e9e12570a0d0fbe6c94e361869199df02f9ec0bf28448e18c9650b543ecf988a"
+    },
+    "0334-perf-resumed-0-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "bd356891fbee9cfaa181a77351747208717a905bf5926266e53d5f101d60c0f4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a16f330432553b5da752942ba0340a97ba8cbf6cf8029ce7ee2a0d94a79c6b02"
+    },
+    "0335-perf-resumed-0-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "bd356891fbee9cfaa181a77351747208717a905bf5926266e53d5f101d60c0f4",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "a16f330432553b5da752942ba0340a97ba8cbf6cf8029ce7ee2a0d94a79c6b02"
+    },
+    "0336-perf-resumed-1-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "8572ce9f39a53991077a830f2474183aa0b04c4eac5e2e6f4bf226d3c02c136e",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "837a23fcd956939315aac7c1ee3098f8b499a94b05a00422340c890d27e0aac5"
+    },
+    "0337-perf-resumed-1-scan_all": {
+      "operation": "resume",
+      "request_sha256": "093d9974d3ff4569db79abdb78dc9bcd69dbff4cda3c6f0c6db8b38206a82441",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "235326b70bd66e9120714876e20dd90cac1d549364c206d1770baa83f19db724"
+    },
+    "0338-perf-resumed-1-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "ddc3d4230cad211d2cc7f2b0ade50e129764898f540da1343da42ab90f943af5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "265da04852b9b1004168f8509597362b97d143a3c91f56c2c58371f07fcead79"
+    },
+    "0339-perf-resumed-1-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "ddc3d4230cad211d2cc7f2b0ade50e129764898f540da1343da42ab90f943af5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "265da04852b9b1004168f8509597362b97d143a3c91f56c2c58371f07fcead79"
+    },
+    "0340-perf-resumed-1-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "5c8e1c4e71983d1d4f17f119b34e07a0e50d9ea52baf77460404b6d31715506e",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "18059dda6bb6b60f810e1262d34e4db0d56f2196256224fa6c98cf3a29834d61"
+    },
+    "0341-perf-resumed-1-indexed": {
+      "operation": "resume",
+      "request_sha256": "fee52d8f79b787c889646e611d1024a1903457dc6d3ce3e6ef9203bcad33e715",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1acf26926db4f4a873122f60900ebb82d73c0254d7f2b00e52271cea339608f6"
+    },
+    "0342-perf-resumed-1-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "bfe6576af0cd06030d9ff929fa6a3126856996573640bc2c1d14bed35dbcb1eb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7f980b20a66d829290a8fb31ef246ef09b475fd84bf03d9248b652796dd2116a"
+    },
+    "0343-perf-resumed-1-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "bfe6576af0cd06030d9ff929fa6a3126856996573640bc2c1d14bed35dbcb1eb",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "7f980b20a66d829290a8fb31ef246ef09b475fd84bf03d9248b652796dd2116a"
+    },
+    "0344-perf-resumed-2-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "60715511afdda952f7fefbb09fc4b9d53f233389e9a938bd8fee20a2003660ba",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "a28202c16daba4a19436b3719114bcb63a708fa9d090f500c7d9ba28ed6ff34e"
+    },
+    "0345-perf-resumed-2-indexed": {
+      "operation": "resume",
+      "request_sha256": "539737e859dc4792202c9c6bcbafaf24595f6be1854d56281ebe2407cc6232af",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e803aeb74f33f1249144f4ccdd0421afa88091c41be15c049a44a75e2e7e076f"
+    },
+    "0346-perf-resumed-2-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "b0faddf589acda3705d252a2890a7774f9843eababc4544ebc4420e98930c3b3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "555c0730ddf66a1b569f3e5989e91952667d3a122d1d0a528c48d15877f5d9b2"
+    },
+    "0347-perf-resumed-2-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "b0faddf589acda3705d252a2890a7774f9843eababc4544ebc4420e98930c3b3",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "555c0730ddf66a1b569f3e5989e91952667d3a122d1d0a528c48d15877f5d9b2"
+    },
+    "0348-perf-resumed-2-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "fd5e34362622e54d47e4ea5770f59e7400bea46a92952889badafd330b33a304",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "cd1184cd399568f47a8077103d7d20cd21a6e2880a323d4f6a331f3bf4707281"
+    },
+    "0349-perf-resumed-2-scan_all": {
+      "operation": "resume",
+      "request_sha256": "e4383783ed3b39ee918991c82850ae3dfde75db164a731677420ee5f2215549d",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "abb22834ca07b7bff435a9746353ae1ccb98dee0ea9cb45c9cec1f82204d494a"
+    },
+    "0350-perf-resumed-2-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "c1446e1c4ea73d914c717c19a6cbbfe6a8fa5926670d95d9f30ac37c8ad1343f",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b65b462fb5a2ffd3291d0a2f8d63a5c6e99952b8030f27b52eebe37faa053705"
+    },
+    "0351-perf-resumed-2-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "c1446e1c4ea73d914c717c19a6cbbfe6a8fa5926670d95d9f30ac37c8ad1343f",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "b65b462fb5a2ffd3291d0a2f8d63a5c6e99952b8030f27b52eebe37faa053705"
+    },
+    "0352-perf-resumed-3-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "0be579215ad4453ea20d5f85bbab1b6ec4f9ab128f499cec5b49bce745c9581f",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "1322cf4555dfd82c894d96ba9da94f4eada6bd0975d28d03b9aa53f5a81e9251"
+    },
+    "0353-perf-resumed-3-scan_all": {
+      "operation": "resume",
+      "request_sha256": "cbc48450c8edaab4cb95881dda85d72d96bd8bc4d9ce8725fd4e1ec5740581a1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "d70e3ad1751b98c9053bc50770f4e99f86e1a07baaeba96353c7ce77fe54ace5"
+    },
+    "0354-perf-resumed-3-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "53e73f2161c96eea3b25034b7123625108e21d461e59b812e3bbcf4f041c13d1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c83d927007a62e7a4d3b859b6bd03209be68f043c4c764c6944a66b4ccd36cb8"
+    },
+    "0355-perf-resumed-3-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "53e73f2161c96eea3b25034b7123625108e21d461e59b812e3bbcf4f041c13d1",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "c83d927007a62e7a4d3b859b6bd03209be68f043c4c764c6944a66b4ccd36cb8"
+    },
+    "0356-perf-resumed-3-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "c508d7ea0abd5490f43922a7bfac660436ab7a0a16547a1547d9ef40cfc90f12",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "edc460408a0883d2d9777d6dafeba8dc89bfb9e6bf9109dea7787b9499d99233"
+    },
+    "0357-perf-resumed-3-indexed": {
+      "operation": "resume",
+      "request_sha256": "a6727220c54d449defd577d581b366dbfc437b8b38d3f305bef677e14f158f66",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "e58ac6a0c0d2c1226979b775842bb5136fa1dd91715a7513a9bdaa5dbb9c9533"
+    },
+    "0358-perf-resumed-3-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "8e6a847a2f3cf1bda55b571e5569d1198d3e511175e17e32cfd1d2936922881e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8be966f67a66d93d4cc810f93f42b1d40a15c012287d53251cfbf7fe358f8d7b"
+    },
+    "0359-perf-resumed-3-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "8e6a847a2f3cf1bda55b571e5569d1198d3e511175e17e32cfd1d2936922881e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8be966f67a66d93d4cc810f93f42b1d40a15c012287d53251cfbf7fe358f8d7b"
+    },
+    "0360-perf-resumed-4-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "1111e1e210150e98678b6745864abed9215bc41e192ee4ad8de69ca611c0c55f",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "1c21d7fb22bb214efdb5d1a2ca01288320978f40f6de419852a0709acd214868"
+    },
+    "0361-perf-resumed-4-indexed": {
+      "operation": "resume",
+      "request_sha256": "46ff9f41182780621b54624b5a29b490f1bcfb3016b24e839eb1421e82240e82",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "bbd58121a9046c4a3d54c45830ef66184c6511e7fc33ea426b363483947d6dc2"
+    },
+    "0362-perf-resumed-4-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "bf7daa0077cd2cb217a717eb42537d71c6c1e302cf520ea8f14ed049d2e0b1ff",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ebad517669131e402af0958dc3ceef37f4682d3aed544bbd0dc5eaf6ca1c01c6"
+    },
+    "0363-perf-resumed-4-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "bf7daa0077cd2cb217a717eb42537d71c6c1e302cf520ea8f14ed049d2e0b1ff",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ebad517669131e402af0958dc3ceef37f4682d3aed544bbd0dc5eaf6ca1c01c6"
+    },
+    "0364-perf-resumed-4-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "2c272bf5e8c9788b5c201ac6b4c64ff4e34a27a538692b5d159d0bda82645f1d",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "688192199a81fd094bdbd97ff7e7f4d21cd198d0bd710d8ea8a2a42868d922dd"
+    },
+    "0365-perf-resumed-4-scan_all": {
+      "operation": "resume",
+      "request_sha256": "3304e3883abdc8eb605a00db5b97fb25e79a4275dfba62d3a4a3e3d82a28589e",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "8655963a8a76478edd19599e621c8924e0d179b143855b7984f1a476e9150058"
+    },
+    "0366-perf-resumed-4-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "c9f54d5c418546a14ef9145f60ad06411d24d31bfd915c5875045b6c36ea3e89",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "15cd8747bea50b162cd7c82a19876a5b8085f8314163872b4d193cd9ae2a5747"
+    },
+    "0367-perf-resumed-4-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "c9f54d5c418546a14ef9145f60ad06411d24d31bfd915c5875045b6c36ea3e89",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "15cd8747bea50b162cd7c82a19876a5b8085f8314163872b4d193cd9ae2a5747"
+    },
+    "0368-perf-resumed-5-scan_all-prefix": {
+      "operation": "run",
+      "request_sha256": "b183afd5f1be8b00d7752b575260041960edc98091766378fcbd5256348ded7c",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "7136ec5eb26e304636845cb4ef1a60ada0d11e80cbaef12171b22d404ebab2b0"
+    },
+    "0369-perf-resumed-5-scan_all": {
+      "operation": "resume",
+      "request_sha256": "8ac0223d86389eb948dc34e2e26bfba9778995b7ad168a092853f17482d7feec",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "1de76e5293282dad3eea9bbd0f850dd55e4b68ce3be733187e0f2ad8cf11a634"
+    },
+    "0370-perf-resumed-5-scan_all-terminal": {
+      "operation": "read",
+      "request_sha256": "2ee494e07e1e5649b2fd7a147b8270342c70040c509473693bcb75de5e5d2fff",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ef369c70cff54a73d9c1666a831d75f15c319317723fee9d54e841a76f0eba75"
+    },
+    "0371-perf-resumed-5-scan_all-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "2ee494e07e1e5649b2fd7a147b8270342c70040c509473693bcb75de5e5d2fff",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "ef369c70cff54a73d9c1666a831d75f15c319317723fee9d54e841a76f0eba75"
+    },
+    "0372-perf-resumed-5-indexed-prefix": {
+      "operation": "run",
+      "request_sha256": "9c529fcd4418dbc8a91834ec83840ea9bfbfbaa06e72d345165a3f6455ea302b",
+      "exit": 1,
+      "stderr_contains": "INCOMPLETE_LIMIT: rounds before fixed point",
+      "stdout_policy": "empty",
+      "request_identity_sha256": "6fbf4e3acaf29f24e8b1ca3386621641aab848f5bf75276f7928ecbca9e690c1"
+    },
+    "0373-perf-resumed-5-indexed": {
+      "operation": "resume",
+      "request_sha256": "f1d86869f26c284e360c6b24f7914b54ad022e47ec91621c86012b11eb1661b5",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "6c50a3fe2cc73397f55ed385297ed1039ea4aae57ca2b3208a338f3e92811ff1"
+    },
+    "0374-perf-resumed-5-indexed-terminal": {
+      "operation": "read",
+      "request_sha256": "e9b393b2bb3da779239aa2368dd80a5adf7637cb94f8f8f3881bd665796bbc86",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "568c58a4d8484b3cc43c06143e5f478dcba2027f2cb594d96f49a518d516146a"
+    },
+    "0375-perf-resumed-5-indexed-terminal-verify": {
+      "operation": "verify",
+      "request_sha256": "e9b393b2bb3da779239aa2368dd80a5adf7637cb94f8f8f3881bd665796bbc86",
+      "exit": 0,
+      "stderr_contains": null,
+      "stdout_policy": "semantic",
+      "request_identity_sha256": "568c58a4d8484b3cc43c06143e5f478dcba2027f2cb594d96f49a518d516146a"
+    }
+  },
+  "roots": [
+    "cancel",
+    "canonical-reachability_bfs_v1",
+    "canonical-weak_components_min_label_v1",
+    "chain-bfs-0",
+    "crash-before_select",
+    "crash-directory_synced",
+    "crash-object_linked",
+    "crash-selected",
+    "crash-stage_open",
+    "crash-stage_synced",
+    "crash-stage_written",
+    "crash-witness_synced",
+    "deadline",
+    "dense-components-0",
+    "disk-quota",
+    "empty-components-0",
+    "fenced",
+    "inode-swap-before_round",
+    "inode-swap-before_select",
+    "isolated-bfs-3",
+    "isolated-components-0",
+    "max-bfs-0",
+    "max-components-0",
+    "max_chain-bfs-0",
+    "mixed-bfs-0",
+    "mixed-bfs-3",
+    "mixed-bfs-9",
+    "mixed-components-0",
+    "output-limit",
+    "perf-dense-0-indexed",
+    "perf-dense-0-scan_all",
+    "perf-dense-1-indexed",
+    "perf-dense-1-scan_all",
+    "perf-dense-2-indexed",
+    "perf-dense-2-scan_all",
+    "perf-dense-3-indexed",
+    "perf-dense-3-scan_all",
+    "perf-dense-4-indexed",
+    "perf-dense-4-scan_all",
+    "perf-dense-5-indexed",
+    "perf-dense-5-scan_all",
+    "perf-resumed-0-indexed",
+    "perf-resumed-0-scan_all",
+    "perf-resumed-1-indexed",
+    "perf-resumed-1-scan_all",
+    "perf-resumed-2-indexed",
+    "perf-resumed-2-scan_all",
+    "perf-resumed-3-indexed",
+    "perf-resumed-3-scan_all",
+    "perf-resumed-4-indexed",
+    "perf-resumed-4-scan_all",
+    "perf-resumed-5-indexed",
+    "perf-resumed-5-scan_all",
+    "perf-sparse-0-indexed",
+    "perf-sparse-0-scan_all",
+    "perf-sparse-1-indexed",
+    "perf-sparse-1-scan_all",
+    "perf-sparse-2-indexed",
+    "perf-sparse-2-scan_all",
+    "perf-sparse-3-indexed",
+    "perf-sparse-3-scan_all",
+    "perf-sparse-4-indexed",
+    "perf-sparse-4-scan_all",
+    "perf-sparse-5-indexed",
+    "perf-sparse-5-scan_all",
+    "perturbed-reachability_bfs_v1",
+    "perturbed-weak_components_min_label_v1",
+    "restart-reachability_bfs_v1",
+    "restart-reachability_bfs_v1-replay",
+    "restart-weak_components_min_label_v1",
+    "restart-weak_components_min_label_v1-replay",
+    "round-limit",
+    "short-write",
+    "stalled",
+    "terminal-crash-before_select",
+    "terminal-crash-selected"
+  ],
+  "enospc_root": "selected-root",
+  "operation_exit_counts": {
+    "explain:0": 15,
+    "read:0": 81,
+    "read:1": 48,
+    "resume:0": 31,
+    "resume:1": 6,
+    "run:-9": 13,
+    "run:0": 43,
+    "run:1": 53,
+    "verify:0": 78,
+    "verify:1": 7
+  }
+}

@@ -1,0 +1,12 @@
+{"commands": 380, "feedback_rows": 1099948, "kill_boundaries": 8, "measured_pairs": 15, "refusals_or_kills": 129, "roots": 77, "rounds": 33978, "selected_cuts": 146, "terminal_kills": 2, "terminal_reads": 161}
+rehashed forged terminal rows: refused (terminal ledger differs)
+rehashed forged feedback credit: refused (credit conservation differs)
+rehashed required success changed to failure: refused (0035-mixed-bfs-0: exit disposition differs: expected 0, got 1)
+rehashed refusal reason and stdout forged: refused (0096-duplicate_vertex: required diagnostic missing: 'invalid local plan/schema: duplicate vertex')
+rehashed refusal emits unexpected stdout: refused (0096-duplicate_vertex: unexpected stdout on refusal/interruption)
+rehashed refusal request replaced by valid request: refused (0096-duplicate_vertex: request identity differs from frozen scenario)
+rehashed omitted required case: refused (case inventory: missing=['0096-duplicate_vertex'] extra=[])
+rehashed selected receipt sequence forged: refused (empty-components-0: genesis pin receipt missing or altered)
+rehashed restart process identity forged: refused (restart-reachability_bfs_v1: restart sequence reused a process)
+rehashed round sequence forged: refused (round trace differs at 0035-mixed-bfs-0:0)
+rehashed material standard deviation forgery: refused (sparse/indexed/compute_ns: standard deviation differs materially)

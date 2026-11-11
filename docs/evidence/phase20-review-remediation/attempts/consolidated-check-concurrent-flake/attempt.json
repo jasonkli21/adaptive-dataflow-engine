@@ -1,0 +1,7 @@
+{
+  "attempt": "final-source consolidated checks overlapped the full detached archive/tamper replay",
+  "result": "workspace-test exited 101 on join_pressure_prefix_safety_refusals_and_cleanup; its expected source-drift error was replaced by a transient failed protocol read under concurrent local load",
+  "other_steps": "all other recorded check steps exited 0",
+  "targeted_retry": "cargo test -p ade-distributed --test join_job join_pressure_prefix_safety_refusals_and_cleanup -- --exact",
+  "targeted_retry_result": "PASS"
+}

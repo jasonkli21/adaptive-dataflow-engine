@@ -104,6 +104,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-iterate"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-logical",
+ "ade-physical",
+ "blake3",
+ "ctrlc",
+ "rustix",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "ade-logical"
 version = "0.1.0"
 dependencies = [

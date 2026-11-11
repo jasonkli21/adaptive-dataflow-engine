@@ -1,0 +1,33 @@
+[package]
+name = "ade-iterate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+cyclic-v1 = [
+    "dep:ade-exec", "dep:ade-logical", "dep:ade-physical", "dep:blake3",
+    "dep:ctrlc", "dep:rustix", "dep:serde", "dep:serde_json", "dep:thiserror",
+]
+fault-injection = ["cyclic-v1"]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", features = ["cyclic-v1"], optional = true }
+ade-logical = { path = "../ade-logical", optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+blake3 = { version = "1", optional = true }
+ctrlc = { version = "3", optional = true }
+rustix = { version = "1", features = ["fs", "process"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+
+[[bin]]
+name = "ade-iterate"
+path = "src/main.rs"
+required-features = ["cyclic-v1"]

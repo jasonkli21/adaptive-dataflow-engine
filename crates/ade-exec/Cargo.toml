@@ -8,6 +8,9 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+cyclic-v1 = []
+
 [dependencies]
 ade-physical = { path = "../ade-physical" }
 arrow = { workspace = true, features = ["ipc"] }

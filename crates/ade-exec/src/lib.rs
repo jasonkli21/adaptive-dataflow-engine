@@ -3,6 +3,8 @@
 use arrow::array::UInt64Array;
 mod aggregate;
 mod ipc_scan;
+#[cfg(feature = "cyclic-v1")]
+pub mod iterative;
 pub mod join;
 pub mod memory;
 pub mod partial;

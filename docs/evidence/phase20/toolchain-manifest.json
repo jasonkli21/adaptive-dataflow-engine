@@ -1,0 +1,29 @@
+{
+  "archive_sha256": "de09b7b8eb6f253eda82f8ff5f9241dc4237e8927563a25269c269af06bf9d9e",
+  "files": {
+    "acceptance-build.log": "0763e260c8d86e6cd0fe7bee8dcea09b442d562a1fcb9ad2a76bf5e86444e81a",
+    "exits.tsv": "05deda246f5dc8d5d5c40f2ce6a87d082a3f55c479626c0d4269f4506d17c40d",
+    "format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incremental-no-default.log": "22e0df986057b9ba5be07526ac5fb348862a3dedef42108383cc3e088acbb889",
+    "iterate-cyclic-tree.log": "b2a760ed39f0721d04f30182434820b136bd0e6857285a45a640f3fe1ffd09f7",
+    "iterate-default-tree.log": "d8b0d11c4ec7f62efd16c8764f5b020a8154040bcf64e973515ad58b90900c1a",
+    "iterate-no-default.log": "99f71393b9903dca098310bb446022a4bdee195ea9996f351a787195555210a6",
+    "iterate-production-check.log": "42f26db7ef125d948b273146af03da95fcc4c1a44721c3f6502aa450e7879c98",
+    "phase19-extract-original.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "phase19-historical.log": "64bae6d8174a19b9f91d7e1068d3ad6785e2f251e7952d2cdfc576c28362f44c",
+    "phase19-original-source/scripts/phase17/digest.py": "a106009dbd089473847024aab69c028efa1ccc5210ddf73016123370eaee2ad5",
+    "phase19-original-source/scripts/phase19/acceptance.py": "f0527b1ddc72efbb8c8aa3f4ad11a8d07bf706f6b2c4d79f455665bfb43986da",
+    "phase19-original-source/scripts/phase19/criteria.json": "0cd0af66dab3770afe4c926004a7df6df46b7b6424ba024cdd413d31b60226ac",
+    "phase19-original-source/scripts/phase19/oracle.py": "2ac5ab19ab7e727034bf3fcdefe145769bdb8b627eaf2110225d01e54b515219",
+    "phase19-original-source/scripts/phase19/package_evidence.py": "4745c0bfd92894781cb4dd0f8650d1bd19027f59e519f628cc155860bd9cf03d",
+    "phase19-original-source/scripts/phase19/verify_evidence.py": "05ec16fad8a5d98c68ba0b242806c3c95f7fa41c58e2b0ff55bdf4970d0d7056",
+    "phase19-review-remediation-historical.log": "821eab50caf9821be12e3ca6bd05f4abf6118fb00dbdee7e252e03552eb8906f",
+    "prior-evidence.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python-regressions.log": "285a0320f02e5219bc2b13cb57baf1d25325cabed20a409c22352a3c684ec955",
+    "smoke-build.log": "3b0efd41c2f6e1f666f67135e2f3931ce90c4ed214ff373f800a2104d5256610",
+    "smoke.log": "d9b0877c85e59367dec2f053c734597ca9eea9e36ac70c22544bf4bdf530eae4",
+    "workspace-check.log": "689bf7a4f19684098b20bd402fe4378b7465cba6f20670512d918d207e3ad255",
+    "workspace-clippy.log": "eaa1b090e4ecdbceabc61a52b90ea7e245aec8bd2b2738e599dce4e90d983351",
+    "workspace-test.log": "a19fcc121b22c450f01599a3ed9267c287bc25bad819481951b6e43444c644c8"
+  }
+}

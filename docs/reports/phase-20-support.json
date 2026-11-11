@@ -1,0 +1,82 @@
+{
+  "qualification": "COMPLETE_BOUNDED_CYCLIC_DATAFLOW_V1",
+  "date": "2026-11-11",
+  "feature": "ade-iterate/cyclic-v1",
+  "default_enabled": false,
+  "baseline": "c0e1c1faec96219fb79c864de1d6194bf5d8571e",
+  "baseline_tree": "ae94710731c9c8656003d4faddc3f968220d58c0",
+  "phase18": {
+    "qualification": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1",
+    "phase20_only_waiver": true
+  },
+  "source_inventory_sha256": "01fa4216ea0af0482975f8829ca990fe3eb9dc7a8bf71d7be017fd2b03dd96b3",
+  "executable_sha256": "ae2de07d49ca896df7dd58ec559cd532d0a86f0fee49ca3c24e956d94c25fad2",
+  "criteria_sha256": "ffe6c0037b18d940d9426f66222708ebd85da7bb8c4c2da78e339f96d80647de",
+  "fixture_lock_sha256": "cc72307084dc3032555d4e3b96745114a07b326e65471cbf654d5aaba998ce04",
+  "archive_sha256": "534703e4c37d6c61a86e93c8028a5b56141d5c8214ca0330ba2d9699b46f8441",
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PASS",
+    "G6": "PASS",
+    "G7": "PASS",
+    "G8": "PASS",
+    "G9": "PASS",
+    "G10": "PASS",
+    "G11": "PASS",
+    "G12": "PASS",
+    "G13": "PASS",
+    "G14": "PASS",
+    "G15": "PASS"
+  },
+  "algorithms": [
+    "reachability_bfs_v1",
+    "weak_components_min_label_v1"
+  ],
+  "source": "immutable finite local Parquet, exact ordered BLAKE3 inventory",
+  "publication": "one private local root, kernel fencing, independently pinned selected chain",
+  "evidence": {
+    "archive": "docs/evidence/phase20/acceptance.tar.gz",
+    "member_inventory": "docs/evidence/phase20/manifest.json",
+    "toolchain": "docs/evidence/phase20/toolchain.tar.gz",
+    "verification": "docs/evidence/phase20/verification.log",
+    "parent_tamper": "docs/evidence/phase20/supplement/parent.tar.gz"
+  },
+  "observations": {
+    "processes": 380,
+    "terminal_reads_or_verifies": 161,
+    "roots": 77,
+    "selected_cuts": 146,
+    "refusals_or_kills": 129,
+    "rounds": 33978,
+    "delayed_rows": 1099948,
+    "measured_pairs": 15
+  },
+  "performance": {
+    "sparse": {
+      "scan_to_index_work": 1024.0,
+      "index_to_scan_median": 0.08577517791540586
+    },
+    "dense": {
+      "scan_to_index_work": 1.4349775784753362,
+      "index_to_scan_median": 0.7643041495699587
+    },
+    "resumed": {
+      "scan_to_index_work": 1025.0019569471624,
+      "index_to_scan_median": 0.08650450217321506
+    }
+  },
+  "out_of_scope": [
+    "distributed or remote cycles",
+    "dynamic graph inputs",
+    "general recursion or iterative ML",
+    "production HA",
+    "automatic GC",
+    "arbitrary power loss",
+    "external transactions"
+  ],
+  "toolchain_archive_sha256": "de09b7b8eb6f253eda82f8ff5f9241dc4237e8927563a25269c269af06bf9d9e"
+}

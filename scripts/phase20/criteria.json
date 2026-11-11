@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "baseline": "c0e1c1faec96219fb79c864de1d6194bf5d8571e",
+  "baseline_tree": "ae94710731c9c8656003d4faddc3f968220d58c0",
+  "phase18_disposition": "phase20-specific isolated finite local waiver; phase18 remains partial",
+  "limits": {"vertices": 4096, "edges": 65536, "rounds": 4096, "source_bytes": 67108864, "state_bytes": 67108864, "disk_bytes": 268435456, "output_bytes": 16777216, "deadline_ms": 120000, "files_per_role": 32, "batch_rows": 1024, "credits": 1024, "feedback_rows_per_round": 4096, "edge_proposals_per_round": 131072, "parquet_metadata_bytes": 1048576, "decoded_row_group_bytes": 16777216, "root_entries": 12293},
+  "fixtures": {"empty": [0,0], "isolated": [4,0], "mixed": [10,12], "chain": [1024,1023], "dense": [256,8192], "max": [4096,65536], "max_chain": [4096,4095]},
+  "seeds": [0, 3, 9],
+  "negative": ["duplicate_vertex", "duplicate_edge", "unknown_endpoint", "forged_hash", "inode_swap", "wrong_schema", "null_schema", "missing_file", "unknown_json", "missing_seed", "changed_plan", "changed_source", "zero_delay", "instant_cycle", "mismatched_port", "nested_loop", "overflow", "late_feedback", "duplicate_ack", "missing_ack", "wrong_round", "selector_rollback", "witness_tamper", "object_tamper", "root_clone", "symlink", "traversal", "concurrent_writer", "concurrent_reader", "missing_pin", "short_write", "enospc", "stalled_sink", "quota", "round_limit", "deadline", "cancellation", "forced_mode"],
+  "crash_points": ["stage_open", "stage_written", "stage_synced", "object_linked", "witness_synced", "before_select", "selected", "directory_synced"],
+  "performance": {
+    "warmups": 1,
+    "pairs": 5,
+    "order": "alternating within each regime",
+    "measurement": "native executor round work wall time, excluding process/source/checkpoint/serialization; report end-to-end too",
+    "regimes": {
+      "sparse": {"fixture":"chain","algorithm":"bfs","seed":0,"min_scan_to_index_work":8,"max_index_to_scan_median":1.25},
+      "dense": {"fixture":"dense","algorithm":"components","min_scan_to_index_work":1,"max_index_to_scan_median":1.50},
+      "resumed": {"fixture":"chain","algorithm":"bfs","seed":0,"checkpoint_round":512,"min_scan_to_index_work":8,"max_index_to_scan_median":1.25}
+    },
+    "variance": "record every pair and population standard deviation; no outlier removal"
+  }
+}

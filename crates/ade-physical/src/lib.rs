@@ -1,4 +1,5 @@
 //! Versioned, frontend-independent, bounded native execution contract.
+pub mod cycle;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

@@ -1,0 +1,174 @@
+{
+  "chain": {
+    "graph_sha256": "4b6429f6e0e82dfb6b01f886b95acd407db3a747d77a96a5ace8cd997bca26e0",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "0fa99b1b65a7631797ea372816ce19d35da6a013bb807c66eb8129475ba97f2a",
+          "bytes": 16963,
+          "name": "edges-0.parquet",
+          "rows": 1023
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "0fe5ff1cc6524cf94884d5b5ef58d5542caf70ea451d1877398c22915e97b7f8",
+          "bytes": 8610,
+          "name": "vertices-0.parquet",
+          "rows": 1024
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "0": 1,
+      "1": 1023
+    }
+  },
+  "dense": {
+    "graph_sha256": "9c0ebd90cc909ecd5ee40f0b91dce576da8341c44a5427e12a16e88a2db844b1",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "184474161f017f86364d3a513125a8ddf8b4a612256c97fc3b4f30214a9b7b3d",
+          "bytes": 131916,
+          "name": "edges-0.parquet",
+          "rows": 8192
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "279c603f2e9bd4c3a67ceb6b1cd800e131534744fea392dd4730e4cdf1447521",
+          "bytes": 2460,
+          "name": "vertices-0.parquet",
+          "rows": 256
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "32": 256
+    }
+  },
+  "empty": {
+    "graph_sha256": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "93803577534bf598a0d1c44bf1d72f3c6ac7fb0c656c8add4979c05a6a2c2068",
+          "bytes": 425,
+          "name": "edges-0.parquet",
+          "rows": 0
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "c5b8f39d1d6eabe5881d2a39942e3896d2747d11418592a9c0a7052232a94d1e",
+          "bytes": 329,
+          "name": "vertices-0.parquet",
+          "rows": 0
+        }
+      ]
+    },
+    "out_degree_histogram": {}
+  },
+  "isolated": {
+    "graph_sha256": "29aa5e6b7f37f4d7dc3125b84bc309bb5be7bc2773eb39d33964e10cf523515c",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "93803577534bf598a0d1c44bf1d72f3c6ac7fb0c656c8add4979c05a6a2c2068",
+          "bytes": 425,
+          "name": "edges-0.parquet",
+          "rows": 0
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "22a59ac52c934a5d149ec9d45f0534302f14a4e06ae7c10485f5d7fec71eb9e7",
+          "bytes": 438,
+          "name": "vertices-0.parquet",
+          "rows": 4
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "0": 4
+    }
+  },
+  "max": {
+    "graph_sha256": "92d05aa38bd35bbcaf72b44dc0619c9f7f3e1c5c63dfdcdfc4784964eddd8bf4",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "a9c7e1817a47bd81ab89859c5d9f1f4217bba2a02aa9ac9198e8506c96d6bba2",
+          "bytes": 1052837,
+          "name": "edges-0.parquet",
+          "rows": 65536
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "0585e1d68982936b26caa66e25308aa8109d0a00b230181026e784e58ab74adb",
+          "bytes": 33186,
+          "name": "vertices-0.parquet",
+          "rows": 4096
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "15": 4079,
+      "16": 16,
+      "4095": 1
+    }
+  },
+  "max_chain": {
+    "graph_sha256": "7e273e061f67c5c056783d06ada9b272a00001d0ced309fb1c90fb11b30159a7",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "b10673a4218a7cdb3dc8adee9b131d632378e1f736d544eef4c174fe7d6fcc52",
+          "bytes": 66119,
+          "name": "edges-0.parquet",
+          "rows": 4095
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "0585e1d68982936b26caa66e25308aa8109d0a00b230181026e784e58ab74adb",
+          "bytes": 33186,
+          "name": "vertices-0.parquet",
+          "rows": 4096
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "0": 1,
+      "1": 4095
+    }
+  },
+  "mixed": {
+    "graph_sha256": "fa67c36aedc7fddf7021826d647f4e8280cba9a8e25ecd3db665da7c14e7d392",
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "ac7ea9b42727942311b2189f0a956a7b40b61ebc4346907168efd44182af2f67",
+          "bytes": 774,
+          "name": "edges-0.parquet",
+          "rows": 12
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "7c66cff05938a3a0aa25de57959284364c2dfa6a355ddaa9f94721327b1cd18f",
+          "bytes": 488,
+          "name": "vertices-0.parquet",
+          "rows": 10
+        }
+      ]
+    },
+    "out_degree_histogram": {
+      "0": 1,
+      "1": 6,
+      "2": 3
+    }
+  }
+}

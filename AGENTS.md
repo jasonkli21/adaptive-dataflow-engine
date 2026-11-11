@@ -368,3 +368,28 @@ The additive independent review remediation is recorded in
 current source, including a real temporary-filesystem ENOSPC check. Preserve the
 original Phase19 archive and criteria. Phase18 remains partial and its current-
 source Kafka/worker acceptance is still separate debt.
+
+## Phase20 authorization — 2026-11-11
+
+The user authorized the attached Phase20 implementation in this session
+without subagents and with one local commit. The submitted handoff gives
+Phase20 a separate waiver of the open Phase18 acceptance dependency for
+the isolated finite-local path only. Phase18 remains
+`PARTIAL_PHASE18_UNIFIED_ADMISSION_V1`. Preserve its gates and archives and
+both Phase19 archives.
+
+Follow ADR-0027 and the reconciled Phase20 plan. The default-off
+`ade-iterate/cyclic-v1` path is finite immutable local Parquet, directed BFS
+and weak components, with a typed delayed physical feedback edge and a
+pinned local checkpoint/terminal chain. PlanV1, StreamConfigV1 and earlier
+selectors retain their existing contracts. Phase21 requires separate
+authorization. The Phase20 report and support matrix determine acceptance.
+
+Phase20 is `COMPLETE_BOUNDED_CYCLIC_DATAFLOW_V1` under ADR-0027 and
+`docs/reports/phase-20-implementation-report.md`. Preserve the original
+criteria, matched executable/source identities, all samples and earlier
+attempts in `docs/evidence/phase20/`. The acceptance envelope is one local
+operator-owned lineage on an honest filesystem. Process-kill and real
+temporary-filesystem ENOSPC evidence establish local behavior. Production
+HA, disk-loss recovery, distributed feedback and arbitrary power-loss
+behavior remain outside this contract.

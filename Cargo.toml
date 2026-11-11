@@ -2,6 +2,7 @@
 members = [
     "crates/ade-logical",
     "crates/ade-incremental",
+    "crates/ade-iterate",
     "crates/ade-stream",
     "crates/ade-ops",
     "crates/ade-physical",

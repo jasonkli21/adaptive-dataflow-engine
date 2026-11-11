@@ -1,0 +1,271 @@
+archive_sha256 f0317dcef8cc9620959fbcaa51db1ed1c9fc761b0da9e343efbfbf4f3dd3c560
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l1dcachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l2cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l3cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.optional.neon'. Detail: [errno 1] Operation not permitted
+{
+  "cases": 99,
+  "timing": {
+    "baseline": [
+      {
+        "wall_ns": 241869000,
+        "probe_ns": 191890666,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44826624,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 241134916,
+        "probe_ns": 199192125,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 239064041,
+        "probe_ns": 195075542,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 243711708,
+        "probe_ns": 192410709,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44793856,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 245544333,
+        "probe_ns": 192702917,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44826624,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 454167875,
+        "probe_ns": 383906125,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44908544,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 300110542,
+        "probe_ns": 216099625,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      }
+    ],
+    "local": [
+      {
+        "wall_ns": 300588958,
+        "probe_ns": 232952042,
+        "stage_ns": 36937916,
+        "native_query_ns": 117088167,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45219840,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 299972208,
+        "probe_ns": 231372583,
+        "stage_ns": 36899875,
+        "native_query_ns": 115968667,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45236224,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 291597000,
+        "probe_ns": 235233625,
+        "stage_ns": 36779917,
+        "native_query_ns": 119927375,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45219840,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 297248292,
+        "probe_ns": 230123750,
+        "stage_ns": 36745250,
+        "native_query_ns": 115691959,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45187072,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 293244083,
+        "probe_ns": 231995583,
+        "stage_ns": 37410375,
+        "native_query_ns": 116302458,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45236224,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 299846208,
+        "probe_ns": 232370917,
+        "stage_ns": 37767834,
+        "native_query_ns": 115504125,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45187072,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 294835125,
+        "probe_ns": 232818833,
+        "stage_ns": 37258167,
+        "native_query_ns": 117527333,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45268992,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      }
+    ],
+    "remote_baseline": [
+      {
+        "wall_ns": 240840167,
+        "probe_ns": 194064208,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44810240,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 236750708,
+        "probe_ns": 192768500,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44875776,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 246287000,
+        "probe_ns": 193839084,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 295173708,
+        "probe_ns": 207207708,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45432832,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 300703750,
+        "probe_ns": 245864000,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44761088,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      }
+    ],
+    "s3": [
+      {
+        "wall_ns": 460368792,
+        "probe_ns": 419008458,
+        "stage_ns": 223912708,
+        "native_query_ns": 115820417,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56279040,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 623666250,
+        "probe_ns": 558409292,
+        "stage_ns": 364688584,
+        "native_query_ns": 115493667,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56508416,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 464392750,
+        "probe_ns": 416194500,
+        "stage_ns": 221853208,
+        "native_query_ns": 115697792,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56164352,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 782048708,
+        "probe_ns": 710760208,
+        "stage_ns": 493296750,
+        "native_query_ns": 126658666,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56967168,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 565754334,
+        "probe_ns": 521768250,
+        "stage_ns": 316189125,
+        "native_query_ns": 121045209,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 58064896,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      }
+    ]
+  },
+  "median_ns": {
+    "baseline": 243711708,
+    "local": 297248292,
+    "remote_baseline": 246287000,
+    "s3": 565754334
+  }
+}
+different_rows REJECTED
+relabelled_request REJECTED
+missing_case REJECTED
+forged_timing REJECTED
+wrong_delta_cut REJECTED
+forged_sink REJECTED
+forged_kafka_phase REJECTED

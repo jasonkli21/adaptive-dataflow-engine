@@ -1,0 +1,259 @@
+{
+  "cases": 99,
+  "timing": {
+    "baseline": [
+      {
+        "wall_ns": 244759583,
+        "probe_ns": 194017583,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 243444375,
+        "probe_ns": 191461083,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44810240,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 239632000,
+        "probe_ns": 191522666,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44777472,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 240396041,
+        "probe_ns": 193980917,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44826624,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 242262709,
+        "probe_ns": 193242750,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44859392,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 238242250,
+        "probe_ns": 192741709,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44793856,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 245813125,
+        "probe_ns": 192287500,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44728320,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      }
+    ],
+    "local": [
+      {
+        "wall_ns": 291516125,
+        "probe_ns": 232618500,
+        "stage_ns": 36411625,
+        "native_query_ns": 117613334,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45187072,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 299901291,
+        "probe_ns": 229270042,
+        "stage_ns": 36727083,
+        "native_query_ns": 114555709,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45203456,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 297706333,
+        "probe_ns": 231864292,
+        "stage_ns": 38008583,
+        "native_query_ns": 115066417,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45219840,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 295863333,
+        "probe_ns": 230592750,
+        "stage_ns": 36324416,
+        "native_query_ns": 115507334,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45236224,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 299387291,
+        "probe_ns": 229884500,
+        "stage_ns": 36348833,
+        "native_query_ns": 115169708,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45203456,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 299398750,
+        "probe_ns": 229753041,
+        "stage_ns": 36386250,
+        "native_query_ns": 115487125,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45236224,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 294590459,
+        "probe_ns": 229867583,
+        "stage_ns": 36486083,
+        "native_query_ns": 114713375,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45219840,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      }
+    ],
+    "remote_baseline": [
+      {
+        "wall_ns": 288490292,
+        "probe_ns": 207431375,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 45383680,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 241802000,
+        "probe_ns": 196363959,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44810240,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 573504292,
+        "probe_ns": 507424333,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44793856,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 346859292,
+        "probe_ns": 301832542,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44826624,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 349161916,
+        "probe_ns": 276237542,
+        "stage_ns": 0,
+        "native_query_ns": null,
+        "wire_body_bytes": 0,
+        "rss_bytes": 44908544,
+        "stage_bytes": 0,
+        "native_peak": 1649536
+      }
+    ],
+    "s3": [
+      {
+        "wall_ns": 448630583,
+        "probe_ns": 418658042,
+        "stage_ns": 223601041,
+        "native_query_ns": 116912041,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56328192,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 528371584,
+        "probe_ns": 498070417,
+        "stage_ns": 224710375,
+        "native_query_ns": 123922625,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56442880,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 1000984916,
+        "probe_ns": 872143541,
+        "stage_ns": 536355084,
+        "native_query_ns": 216720667,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 56950784,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 765397250,
+        "probe_ns": 728548792,
+        "stage_ns": 252255000,
+        "native_query_ns": 251048500,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 57507840,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      },
+      {
+        "wall_ns": 674239959,
+        "probe_ns": 636606458,
+        "stage_ns": 269141083,
+        "native_query_ns": 150462792,
+        "wire_body_bytes": 1600536,
+        "rss_bytes": 57556992,
+        "stage_bytes": 1600536,
+        "native_peak": 1649536
+      }
+    ]
+  },
+  "median_ns": {
+    "baseline": 242262709,
+    "local": 297706333,
+    "remote_baseline": 346859292,
+    "s3": 674239959
+  }
+}

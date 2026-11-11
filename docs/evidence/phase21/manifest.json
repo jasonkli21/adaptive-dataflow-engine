@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "candidate": 6,
+  "archive": "acceptance.tar.gz",
+  "archive_sha256": "3d994e7f645504c5401399d3c170422199ab0e3b44d2216b3dcca10792dd47fe",
+  "baseline_commit": "f49d42d8a4009cce2b22558dfb65cabcd1929c27",
+  "baseline_tree": "046a5921e406e1590a2edb853823d7012efb8fb6",
+  "source_inventory_sha256": "4d54771ccf51add5c1b4679e7677189da5b6b80ebbf7dba7e3df3e91278dd77b",
+  "source_file_count": 194,
+  "criteria_sha256": "7127d6449af4d695e68e6b7200d5db884a70fdd491a8d64a7696dd8775fa57ba",
+  "executable_sha256": "31d9d14bf02e236813fe7dab508022bd1fd65efb9eeb8723842f804345a3dfc5",
+  "cli_sha256": "ce11dc396ccc794bcd0eb087c7d5c7274ab26a8a9a01fb1c699d671100c34cf7",
+  "cargo_lock_sha256": "4df5f3d87615efa724980327d845ea51957aee589d98b301a770cbfba2f4d5f1",
+  "process_cases": 99,
+  "functional_cases": 75,
+  "timing_pairs": 12,
+  "tamper": {
+    "different_rows.tar.gz": "0c860777d041cd7fdee4f30db8dd3f6ac6c32d2d058c0e4a0c5de128f122bc7e",
+    "forged_kafka_phase.tar.gz": "d51deacd73df40c47902439a96d878ed7508073bc21e7bc5e7441059d8a7665a",
+    "forged_sink.tar.gz": "ec42537de6cd59f8effcd0aefff538b7101df9f722ad872fbb9bca014e53f728",
+    "forged_timing.tar.gz": "3d4863e011f04cec8657a18cbffc17818cf9b52a6ce1f63cfe7b00a3783f01c4",
+    "missing_case.tar.gz": "a8acc16f5352850fa77d0b69dec5d6ad18b59596a634368ee0bfc2bf487f8b9f",
+    "relabelled_request.tar.gz": "d42d7ca26127b597645f06c22c41117bc06d637276ecee685c4b4ffbaefaa8d5",
+    "source_path_escape.tar.gz": "e216343e0b285fe4bd25c90a0ee2b4fcdd7ecf8d4ec94568e4edd180ae709c4f",
+    "wrong_delta_cut.tar.gz": "af26d378df5dc4e2f5759f476bdf0407171e602c1b014299b6853101c3af3a29"
+  },
+  "toolchain": {
+    "archive": "toolchain.tar.gz",
+    "sha256": "b06233c375d45e43496355e04ab8bed7378545602c4d825047959cf182f53519",
+    "exits": {
+      "build": 0,
+      "check": 0,
+      "clippy": 0,
+      "diff": 0,
+      "feature_matrix": 0,
+      "feature_tree": 0,
+      "fmt": 0,
+      "python": 0,
+      "smoke": 0,
+      "smoke_build": 0,
+      "test_all": 0,
+      "test_default_off": 0
+    },
+    "passed_tests": {
+      "test_all": 337,
+      "test_default_off": 247,
+      "python": 72
+    }
+  }
+}

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/ade-logical",
+    "crates/ade-connectors",
     "crates/ade-incremental",
     "crates/ade-iterate",
     "crates/ade-stream",

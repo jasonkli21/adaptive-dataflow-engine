@@ -1,0 +1,1 @@
+{"cases": 38, "classifications": 1897, "measurements": 12, "peaks": {"checkpoint_peak_bytes": 140279, "disk_peak_bytes": 1216, "hot_peak_bytes": 128, "kafka_queue_bytes": 13356}, "records": 2061, "source_files": 352, "windows": 64}

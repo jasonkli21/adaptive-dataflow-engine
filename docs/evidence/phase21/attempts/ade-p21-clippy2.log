@@ -1,0 +1,32 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+    Checking ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+error: used underscore-prefixed binding
+   --> crates/ade-connectors/src/iceberg/parquet_stage.rs:50:31
+    |
+ 50 |             let destination = staged._dir.path().join(&name);
+    |                               ^^^^^^^^^^^
+    |
+note: binding is defined here
+   --> crates/ade-connectors/src/contract.rs:334:5
+    |
+334 |     pub(crate) _dir: tempfile::TempDir,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#used_underscore_binding
+    = note: `-D clippy::used-underscore-binding` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::used_underscore_binding)]`
+
+error: field name ends with the struct's name
+   --> crates/ade-connectors/src/iceberg.rs:145:5
+    |
+145 |     previous_metadata: Option<Vec<LogMetadata>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#struct_field_names
+    = note: `-D clippy::struct-field-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::struct_field_names)]`
+
+error: could not compile `ade-connectors` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-connectors` (lib) due to 2 previous errors

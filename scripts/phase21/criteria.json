@@ -1,0 +1,466 @@
+{
+  "version": 1,
+  "full_release": "all G0-G16 in the Phase 21 plan on matched source",
+  "cases": [
+    [
+      "local",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "local_retry",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "local_conflict",
+      "local",
+      "publication conflict"
+    ],
+    [
+      "local_abort",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "local_mutation",
+      "local",
+      "split size or content"
+    ],
+    [
+      "local_symlink",
+      "local",
+      "connector I/O failed"
+    ],
+    [
+      "local_wrong_snapshot",
+      "local",
+      "catalog or snapshot authority"
+    ],
+    [
+      "sink_kill_prepared",
+      "local",
+      "SIGKILL"
+    ],
+    [
+      "sink_kill_committed",
+      "local",
+      "SIGKILL"
+    ],
+    [
+      "sink_restart",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "delta_v0",
+      "delta",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "delta_v1",
+      "delta",
+      [
+        3,
+        3
+      ]
+    ],
+    [
+      "delta_gap",
+      "delta",
+      "connector I/O failed"
+    ],
+    [
+      "delta_protocol",
+      "delta",
+      "Delta protocol or upgrade"
+    ],
+    [
+      "iceberg_s0",
+      "iceberg",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "iceberg_s1",
+      "iceberg",
+      [
+        3,
+        -4,
+        3,
+        11,
+        8
+      ]
+    ],
+    [
+      "iceberg_metadata_mutation",
+      "iceberg",
+      "Iceberg metadata digest"
+    ],
+    [
+      "iceberg_partition",
+      "iceberg",
+      "Iceberg protocol, table location or evolution"
+    ],
+    [
+      "iceberg_manifest_truncated",
+      "iceberg",
+      "Avro"
+    ],
+    [
+      "s3",
+      "s3",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "s3_mutation",
+      "s3",
+      "split size or content"
+    ],
+    [
+      "s3_redirect",
+      "s3",
+      "S3 GET"
+    ],
+    [
+      "s3_timeout",
+      "s3",
+      "connector deadline exceeded"
+    ],
+    [
+      "postgres",
+      "postgres",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "postgres_concurrent",
+      "postgres",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "postgres_null",
+      "postgres",
+      "Postgres NULL or incompatible value"
+    ],
+    [
+      "postgres_type",
+      "postgres",
+      "Postgres bigint projection required"
+    ],
+    [
+      "postgres_injection",
+      "postgres",
+      "Postgres table or type allowlist"
+    ],
+    [
+      "postgres_limit",
+      "postgres",
+      "captured rows"
+    ],
+    [
+      "postgres_cancel",
+      "postgres",
+      "connector deadline exceeded"
+    ],
+    [
+      "flight",
+      "flight",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "flight_ticket_mutation",
+      "flight",
+      [
+        11,
+        8
+      ]
+    ],
+    [
+      "flight_schema",
+      "flight",
+      "Flight declared schema"
+    ],
+    [
+      "flight_oversize",
+      "flight",
+      "Flight response"
+    ],
+    [
+      "flight_timeout",
+      "flight",
+      "connector deadline exceeded"
+    ],
+    [
+      "kafka_assigned",
+      "kafka",
+      "receipts"
+    ],
+    [
+      "kafka_history_live",
+      "kafka",
+      "receipts"
+    ],
+    [
+      "kafka_idle",
+      "kafka",
+      "receipts"
+    ],
+    [
+      "kafka_pin",
+      "kafka",
+      "native Kafka spec"
+    ],
+    [
+      "kafka_wrong_cluster",
+      "kafka",
+      "native Kafka connection or source admission"
+    ],
+    [
+      "kafka_restart",
+      "kafka",
+      "receipts"
+    ],
+    [
+      "sink_concurrent_a",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "sink_concurrent_b",
+      "local",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "sink_enospc",
+      "local",
+      "StorageFull"
+    ],
+    [
+      "delta_checkpoint",
+      "delta",
+      "Delta checkpoints unsupported"
+    ],
+    [
+      "delta_deletion_vector",
+      "delta",
+      "Delta add semantics"
+    ],
+    [
+      "s3_auth",
+      "s3",
+      "S3 GET"
+    ],
+    [
+      "s3_truncated",
+      "s3",
+      "S3 response body"
+    ],
+    [
+      "postgres_tls",
+      "postgres",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "postgres_tls_wrong_ca",
+      "postgres",
+      "Postgres TLS or connection"
+    ],
+    [
+      "postgres_loss",
+      "postgres",
+      "Postgres"
+    ],
+    [
+      "flight_tls",
+      "flight",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "flight_tls_wrong_ca",
+      "flight",
+      "Flight connection or TLS"
+    ],
+    [
+      "flight_cancel",
+      "flight",
+      "connector cancelled"
+    ],
+    [
+      "kafka_retention",
+      "kafka",
+      "native Kafka connection or source admission"
+    ],
+    [
+      "kafka_expansion",
+      "kafka",
+      "native Kafka connection or source admission"
+    ],
+    [
+      "kafka_range",
+      "kafka",
+      "strict logical plan"
+    ],
+    [
+      "s3_unsafe_endpoint",
+      "s3",
+      "S3 endpoint or bucket policy"
+    ],
+    [
+      "s3_unsafe_key",
+      "s3",
+      "snapshot version, authority or split inventory"
+    ],
+    [
+      "postgres_wire_cap",
+      "postgres",
+      "Postgres wire bytes"
+    ],
+    [
+      "flight_schema_drift",
+      "flight",
+      "Flight response"
+    ],
+    [
+      "iceberg_deleted_entry",
+      "iceberg",
+      "Iceberg deleted or unknown entry"
+    ],
+    [
+      "postgres_mid_export",
+      "postgres",
+      "Postgres"
+    ],
+    [
+      "local_codec",
+      "local",
+      "connector Parquet compression"
+    ],
+    [
+      "local_row_count",
+      "local",
+      "staged source preflight"
+    ],
+    [
+      "local_schema",
+      "local",
+      "staged source preflight"
+    ],
+    [
+      "local_cli",
+      "cli",
+      [
+        3,
+        -4,
+        3
+      ]
+    ],
+    [
+      "delta_readd",
+      "delta",
+      [
+        3,
+        -4,
+        3,
+        3,
+        3
+      ]
+    ],
+    [
+      "delta_duplicate",
+      "delta",
+      "Delta protocol or upgrade"
+    ],
+    [
+      "delta_traversal",
+      "delta",
+      "Delta add semantics"
+    ],
+    [
+      "iceberg_v2",
+      "iceberg",
+      "Iceberg protocol, table location or evolution"
+    ],
+    [
+      "iceberg_schema_reuse",
+      "iceberg",
+      "Iceberg primitive schema"
+    ],
+    [
+      "iceberg_uri",
+      "iceberg",
+      "Iceberg local file URI required"
+    ],
+    [
+      "iceberg_data_mutation",
+      "iceberg",
+      "split size or content"
+    ],
+    [
+      "local_footer",
+      "local",
+      "Parquet metadata range"
+    ]
+  ],
+  "timing": {
+    "pairs": 7,
+    "classification": "descriptive paired whole-process timings without speed threshold",
+    "rows": 200000,
+    "remote_pairs": 5
+  },
+  "oracle": "fixed row bags, independent Delta and Iceberg reference readers, Kafka producer ledger and independently decoded sink IPC"
+}

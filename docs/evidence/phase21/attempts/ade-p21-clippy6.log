@@ -1,0 +1,42 @@
+    Blocking waiting for file lock on build directory
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+error[E0433]: cannot find type `AtomicBool` in this scope
+   --> crates/ade-connectors/src/postgres.rs:112:30
+    |
+112 |     let exhausted = Arc::new(AtomicBool::new(false));
+    |                              ^^^^^^^^^^ use of undeclared type `AtomicBool`
+    |
+help: consider importing this type alias
+    |
+  4 + use std::sync::atomic::AtomicBool;
+    |
+
+error[E0433]: cannot find type `SocketAddrV4` in this scope
+   --> crates/ade-connectors/src/postgres.rs:114:23
+    |
+114 |         let address = SocketAddrV4::new(endpoint.address, endpoint.port);
+    |                       ^^^^^^^^^^^^ use of undeclared type `SocketAddrV4`
+    |
+help: consider importing this struct
+    |
+  4 + use std::net::SocketAddrV4;
+    |
+
+error[E0433]: cannot find type `Ordering` in this scope
+   --> crates/ade-connectors/src/postgres.rs:155:23
+    |
+155 |     if exhausted.load(Ordering::Relaxed) {
+    |                       ^^^^^^^^ use of undeclared type `Ordering`
+    |
+help: consider importing one of these enums
+    |
+  4 + use std::cmp::Ordering;
+    |
+  4 + use std::sync::atomic::Ordering;
+    |
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `ade-connectors` (lib test) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-connectors` (lib) due to 3 previous errors

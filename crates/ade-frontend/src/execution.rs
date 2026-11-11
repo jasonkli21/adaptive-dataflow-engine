@@ -63,15 +63,49 @@ impl Catalog {
     /// # Errors
     /// Refuses expired or overlong deadlines, unsupported targets/configurations,
     /// source drift, or native failures without returning partial output.
+    pub fn execute_until(
+        &self,
+        plan: &PlanV1,
+        options: Options,
+        deadline: Instant,
+    ) -> Result<Output> {
+        self.execute_with_token(
+            plan,
+            options,
+            deadline,
+            ade_exec::CancellationToken::default(),
+        )
+    }
+
+    /// Execute the local connector graph with cancellation shared by its stage owner.
+    ///
+    /// # Errors
+    /// Refuses nonlocal graphs, invalid bindings, timeouts and cancellation.
+    #[cfg(feature = "connector-binding")]
+    pub fn execute_staged_until(
+        &self,
+        plan: &PlanV1,
+        options: Options,
+        deadline: Instant,
+        token: ade_exec::CancellationToken,
+    ) -> Result<Output> {
+        require(
+            plan.target == Target::Local,
+            "connector binding only supports local execution",
+        )?;
+        self.execute_with_token(plan, options, deadline, token)
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "One absolute deadline is threaded through validation and native execution."
     )]
-    pub fn execute_until(
+    fn execute_with_token(
         &self,
         plan: &PlanV1,
         mut options: Options,
         deadline: Instant,
+        token: ade_exec::CancellationToken,
     ) -> Result<Output> {
         options.timeout = deadline.saturating_duration_since(Instant::now());
         require(
@@ -101,7 +135,7 @@ impl Catalog {
                 &catalog,
                 options.local,
                 options.batch_size,
-                ade_exec::CancellationToken::default(),
+                token,
                 remaining,
             )?))
         } else {

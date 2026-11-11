@@ -1,0 +1,45 @@
+   Compiling ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:152:25
+    |
+152 |                         DataType::UInt64
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:153:31
+    |
+153 | ...                   | DataType::Int64
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:154:31
+    |
+154 | ...                   | DataType::Float64
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:155:31
+    |
+155 | ...                   | DataType::UInt32
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:156:31
+    |
+156 | ...                   | DataType::Utf8
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `DataType` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:157:31
+    |
+157 | ...                   | DataType::Timestamp(TimeUnit::Millisecond, None)
+    |                         ^^^^^^^^ use of undeclared type `DataType`
+
+error[E0433]: cannot find type `TimeUnit` in this scope
+   --> crates/ade-connectors/src/batch/sink.rs:157:51
+    |
+157 | ...                   | DataType::Timestamp(TimeUnit::Millisecond, None)
+    |                                             ^^^^^^^^ use of undeclared type `TimeUnit`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `ade-connectors` (lib) due to 7 previous errors

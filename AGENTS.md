@@ -406,3 +406,24 @@ closed, specialized two-algorithm template, not a general composable cyclic
 operator API. Preserve the original timing guards and criteria. No Phase21,
 general cyclic runtime, nested loops, distributed progress or general
 iterative ML authorization is inferred.
+
+## Phase21 authorization and completion — 2026-11-11
+
+The user authorized Phase21 in this session without subagents and with one
+local commit. Phase21 is `COMPLETE_BOUNDED_CONNECTOR_CATALOG_V1` under ADR-0028
+and `docs/reports/phase-21-implementation-report.md`. Preserve the frozen
+source, service, executable and fixture identities, all five predecessor
+candidates and the semantic tamper cases in `docs/evidence/phase21/`.
+
+The default-off `ade-connectors` integrations cover pinned local and signed
+S3-compatible Parquet, pinned local Iceberg format-v1 and Delta protocol 1/2,
+one-shot bigint PostgreSQL and Arrow Flight DoGet, and native stateless
+assigned/history-then-live Kafka. Finite queries stage data for existing
+native PlanV1. The local IPC sink uses one operator-owned filesystem, an
+atomic immutable key and verified same-payload retry. Keep connector
+credentials outside semantic pins and native runtime dependencies.
+
+Phase18 and Phase20 keep their existing qualifications. Phase21's stateless
+Kafka evidence is separate. No predecessor waiver, external transaction,
+generic JDBC, full table-format support, distributed remote scan or Phase22
+authorization is inferred.

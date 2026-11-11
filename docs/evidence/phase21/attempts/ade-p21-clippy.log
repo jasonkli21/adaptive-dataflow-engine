@@ -1,0 +1,122 @@
+    Checking reqwest v0.12.28
+    Checking ade-physical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-physical)
+   Compiling bigdecimal v0.4.11
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+    Checking num-bigint v0.4.8
+    Checking rdkafka v0.39.0
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+    Checking ade-logical v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-logical)
+   Compiling strsim v0.11.1
+   Compiling ident_case v1.0.1
+   Compiling prettyplease v0.3.0
+    Checking axum v0.8.9
+   Compiling darling_core v0.24.1
+    Checking native-tls v0.2.18
+    Checking object_store v0.13.2
+    Checking adler2 v2.0.1
+    Checking tokio-native-tls v0.3.1
+    Checking miniz_oxide v0.8.9
+   Compiling strum_macros v0.27.2
+    Checking serde_bytes v0.11.19
+    Checking strum v0.27.2
+    Checking regex-lite v0.1.9
+    Checking postgres-native-tls v0.5.3
+   Compiling darling_macro v0.24.1
+   Compiling darling v0.24.1
+    Checking tonic v0.14.9
+   Compiling bon-macros v3.10.3
+    Checking parquet v59.3.1
+    Checking tonic-prost v0.14.9
+    Checking arrow-flight v59.3.1
+    Checking bon v3.10.3
+    Checking apache-avro v0.21.0
+    Checking ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+    Checking datafusion-common v55.2.0
+    Checking ade-stream v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-stream)
+    Checking ade-incremental v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-incremental)
+    Checking ade-iterate v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-iterate)
+    Checking datafusion-expr-common v55.2.0
+    Checking datafusion-physical-expr-common v55.2.0
+    Checking datafusion-functions-window-common v55.2.0
+    Checking datafusion-functions-aggregate-common v55.2.0
+    Checking datafusion-expr v55.2.0
+    Checking datafusion-physical-expr v55.2.0
+    Checking datafusion-execution v55.2.0
+    Checking datafusion-functions v55.2.0
+    Checking datafusion-functions-aggregate v55.2.0
+    Checking datafusion-functions-window v55.2.0
+    Checking datafusion-optimizer v55.2.0
+    Checking datafusion-physical-plan v55.2.0
+    Checking datafusion-physical-expr-adapter v55.2.0
+    Checking datafusion-functions-nested v55.2.0
+    Checking datafusion-sql v55.2.0
+    Checking datafusion-session v55.2.0
+    Checking datafusion-datasource v55.2.0
+    Checking datafusion-pruning v55.2.0
+    Checking datafusion-catalog v55.2.0
+    Checking datafusion-datasource-arrow v55.2.0
+    Checking datafusion-datasource-json v55.2.0
+    Checking datafusion-datasource-csv v55.2.0
+    Checking datafusion-physical-optimizer v55.2.0
+    Checking datafusion-datasource-parquet v55.2.0
+    Checking datafusion-functions-table v55.2.0
+    Checking datafusion-catalog-listing v55.2.0
+    Checking datafusion v55.2.0
+    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+    Checking ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+error: this argument is passed by value, but not consumed in the function body
+   --> crates/ade-connectors/src/delta.rs:145:29
+    |
+145 | fn check_metadata(metadata: Metadata, schema: &[Field]) -> Result<()> {
+    |                             ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_pass_by_value
+    = note: `-D clippy::needless-pass-by-value` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+145 | fn check_metadata(metadata: &Metadata, schema: &[Field]) -> Result<()> {
+    |                             +
+
+error: item in documentation is missing backticks
+ --> crates/ade-connectors/src/flight.rs:1:36
+  |
+1 | //! Bounded read-only Arrow Flight DoGet capture.
+  |                                    ^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+  = note: `-D clippy::doc-markdown` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::doc_markdown)]`
+help: try
+  |
+1 - //! Bounded read-only Arrow Flight DoGet capture.
+1 + //! Bounded read-only Arrow Flight `DoGet` capture.
+  |
+
+error: item in documentation is missing backticks
+  --> crates/ade-connectors/src/flight.rs:57:17
+   |
+57 | /// Capture one DoGet response. An opaque ticket remains one-shot. A fresh
+   |                 ^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_markdown
+help: try
+   |
+57 - /// Capture one DoGet response. An opaque ticket remains one-shot. A fresh
+57 + /// Capture one `DoGet` response. An opaque ticket remains one-shot. A fresh
+   |
+
+error: field name starts with the struct's name
+   --> crates/ade-connectors/src/iceberg.rs:143:5
+    |
+143 |     metadata_log: Option<Vec<LogMetadata>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#struct_field_names
+    = note: `-D clippy::struct-field-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::struct_field_names)]`
+
+error: could not compile `ade-connectors` (lib test) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-connectors` (lib) due to 4 previous errors

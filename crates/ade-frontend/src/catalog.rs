@@ -241,3 +241,35 @@ fn source_schema(table: &str, required_schema: &str) -> Result<Vec<Field>> {
         }
     })
 }
+
+#[cfg(feature = "connector-binding")]
+impl Catalog {
+    /// Register one opt-in staged connector binding using native source verification.
+    ///
+    /// The caller owns the private stage for the whole lifetime of this catalog.
+    /// The binding is local only and must use the existing physical `input` name.
+    ///
+    /// # Errors
+    /// Refuses a nonempty catalog, incompatible source or failed native preflight.
+    pub fn register_staged_input(
+        &mut self,
+        binding: Binding,
+        deadline: Instant,
+        cancellation: &CancellationToken,
+    ) -> Result<()> {
+        require(
+            self.native.bindings.is_empty()
+                && binding.source.id == 0
+                && binding.source.table == "input",
+            "expected one staged input binding",
+        )?;
+        let mut plan = PlanV1::new(Target::Local, vec![binding.source.clone()]);
+        plan.push(Operator::Scan { source: 0 })?;
+        let catalog = NativeCatalog {
+            bindings: vec![binding],
+        };
+        catalog.verify(&plan, cancellation, deadline, true)?;
+        self.native = catalog;
+        Ok(())
+    }
+}

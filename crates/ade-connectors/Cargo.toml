@@ -1,0 +1,59 @@
+[package]
+name = "ade-connectors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+batch = ["dep:ade-exec", "dep:ade-frontend", "dep:arrow", "dep:tokio", "dep:parquet"]
+delta = []
+iceberg = ["batch", "dep:apache-avro", "dep:url"]
+flight = ["batch", "dep:arrow-flight", "dep:tonic", "dep:futures"]
+postgres = ["batch", "dep:tokio-postgres", "dep:postgres-native-tls", "dep:native-tls", "dep:futures", "tokio/net", "tokio/io-util"]
+kafka = ["dep:ade-stream", "dep:uuid"]
+s3 = ["dep:object_store", "dep:tokio", "dep:reqwest", "dep:async-trait", "dep:http-body-util", "dep:url", "dep:futures"]
+
+[dependencies]
+apache-avro = { version = "0.21", default-features = false, optional = true }
+arrow-flight = { version = "=59.3.1", default-features = false, optional = true }
+tonic = { version = "0.14", default-features = false, features = ["transport", "tls-webpki-roots"], optional = true }
+tokio-postgres = { version = "0.7", optional = true }
+postgres-native-tls = { version = "0.5", optional = true }
+native-tls = { version = "0.2", optional = true }
+parquet = { workspace = true, optional = true }
+ade-physical = { path = "../ade-physical" }
+ade-exec = { path = "../ade-exec", optional = true }
+ade-frontend = { path = "../ade-frontend", features = ["connector-binding"], optional = true }
+ade-stream = { path = "../ade-stream", features = ["unified-planner"], optional = true }
+arrow = { workspace = true, features = ["ipc"], optional = true }
+tokio = { version = "1", features = ["rt", "time", "macros"], optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+blake3 = "1"
+uuid = { version = "1", optional = true }
+tempfile = "3"
+rustix = { version = "1", features = ["fs"] }
+object_store = { version = "0.13.2", default-features = false, features = ["aws", "tls-webpki-roots"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "stream"], optional = true }
+async-trait = { version = "0.1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+url = { version = "2", optional = true }
+futures = { version = "0.3", optional = true }
+
+[dev-dependencies]
+parquet.workspace = true
+
+[[bin]]
+name = "ade-connect"
+path = "src/bin/ade-connect.rs"
+required-features = ["batch"]
+
+[[example]]
+name = "phase21-probe"
+required-features = ["batch", "delta", "iceberg", "s3", "flight", "postgres", "kafka"]

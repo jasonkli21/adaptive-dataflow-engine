@@ -1,0 +1,8 @@
+   Compiling ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ade-connectors` (bin "ade-connect") generated 1 warning
+warning: `ade-connectors` (example "phase21-probe") generated 1 warning (1 duplicate)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.63s

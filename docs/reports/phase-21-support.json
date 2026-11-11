@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "status": "COMPLETE_BOUNDED_CONNECTOR_CATALOG_V1",
+  "default_off": true,
+  "source_identity": "4d54771ccf51add5c1b4679e7677189da5b6b80ebbf7dba7e3df3e91278dd77b",
+  "evidence": "../evidence/phase21/manifest.json",
+  "gates": {
+    "G0": {
+      "status": "PASS",
+      "proof": "Baseline and exact runtime, harness, fixture and executable hashes with an independent Phase 21 prerequisite disposition."
+    },
+    "G1": {
+      "status": "PASS",
+      "proof": "Public source and sink lifecycles, separate extension integration test with real Parquet, typed capabilities and strict version/schema grammar."
+    },
+    "G2": {
+      "status": "PASS",
+      "proof": "Named catalog and explicit snapshot pins, verified ordered splits, metadata/row/schema/content drift refusals and private stage cleanup."
+    },
+    "G3": {
+      "status": "PASS",
+      "proof": "Native local and signed SeaweedFS S3 Parquet execution, exact row bags, changed bytes, truncated body, credential failure, no-follow redirect and reached timeout."
+    },
+    "G4": {
+      "status": "PASS",
+      "proof": "Two PyIceberg-produced format-v1 cuts with independent active-file and row checks, mutated metadata and data, schema and partition refusal, v2, deleted entries and malformed manifest/URI."
+    },
+    "G5": {
+      "status": "PASS",
+      "proof": "Three Delta versions including remove and re-add, checked with delta-rs and independently reconstructed from the JSON logs. Gaps, checkpoint, duplicate protocol, unsafe path and deletion vectors refuse."
+    },
+    "G6": {
+      "status": "PASS",
+      "proof": "Real Kafka assigned, historical and asynchronously appended live records, idle, restart, semantic identity, broker identity, retention and partition-count refusals."
+    },
+    "G7": {
+      "status": "PASS",
+      "proof": "Real PostgreSQL transaction and native parity during an overlapping writer, trusted and untrusted TLS, NULL/type/identifier/row-limit refusal, lock cancellation and a disconnect after 260 forwarded data frames."
+    },
+    "G8": {
+      "status": "PASS",
+      "proof": "Real Flight DoGet, changed one-shot ticket content identity, verified TLS, wrong CA, declared schema and midstream drift, oversize, timeout and cancellation."
+    },
+    "G9": {
+      "status": "PASS",
+      "proof": "Capped staged and decoded data, S3 one request and capped response, native deadline/cancellation, PostgreSQL raw-wire overflow reached, Flight message bounds and fail-closed source replay."
+    },
+    "G10": {
+      "status": "PASS",
+      "proof": "Same-key retry and concurrent commit, changed-plan conflict, abort, process kills before selection and after durable selection, independent IPC reopen and actual HFS+ ENOSPC."
+    },
+    "G11": {
+      "status": "PASS",
+      "proof": "Native SQL and CLI execute PlanV1 in ADE. Connector, source, pushdown, stage and native diagnostics bind to the independently checked result."
+    },
+    "G12": {
+      "status": "PASS",
+      "proof": "Verified remote auth and TLS where exercised, loopback-only fixture policy, redirect trap unvisited, path traversal and unsupported metadata refusal. Dependency audit shows no added advisory. Existing workspace advisories and transport-specific mitigations are recorded below."
+    },
+    "G13": {
+      "status": "PASS",
+      "proof": "Workspace feature configurations and native smoke checks pass. Detached Phase 17\u201320 archive replays match their historical evidence."
+    },
+    "G14": {
+      "status": "PASS",
+      "proof": "Independent format, service and sink oracles, seven local and five S3 paired process comparisons with raw wall, staging, native managed and RSS observations."
+    },
+    "G15": {
+      "status": "PASS",
+      "proof": "Matched evidence archive, exact ordered case contract and independent semantic verification. Fully rehashed row, request, inventory, source path, timing, Delta, sink and Kafka mutations refuse."
+    },
+    "G16": {
+      "status": "PASS",
+      "proof": "Final-source build, format, workspace check, Clippy, tests with and without default features, targeted feature matrix, smoke, Python tests and reproducible operator guide."
+    }
+  },
+  "adapters": {
+    "local_parquet": {
+      "status": "SUPPORTED",
+      "replay": "pinned_bytes",
+      "target": "local_plan_v1"
+    },
+    "s3_parquet": {
+      "status": "SUPPORTED",
+      "replay": "pinned_bytes",
+      "target": "local_plan_v1",
+      "evidence": "signed_loopback_seaweedfs"
+    },
+    "iceberg": {
+      "status": "SUPPORTED",
+      "scope": "local_format_v1_unpartitioned_append_only",
+      "replay": "pinned_bytes"
+    },
+    "delta": {
+      "status": "SUPPORTED",
+      "scope": "local_reader_1_writer_2_unpartitioned_contiguous_json",
+      "replay": "pinned_bytes"
+    },
+    "postgres": {
+      "status": "SUPPORTED",
+      "scope": "one_ordinary_table_bigint_repeatable_read",
+      "replay": "one_shot"
+    },
+    "flight": {
+      "status": "SUPPORTED",
+      "scope": "bounded_primitive_doget",
+      "replay": "one_shot"
+    },
+    "kafka": {
+      "status": "SUPPORTED",
+      "scope": "native_stateless_assigned_history_then_live",
+      "replay": "trace_relative",
+      "durable_offsets": false
+    },
+    "local_sink": {
+      "status": "SUPPORTED",
+      "scope": "same_filesystem_immutable_key",
+      "external_exactly_once": false
+    }
+  },
+  "predecessors": {
+    "phase18": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1",
+    "phase20": "PENDING_INDEPENDENT_REACCEPTANCE",
+    "waiver": false
+  },
+  "workspace_rustsec_audit": {
+    "baseline_exit": 1,
+    "current_exit": 1,
+    "new_findings": 0
+  }
+}

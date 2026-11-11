@@ -1,0 +1,15 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+error: field name starts with the struct's name
+   --> crates/ade-connectors/src/contract.rs:395:5
+    |
+395 |     pub(crate) stage_elapsed: Duration,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#struct_field_names
+    = note: `-D clippy::struct-field-names` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::struct_field_names)]`
+
+error: could not compile `ade-connectors` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-connectors` (lib) due to 1 previous error

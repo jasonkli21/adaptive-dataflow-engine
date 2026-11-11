@@ -1,0 +1,15 @@
+archive_sha256 3bdfdbcb96cb0e309b90ed05e098f8087e19746a47868c8edfdc1ad563f431ac
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l1dcachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l2cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l3cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.optional.neon'. Detail: [errno 1] Operation not permitted
+Traceback (most recent call last):
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase21/verify.py", line 385, in <module>
+    main()
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase21/verify.py", line 379, in main
+    print(json.dumps(verify(entries, args.repo, args.binary), indent=2))
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase21/verify.py", line 264, in verify
+    require(exit["code"] == -9 and err == b"REACHED\n" and not out and len(exit["live_stages"]) == 1,
+  File "/Users/jasonkli/projects/adaptive-dataflow-engine/scripts/phase21/verify.py", line 27, in require
+    raise ValueError(message)
+ValueError: sink_kill_prepared crash-cut witness

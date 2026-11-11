@@ -8,6 +8,7 @@ publish = false
 workspace = true
 [features]
 default = []
+connector-binding = []
 unified-planner = ["dep:ade-logical"]
 
 [dependencies]

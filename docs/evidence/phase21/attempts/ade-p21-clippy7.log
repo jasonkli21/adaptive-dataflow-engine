@@ -1,0 +1,59 @@
+   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)
+    Checking ade-connectors v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-connectors)
+error[E0283]: type annotations needed
+   --> crates/ade-connectors/src/postgres.rs:150:18
+    |
+150 |                 .make_tls_connect(&endpoint.host)
+    |                  ^^^^^^^^^^^^^^^^
+    |
+    = note: the type must implement `tokio::io::AsyncRead`
+    = help: the following types implement trait `tokio::io::AsyncRead`:
+              &[u8]
+              &mut T
+              h2::codec::framed_write::FramedWrite<T, B>
+              hyper_util::rt::tokio::TokioIo<T>
+              hyper_util::rt::tokio::with_hyper_io::WithHyperIo<I>
+              hyper_util::rt::tokio::with_tokio_io::WithTokioIo<I>
+              object_store::buffered::BufReader
+              postgres::wire::Wire
+            and 37 others
+    = note: the type must also implement `tokio::io::AsyncWrite`
+    = note: the type must also implement `std::marker::Unpin`
+    = note: the type must also implement `std::marker::Send`
+    = note: required for `postgres_native_tls::MakeTlsConnector` to implement `tokio_postgres::tls::MakeTlsConnect<_>`
+    = note: required for `postgres_native_tls::MakeTlsConnector` to implement `tokio_postgres::tls::MakeTlsConnect<_>`
+    = note: required for `postgres_native_tls::MakeTlsConnector` to implement `tokio_postgres::tls::MakeTlsConnect<_>`
+    = note: required for `postgres_native_tls::MakeTlsConnector` to implement `tokio_postgres::tls::MakeTlsConnect<_>`
+help: try using a fully qualified path to specify the expected types
+    |
+149 -             let client_tls = postgres_native_tls::MakeTlsConnector::new(tls)
+150 -                 .make_tls_connect(&endpoint.host)
+149 +             let client_tls = <postgres_native_tls::MakeTlsConnector as tokio_postgres::tls::MakeTlsConnect<S>>::make_tls_connect(&mut postgres_native_tls::MakeTlsConnector::new(tls), &endpoint.host)
+    |
+
+error[E0277]: the `?` operator can only be applied to values that implement `std::ops::Try`
+   --> crates/ade-connectors/src/s3.rs:298:23
+    |
+298 |         let limited = http_body_util::Limited::new(body, self.cap).map_err(|_| refused())?;
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `?` operator cannot be applied to type `MapErr<Limited<HttpResponseBody>, {closure@s3.rs:298:76}>`
+    |
+    = help: the nightly-only, unstable trait `std::ops::Try` is not implemented for `MapErr<Limited<HttpResponseBody>, {closure@s3.rs:298:76}>`
+    = note: the full name for the type has been written to '/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/deps/ade_connectors-498c4b1f9be9d7c7.long-type-2526757775636418985.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the `?` operator can only be applied to values that implement `std::ops::Try`
+   --> crates/ade-connectors/src/s3.rs:298:23
+    |
+298 |         let limited = http_body_util::Limited::new(body, self.cap).map_err(|_| refused())?;
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `?` operator cannot be applied to type `MapErr<Limited<HttpResponseBody>, {closure@s3.rs:298:76}>`
+    |
+    = help: the nightly-only, unstable trait `std::ops::Try` is not implemented for `MapErr<Limited<HttpResponseBody>, {closure@s3.rs:298:76}>`
+    = note: the full name for the type has been written to '/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/deps/ade_connectors-46a5734dac04ccaf.long-type-963029589565548513.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+Some errors have detailed explanations: E0277, E0283.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `ade-connectors` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `ade-connectors` (lib test) due to 2 previous errors

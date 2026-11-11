@@ -1,0 +1,1 @@
+{"cases": 137, "enospc": {"codec": 1, "cuts": 2, "outputs": 0, "owners": 1, "records": 80, "state_entries": 80}, "exports": 4, "matched_cuts": 387, "observations": 152, "prerequisite": {"cases": 5, "remote_objects": 172, "requests": 848}, "sessions": 70, "source_files": 352}

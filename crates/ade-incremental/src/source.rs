@@ -11,7 +11,6 @@ use ade_logical::maintained::{DELTA_BYTES, DeltaBatchV1, MaintainedPlanV1, SHARD
 use ade_physical::{Operator, PlanV1, Target};
 use arrow::array::{Int64Array, UInt64Array};
 use std::{
-    io,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
@@ -46,7 +45,7 @@ impl From<&std::fs::Metadata> for FileStamp {
     }
 }
 impl Baseline {
-    pub fn open(root: &Path, descriptor: &MaintainedPlanV1, guard: &Guard) -> Result<Option<Self>> {
+    pub fn open(root: &Path, descriptor: &MaintainedPlanV1, guard: &Guard) -> Result<Self> {
         storage::no_symlinks(root)?;
         let source = descriptor.source().clone();
         let mut files = Vec::new();
@@ -54,14 +53,9 @@ impl Baseline {
         for entry in &source.files {
             let path = root.join(&entry.name);
             storage::no_symlinks(&path)?;
-            match storage::regular(&path) {
-                Ok(file) => {
-                    stamps.push(FileStamp::from(&file.metadata()?));
-                    files.push(path);
-                }
-                Err(Error::Io(e)) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-                Err(e) => return Err(e),
-            }
+            let file = storage::regular(&path)?;
+            stamps.push(FileStamp::from(&file.metadata()?));
+            files.push(path);
         }
         let rows = source.files.iter().map(|file| file.rows).sum();
         let bytes = source.files.iter().map(|file| file.bytes).sum();
@@ -78,7 +72,7 @@ impl Baseline {
             bytes,
         };
         baseline.attest(guard)?;
-        Ok(Some(baseline))
+        Ok(baseline)
     }
 
     pub fn attest(&self, guard: &Guard) -> Result<()> {
@@ -358,4 +352,51 @@ fn load_file(
         return Err(Error::Quota("delta hot entries"));
     }
     Ok((batch, bytes.len() as u64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CancellationToken, Guard};
+    use ade_logical::maintained::PLAN_BYTES;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn explicitly_bound_missing_baseline_file_is_an_error() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("ade19-baseline-{}-{unique}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let document = serde_json::json!({
+            "version": 1,
+            "namespace": "missing-baseline-test",
+            "threshold": 0,
+            "baseline": [{
+                "name": "missing.parquet",
+                "bytes": 4,
+                "rows": 1,
+                "fingerprint": "0".repeat(64)
+            }]
+        });
+        let bytes = serde_json::to_vec(&document).unwrap();
+        assert!(bytes.len() < PLAN_BYTES);
+        let plan = MaintainedPlanV1::from_json(&bytes).unwrap();
+        let guard = Guard::new(CancellationToken::default(), 1000);
+        let Err(error) = Baseline::open(&root, &plan, &guard) else {
+            panic!("missing explicit baseline unexpectedly admitted")
+        };
+        assert!(
+            matches!(error, Error::Io(ref e) if e.kind() == std::io::ErrorKind::NotFound),
+            "{error:?}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }

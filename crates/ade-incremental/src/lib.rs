@@ -10,7 +10,7 @@ pub use ade_exec::CancellationToken;
 use ade_logical::maintained::{
     Decision, MAX_EPOCH, MaintainedPlanV1, PLAN_BYTES, Policy, Properties, is_digest,
 };
-pub use engine::{read, run};
+pub use engine::{read, read_view, run};
 use serde::{Deserialize, Serialize};
 use std::{
     io,
@@ -169,7 +169,7 @@ pub struct Metrics {
     pub root_bytes: u64,
     pub hot_entries_peak: usize,
     pub arrangement_instances: u8,
-    pub view_consumers: u8,
+    pub defined_views: u8,
     pub wall_us: u128,
 }
 
@@ -199,6 +199,7 @@ pub struct ReadOutcome {
     pub chain: String,
     pub result: String,
     pub view_rows: u64,
+    pub views_read: u8,
     pub hot_entries_peak: usize,
 }
 

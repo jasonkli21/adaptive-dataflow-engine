@@ -267,7 +267,10 @@ pub struct Work {
     pub scan_rows: u64,
     pub delta_rows: u64,
     pub touched_keys: u64,
-    pub verify_bytes: u64,
+    /// Bytes paid by shared source/checkpoint admission before route choice.
+    pub admission_bytes: u64,
+    /// Additional mandatory route-specific verification and decoding reads.
+    pub route_verify_bytes: u64,
     pub write_bytes: u64,
 }
 
@@ -277,7 +280,8 @@ impl Work {
             .checked_mul(4)?
             .checked_add(self.delta_rows)?
             .checked_add(self.touched_keys.checked_mul(6)?)?
-            .checked_add(self.verify_bytes / 64)?
+            .checked_add(self.admission_bytes / 64)?
+            .checked_add(self.route_verify_bytes / 64)?
             .checked_add(self.write_bytes / 32)
     }
 }
@@ -351,8 +355,8 @@ pub fn choose(
         .route;
     Ok(Decision {
         selected,
-        provenance: "verified_source_rows_bytes_delta_and_generation_inventory",
-        uncertainty: "integer work proxy; deadline and write estimates are not guarantees",
+        provenance: "shared_admission_bytes_plus_route_reads_and_verified_rows_delta_generation_inventory",
+        uncertainty: "integer work proxy includes mandatory known reads; storage latency and deadline estimates are not guarantees",
         candidates,
     })
 }

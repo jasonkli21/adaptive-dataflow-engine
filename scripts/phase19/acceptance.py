@@ -39,23 +39,31 @@ def optional_capture(args):
 
 
 class Fixture:
-    def __init__(self, parent, encoder, label, rows, epochs, nullable=False):
+    def __init__(self, parent, encoder, label, rows, epochs, nullable=False, file_parts=None):
         self.dir = parent / label
         self.dir.mkdir(parents=True)
         self.plan = self.dir / "plan.json"
         self.baseline = self.dir / "baseline.parquet"
         self.deltas = self.dir / "deltas"
         self.deltas.mkdir()
-        with (self.dir / "encoder-input.tmp").open("w+") as ledger:
-            for k, v in rows:
-                ledger.write(f"{k},{v}\n")
-            ledger.seek(0)
-            args = [encoder, self.baseline] + (["nullable"] if nullable else [])
-            result = subprocess.run(args, stdin=ledger, capture_output=True, check=True, timeout=90)
-        (self.dir / "encoder-input.tmp").unlink()
-        self.spec = strict(result.stdout)
+        file_parts = file_parts or [rows]
+        self.baselines = []
+        self.specs = []
+        for index, part in enumerate(file_parts):
+            path = self.dir / ("baseline.parquet" if index == 0 else f"baseline-{index}.parquet")
+            temp = self.dir / f"encoder-input-{index}.tmp"
+            with temp.open("w+") as ledger:
+                for k, v in part:
+                    ledger.write(f"{k},{v}\n")
+                ledger.seek(0)
+                args = [encoder, path] + (["nullable"] if nullable else [])
+                result = subprocess.run(args, stdin=ledger, capture_output=True, check=True, timeout=90)
+            temp.unlink()
+            self.baselines.append(path)
+            self.specs.append(strict(result.stdout))
+        self.spec = self.specs[0]
         descriptor = {"version": 1, "namespace": label, "threshold": CRITERIA["threshold"],
-                      "baseline": [self.spec]}
+                      "baseline": self.specs}
         self.plan.write_bytes(compact(descriptor))
         self.plan_id = plan_digest(descriptor)
         self.chains = [identity("maintained-genesis-v1", self.plan_id.encode())]
@@ -67,7 +75,7 @@ class Fixture:
             self.chains.append(delta(blob, self.plan_id, epoch, self.chains[-1])[0])
         if not nullable:
             self.model, self.raw_rows, self.changes = from_fixture(
-                self.plan.read_bytes(), [self.baseline.read_bytes()], self.epoch_bytes, check_baseline=False)
+                self.plan.read_bytes(), [path.read_bytes() for path in self.baselines], self.epoch_bytes, check_baseline=False)
             check([m["chain"] for m in self.model] == self.chains, "independent fixture chains")
 
     def delta_path(self, epoch):
@@ -116,9 +124,9 @@ class Campaign:
         write(request, doc)
         return request
 
-    def execute(self, command, req, env=None):
+    def execute(self, command, req, env=None, extra=()):
         start = time.perf_counter_ns()
-        result = subprocess.run([self.bin, command, req], capture_output=True, timeout=125, env=env)
+        result = subprocess.run([self.bin, command, req, *extra], capture_output=True, timeout=125, env=env)
         return result, time.perf_counter_ns() - start
 
     def apply(self, fixture, root, epoch, policy="adaptive", command="apply", **kw):
@@ -145,6 +153,17 @@ class Campaign:
             p.parent.mkdir(exist_ok=True)
             p.write_bytes(result.stdout)
         return {"sha256": sha(result.stdout), "footer": footer}
+
+    def read_named_view(self, fixture, root, epoch, view):
+        req = self.request(fixture, root, epoch, sources=False)
+        result, _ = self.execute("read-view", req, extra=(view,))
+        check(result.returncode == 0, f"reader refused view {view}: {result.stderr!r}")
+        rows = [strict(line) for line in result.stdout.splitlines()]
+        footer = rows.pop()
+        expected = [row for row in fixture.model[epoch]["views"] if row["view"] == view]
+        check(rows == expected, f"independent named view bag {view}")
+        check(footer["views_read"] == 1 and footer["view_rows"] == len(rows), "named reader counters")
+        return {"view": view, "sha256": sha(result.stdout), "footer": footer}
 
     def refuse(self, name, request, reason, command="apply", env=None):
         p, _ = self.execute(command, request, env)
@@ -203,6 +222,8 @@ class Campaign:
                  (500, 0, 3), (500, 0, -1), (9, -3, -1), (9, -3, 1)]
         third = [(500, 0, -2), (1, 0, -1), (1, -5, 1), (0, 0, 1)]
         tiny = Fixture(self.fixtures, self.encoder, "sequence", tiny_rows, [first, [], third])
+        multi = Fixture(self.fixtures, self.encoder, "multi-baseline", tiny_rows,
+                        [[(500, 0, 1)]], file_parts=[tiny_rows[:3], tiny_rows[3:6], tiny_rows[6:]])
         extreme = Fixture(self.fixtures, self.encoder, "extreme", [(99, 0)], [
             [(99, 0, MAX), (99, 0, MAX), (2**64 - 1, MIN, 1), (2**64 - 1, MAX, 1)],
             [(99, 0, MIN), (2**64 - 1, MIN, -1), (2**64 - 1, MAX, -1),
@@ -266,6 +287,62 @@ class Campaign:
         self.proof("sequence-full", rebuild)
         write(self.out / "sequence.json", {"traces": traces, "replay": full, "retry": retry})
 
+        # Explicit baseline binding is strict; only omission selects parent-only continuation.
+        multi_root = self.root("multi-baseline")
+        self.apply(multi, multi_root, 0, command="bootstrap")
+        for index, path in enumerate(multi.baselines):
+            saved = path.with_suffix(path.suffix + ".saved")
+            path.rename(saved)
+            try:
+                name = ("baseline_missing_first", "baseline_missing_middle", "baseline_missing_last")[index]
+                bad_request = self.request(multi, multi_root, 1, sources=False,
+                                           baseline=str(multi.dir), delta_tail=str(multi.delta_path(1)))
+                self.refuse(name, bad_request, "No such file")
+                preserved = self.read(multi, multi_root, 0)
+                self.record({"name": f"{name}_preserved_head", "head": preserved})
+                if index == 1:
+                    explain = self.request(multi, multi_root, 0, "restore", delta_tail=None)
+                    self.refuse("baseline_missing_explain_restore", explain,
+                                "No such file", command="explain")
+            finally:
+                saved.rename(path)
+        continuation = self.request(multi, multi_root, 1, sources=False,
+                                    delta_tail=str(multi.delta_path(1)))
+        continued, _ = self.execute("apply", continuation)
+        check(continued.returncode == 0 and strict(continued.stdout)["decision"]["selected"] == "incremental_update",
+              "omitted baseline permits verified parent-only continuation")
+        self.read(multi, multi_root, 1)
+        bad_restore_path = multi.baselines[0]
+        backup = bad_restore_path.with_suffix(".hidden")
+        bad_restore_path.rename(backup)
+        try:
+            self.refuse("baseline_missing_restore", self.request(multi, multi_root, 1, "restore"),
+                        "No such file", command="explain")
+        finally:
+            backup.rename(bad_restore_path)
+        readers = []
+        request_path = self.request(multi, multi_root, 1, sources=False)
+        for view in ("all_v1", "filtered_v1"):
+            process = subprocess.Popen([self.bin, "read-view", request_path, view],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            readers.append((view, process))
+        view_records = []
+        for view, process in readers:
+            stdout, stderr = process.communicate(timeout=30)
+            check(process.returncode == 0, f"named reader failed: {stderr!r}")
+            rows = [strict(line) for line in stdout.splitlines()]
+            footer = rows.pop()
+            expected = [row for row in multi.model[1]["views"] if row["view"] == view]
+            check(rows == expected and footer["views_read"] == 1
+                  and footer["result"] == multi.model[1]["result"], "separate named reader oracle")
+            view_records.append({"view": view, "stdout": stdout.decode(), "footer": footer,
+                                 "manifest_sha256": sha((multi_root / "g-00000001" / "MAINTAINED19").read_bytes())})
+        write(self.out / "view_readers.json", view_records)
+        unknown, _ = self.execute("read-view", request_path, extra=("unknown_v1",))
+        check(unknown.returncode != 0 and not unknown.stdout, "unknown view refuses before output")
+        self.record({"name": "unknown_view", "exit": unknown.returncode,
+                     "stderr": unknown.stderr.decode(), "stdout": unknown.stdout.decode()})
+
         eroot = self.root("signed-extremes")
         for epoch in range(4):
             trace, _ = self.apply(extreme, eroot, epoch, "incremental_update" if epoch else "disabled")
@@ -303,10 +380,57 @@ class Campaign:
         for quota, limit, reason in [
             ("hot_quota", {"hot_entries": 1}, "hot entries"),
             ("state_quota", {"state_bytes": 75}, "arrangement encoded bytes"),
-            ("output_quota", {"output_bytes": 127}, "view output bytes"),
             ("disk_quota", {"disk_bytes": 512}, "projected disk budget"),
         ]:
             self.refuse(quota, self.request(fixture, self.root(quota), 0, limits=limit), reason)
+
+        for label, rows in (("empty-output", []), ("one-row-output", [(1, 1)]),
+                            ("many-row-output", [(i, i % 7) for i in range(40)])):
+            output_fixture = Fixture(self.fixtures, self.encoder, label, rows, [])
+            output_root = self.root(label)
+            self.apply(output_fixture, output_root, 0, command="bootstrap")
+            normal_request = self.request(output_fixture, output_root, 0, sources=False)
+            normal, _ = self.execute("read", normal_request)
+            check(normal.returncode == 0, "unbounded-size reference read")
+            exact = len(normal.stdout)
+            for cap in (1, 127, 128, exact - 1):
+                limited = self.request(output_fixture, output_root, 0, sources=False,
+                                       limits={"output_bytes": cap})
+                p, _ = self.execute("read", limited)
+                record = {"name": "output_quota", "fixture": label, "cap": cap,
+                          "actual_bytes": exact, "exit": p.returncode,
+                          "stderr": p.stderr.decode(), "stdout": p.stdout.decode()}
+                self.record(record)
+                check(p.returncode != 0 and b"byte quota exceeded" in p.stderr
+                      and (not p.stdout.endswith(b"\n") or b'"result"' not in p.stdout.splitlines()[-1]),
+                      f"bounded output refused without a success footer: {record}")
+            exact_request = self.request(output_fixture, output_root, 0, sources=False,
+                                         limits={"output_bytes": exact})
+            exact_result, _ = self.execute("read", exact_request)
+            check(exact_result.returncode == 0 and len(exact_result.stdout) == exact,
+                  "exact serialized output byte limit")
+            self.record({"name": f"{label}_exact_output_limit", "cap": exact,
+                         "exit": exact_result.returncode, "stdout": exact_result.stdout.decode()})
+
+            verify_reference, _ = self.execute("verify", normal_request)
+            check(verify_reference.returncode == 0, "verify command completed")
+            verify_footer = strict(verify_reference.stdout)
+            check(set(verify_footer) == {"epoch", "chain", "result", "view_rows", "views_read", "hot_entries_peak"}
+                  and verify_footer["views_read"] == 2
+                  and ((verify_footer["view_rows"] == 0) if label == "empty-output"
+                       else (verify_footer["view_rows"] > 0)),
+                  "verify emits only the shared-view footer")
+            verify_exact = len(verify_reference.stdout)
+            verify_exact_request = self.request(output_fixture, output_root, 0, sources=False,
+                                                limits={"output_bytes": verify_exact})
+            verify_exact_result, _ = self.execute("verify", verify_exact_request)
+            verify_short_request = self.request(output_fixture, output_root, 0, sources=False,
+                                                limits={"output_bytes": verify_exact - 1})
+            verify_short_result, _ = self.execute("verify", verify_short_request)
+            check(verify_exact_result.returncode == 0 and len(verify_exact_result.stdout) == verify_exact
+                  and verify_short_result.returncode != 0
+                  and b"byte quota exceeded" in verify_short_result.stderr,
+                  "verify footer follows the same exact byte cap")
 
         nullable = Fixture(self.work, self.encoder, "nullable", [(0, 1)], [], nullable=True)
         self.refuse("schema", self.request(nullable, self.root("schema"), 0), "schema/row mismatch")

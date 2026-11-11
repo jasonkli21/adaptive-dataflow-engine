@@ -1,0 +1,8 @@
+{"view":"all_v1","key":0,"count":4,"sum":1}
+{"view":"filtered_v1","key":0,"count":3,"sum":2}
+{"view":"all_v1","key":128,"count":2,"sum":1}
+{"view":"filtered_v1","key":128,"count":2,"sum":1}
+{"view":"all_v1","key":1,"count":1,"sum":0}
+{"view":"filtered_v1","key":1,"count":1,"sum":0}
+{"view":"all_v1","key":9,"count":1,"sum":-3}
+{"epoch":0,"chain":"7af134832bd4b15b88f7acc9f01dfb92ef943a57883b90cd7a88fef2ca8be3b2","result":"207fa36de1214fe01055e408ff2d98af76c2df2dc099e90246e5476ed0870732","view_rows":7,"views_read":2,"hot_entries_peak":7}

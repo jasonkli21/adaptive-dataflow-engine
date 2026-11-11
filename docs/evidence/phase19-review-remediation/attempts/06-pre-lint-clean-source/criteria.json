@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "baseline_commit": "2af859a26ba1ed559f383dcb129858c4d0ad31f5",
+  "phase18_acceptance": "waived by explicit user authorization 2026-11-11",
+  "build": "CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 cargo build --release --locked --offline -p ade-incremental --features maintained-v1,fault-injection --bin ade-maintain --example baseline",
+  "warmups_per_regime_policy": 1,
+  "samples_per_regime_policy": 5,
+  "order": "rotate and alternate policy order; fresh root per measured child, pre-stage parent/target, warm via discarded equivalent trial",
+  "sparse_ratio_max": 0.8,
+  "other_regime_ratio_max": 1.25,
+  "threshold": 0,
+  "shards": 128,
+  "regimes": {
+    "sparse": {
+      "rows": 750000,
+      "keys": 4096,
+      "changed_keys": 4,
+      "expected": "incremental_update",
+      "static": [
+        "incremental_update",
+        "full_recompute"
+      ]
+    },
+    "dense": {
+      "rows": 4096,
+      "keys": 4096,
+      "changed_keys": 4096,
+      "expected": "full_recompute",
+      "static": [
+        "incremental_update",
+        "full_recompute"
+      ]
+    },
+    "restored": {
+      "rows": 750000,
+      "keys": 4096,
+      "changed_keys": 4,
+      "expected": "restore",
+      "static": [
+        "restore",
+        "full_recompute"
+      ]
+    }
+  },
+  "limits": {
+    "hot_entries": 131072,
+    "state_bytes": 67108864,
+    "disk_bytes": 268435456,
+    "output_bytes": 16777216,
+    "timeout_ms": 120000
+  },
+  "negative_cases": [
+    "duplicate_json_field",
+    "unknown_field",
+    "overlong_plan",
+    "depth",
+    "semantic_plan_change",
+    "wrong_chain",
+    "fork",
+    "gap",
+    "changed_delta",
+    "missing_delta",
+    "changed_baseline",
+    "schema",
+    "mid_read_source_change",
+    "negative_multiplicity",
+    "count_overflow",
+    "sum_overflow",
+    "min_signed_weight",
+    "empty_epoch",
+    "legacy_root",
+    "symlink_root",
+    "read_only_root",
+    "stale_writer_lease",
+    "root_clone",
+    "selector_rollback",
+    "truncated_manifest",
+    "corrupt_shard",
+    "concurrent_writer",
+    "reader_while_provisional",
+    "orphan_stage",
+    "interruption",
+    "short_write",
+    "deadline",
+    "cancel",
+    "near_minimum",
+    "hot_quota",
+    "state_quota",
+    "disk_quota",
+    "output_quota",
+    "forced_illegal",
+    "unavailable_replay",
+    "rehashed_delta_tamper",
+    "rehashed_view_tamper",
+    "rehashed_decision_tamper",
+    "staged_manifest_drift",
+    "baseline_aba"
+  ],
+  "fault_points": [
+    "shard_partial",
+    "objects_synced",
+    "manifest_synced",
+    "witness_synced",
+    "selected",
+    "selection_synced"
+  ],
+  "work": {
+    "sparse_max_keys_updated": 4,
+    "sparse_max_shards_written": 4,
+    "sparse_baseline_rows_decoded": 0
+  },
+  "refusal_reasons": {
+    "duplicate_json_field": [
+      "duplicate field"
+    ],
+    "unknown_field": [
+      "unknown field"
+    ],
+    "overlong_plan": [
+      "file bytes"
+    ],
+    "depth": [
+      "invalid type"
+    ],
+    "semantic_plan_change": [
+      "semantic plan"
+    ],
+    "wrong_chain": [
+      "different chain"
+    ],
+    "fork": [
+      "parent mismatch"
+    ],
+    "gap": [
+      "fork, gap or rollback",
+      "parent mismatch"
+    ],
+    "changed_delta": [
+      "pinned source chain"
+    ],
+    "missing_delta": [
+      "No such file"
+    ],
+    "changed_baseline": [
+      "fingerprint drift"
+    ],
+    "schema": [
+      "schema/row mismatch"
+    ],
+    "mid_read_source_change": [
+      "fingerprint drift"
+    ],
+    "negative_multiplicity": [
+      "negative or overflowing row multiplicity"
+    ],
+    "count_overflow": [
+      "view count overflow"
+    ],
+    "sum_overflow": [
+      "view sum overflow"
+    ],
+    "legacy_root": [
+      "legacy root"
+    ],
+    "symlink_root": [
+      "symlink path"
+    ],
+    "read_only_root": [
+      "private directory mode"
+    ],
+    "stale_writer_lease": [
+      "foreign root"
+    ],
+    "root_clone": [
+      "foreign root"
+    ],
+    "selector_rollback": [
+      "selector rollback"
+    ],
+    "truncated_manifest": [
+      "EOF"
+    ],
+    "corrupt_shard": [
+      "shard fingerprint drift"
+    ],
+    "concurrent_writer": [
+      "lease busy"
+    ],
+    "reader_while_provisional": [
+      "lease busy"
+    ],
+    "short_write": [
+      "write zero"
+    ],
+    "deadline": [
+      "deadline"
+    ],
+    "cancel": [
+      "cancel"
+    ],
+    "hot_quota": [
+      "hot entries"
+    ],
+    "state_quota": [
+      "arrangement encoded bytes"
+    ],
+    "disk_quota": [
+      "projected disk budget"
+    ],
+    "output_quota": [
+      "view output bytes"
+    ],
+    "forced_illegal": [
+      "no legal maintained route"
+    ],
+    "unavailable_replay": [
+      "no legal maintained route"
+    ],
+    "staged_manifest_drift": [
+      "staged manifest drift"
+    ],
+    "baseline_aba": [
+      "baseline identity changed"
+    ]
+  }
+}

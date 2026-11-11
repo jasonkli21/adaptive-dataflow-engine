@@ -1,0 +1,7 @@
+{"view":"all_v1","key":0,"count":4,"sum":3}
+{"view":"filtered_v1","key":0,"count":4,"sum":3}
+{"view":"all_v1","key":128,"count":2,"sum":-2}
+{"view":"filtered_v1","key":128,"count":1,"sum":0}
+{"view":"all_v1","key":1,"count":1,"sum":-5}
+{"view":"all_v1","key":9,"count":1,"sum":-3}
+{"epoch":3,"chain":"df6bfdca0af9759779e033d25531eafa3dc6857ed6033b5c8e7a4f89fa83d31a","result":"5d22d8a6fef10e6821f67f741f315d39c797482a699881e2aafe75b9e998b843","view_rows":6,"views_read":2,"hot_entries_peak":7}

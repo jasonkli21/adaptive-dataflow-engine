@@ -361,3 +361,10 @@ chain and an honest local filesystem. Legacy APIs, defaults and selectors keep
 their existing contracts. General materialized SQL, joins, Kafka CDC, remote
 arrangements, physical rescale, automatic GC, production HA and external
 transactions remain deferred. Phase20 requires separate authorization.
+
+The additive independent review remediation is recorded in
+`docs/reports/phase-19-review-remediation-2026-11-11.md` with matched evidence in
+`docs/evidence/phase19-review-remediation/`. F19-01–F19-05 are addressed on the
+current source, including a real temporary-filesystem ENOSPC check. Preserve the
+original Phase19 archive and criteria. Phase18 remains partial and its current-
+source Kafka/worker acceptance is still separate debt.

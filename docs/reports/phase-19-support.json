@@ -98,5 +98,44 @@
     }
   },
   "evidence": "../evidence/phase19/manifest.json",
-  "evidence_archive_sha256": "54512c4f5c0985b3daea78d28f65f16713af296d157df8ffbe8d42ff97cc5d36"
+  "evidence_archive_sha256": "54512c4f5c0985b3daea78d28f65f16713af296d157df8ffbe8d42ff97cc5d36",
+  "review_remediation": {
+    "date": "2026-11-11",
+    "report": "phase-19-review-remediation-2026-11-11.md",
+    "source_inventory_sha256": "5c941dd614e52ca57811fd9f6e776abc3d7b88d55481e8f03c55af88e3cd2c67",
+    "acceptance_archive": "../evidence/phase19-review-remediation/acceptance.tar.gz",
+    "acceptance_archive_sha256": "0aac3c3286396ab6a409167b221da7a1abe81c64d697c59377b95558bd172d4a",
+    "acceptance_manifest_sha256": "6036ac0fd8b157cb5a6bf439990ed61750f30b1faac04e2b9ba4523959963959",
+    "runtime_sha256": "a160dbd536c1f082dd963b65a3049d2652fa87984528cd8bc4d7b87e2004d6d5",
+    "fixture_encoder_sha256": "9126cf2e9fdabdfcc34c0dff84dabaa2ad0db9f954fc99ed043ec0588b64b0f5",
+    "functional_cases": 78,
+    "paired_samples": 54,
+    "snapshots": 13,
+    "performance_ratios": {
+      "sparse_incremental_to_full": 0.1202303612935256,
+      "dense_adaptive_to_fastest_static": 0.9941548685315104,
+      "restore_adaptive_to_static_restore": 1.0519372642899232
+    },
+    "gates": {
+      "G0": "PASS_WAIVER_QUALIFIED",
+      "G1": "PASS",
+      "G2": "PASS",
+      "G3": "PASS",
+      "G4": "PASS",
+      "G5": "PASS",
+      "G6": "PASS_LOCAL_ENOSPC_AND_KILL",
+      "G7": "PASS",
+      "G8": "PASS",
+      "G9": "PASS_CLI_SERIALIZED_STREAM",
+      "G10": "PASS_HOST_LOCAL",
+      "G11": "PASS",
+      "G12": "PASS",
+      "G13": "PASS",
+      "G14": "PASS",
+      "G15": "PASS"
+    },
+    "enospc_evidence": "../evidence/phase19-review-remediation/actual-enospc.json",
+    "enospc_evidence_sha256": "cac8a461c9b47e802b8796fcc63f01bfefd90719acb4e36dea51f58212fddf67",
+    "cross_phase_debt": "Phase 18 remains PARTIAL_PHASE18_UNIFIED_ADMISSION_V1; current-source Phase 18 G14-G16 and Phase 17/18 service reacceptance remain separate and NOT_RUN."
+  }
 }

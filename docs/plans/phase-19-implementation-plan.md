@@ -192,3 +192,16 @@ The frozen criteria, runner, offline verifier and local evidence use the
 user-authorized Phase 18 waiver. Performance thresholds retain their
 original values. The Phase 18 service acceptance debt stays recorded in
 its existing reports.
+
+### 7.1 Independent review reconciliation — 2026-11-11
+
+An explicitly supplied baseline is a strict complete binding: every named
+Parquet file must verify before root initialization or route choice. Only an
+omitted baseline permits parent-only continuation. CLI `output_bytes` caps the
+actual serialized `read`/`verify` stream including its footer; library callback
+consumers own serialization budgets. Policy traces distinguish common
+predecision admission bytes from route-specific mandatory reads. The two views
+can be addressed separately through `read_view`/`read-view`, and runtime fields
+distinguish two definitions from the number read by a particular operation.
+The original source-bound archive and frozen thresholds remain unchanged; any
+new campaign is stored under a separate remediation evidence path.

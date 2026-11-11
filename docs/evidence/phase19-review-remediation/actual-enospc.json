@@ -1,0 +1,104 @@
+{
+  "available_kib_at_apply": 0,
+  "expected_epoch0_result": "847bd7db139c55777a57767cfd353637ffbb6b8bbeddfdcac55eead2466b07df",
+  "failed_apply_exit": 1,
+  "failed_apply_stderr": "maintained v1 I/O: No space left on device (os error 28)\n",
+  "failed_apply_stdout": "",
+  "filesystem": "temporary 32 MiB HFS+ disk image mounted at /private/tmp/ade19-enospc-mnt",
+  "fill_attempts": [
+    {
+      "exit": 0,
+      "file": "e8-large-0.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006723 secs (311936933 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-1.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006948 secs (301835348 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-2.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006630 secs (316312519 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-3.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006596 secs (317942996 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-4.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006525 secs (321402605 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-5.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006843 secs (306466754 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-6.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006483 secs (323484806 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-7.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006531 secs (321107334 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-8.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006688 secs (313569378 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-9.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006468 secs (324235003 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-10.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006604 secs (317557844 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-11.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006628 secs (316407966 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "file": "e8-large-12.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006567 secs (319347038 bytes/sec)\n"
+    },
+    {
+      "exit": 1,
+      "file": "e8-large-13.bin",
+      "stderr": "dd: /private/tmp/ade19-enospc-mnt/e8-large-13.bin: No space left on device\n2+0 records in\n1+0 records out\n1048576 bytes transferred in 0.006464 secs (162217822 bytes/sec)\n"
+    },
+    {
+      "exit": 1,
+      "file": "e8-small-0.bin",
+      "stderr": "dd: /private/tmp/ade19-enospc-mnt/e8-small-0.bin: No space left on device\n221+0 records in\n220+0 records out\n225280 bytes transferred in 0.001328 secs (169638554 bytes/sec)\n"
+    }
+  ],
+  "plan_sha256": "a9d75e2bebe204eab52dfe286bfb53bd4cd6dd42d7815ae59dea9fe93008a3e7",
+  "read_epoch0_exit": 0,
+  "read_epoch0_footer": {
+    "chain": "a19deae7257ba8105ed7c24587428720a745e0ebdb292764c0cd78aa74019dcf",
+    "epoch": 0,
+    "hot_entries_peak": 16,
+    "result": "847bd7db139c55777a57767cfd353637ffbb6b8bbeddfdcac55eead2466b07df",
+    "view_rows": 2048,
+    "views_read": 2
+  },
+  "read_epoch0_stdout_sha256": "f5abf4f0836f64f6d0e7dd32f09bdc482915f083ae86fe926e51d2b9c02b8c25",
+  "read_epoch1_exit": 1,
+  "read_epoch1_stderr": "maintained v1 refusal: read requires the exact selected target\n",
+  "runtime_executable_sha256": "a160dbd536c1f082dd963b65a3049d2652fa87984528cd8bc4d7b87e2004d6d5",
+  "selected_generation_directories": [
+    "g-00000000"
+  ],
+  "selected_manifest_sha256": "86460d4babfb602275b0f6e3139b57bb05386a1c185861d4798dc2f5aa49ea6c",
+  "source_history_delta_sha256": "0bcc7f1ddd534f16997c43d3fbe84c3d9e59c0a9c9dd6c73f19348802ab777ec"
+}

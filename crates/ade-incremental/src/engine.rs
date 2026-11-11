@@ -98,8 +98,7 @@ impl Inputs {
             .baseline
             .as_ref()
             .map(|p| Baseline::open(p, plan, guard))
-            .transpose()?
-            .flatten();
+            .transpose()?;
         Ok(Self { baseline, history })
     }
 
@@ -107,6 +106,7 @@ impl Inputs {
         Metrics {
             baseline_verified_bytes: self.baseline.as_ref().map_or(0, |b| b.bytes),
             source_delta_bytes: self.history.deltas.iter().map(|m| m.bytes).sum(),
+            defined_views: 2,
             ..Metrics::default()
         }
     }
@@ -159,8 +159,25 @@ impl Job<'_> {
             .as_ref()
             .or_else(|| root.head())
             .filter(|m| m.epoch == epoch);
-        let restore = target.map(|m| Work {
-            verify_bytes: m.state_bytes(),
+        let delta_bytes = self
+            .inputs
+            .history
+            .deltas
+            .iter()
+            .try_fold(0u64, |total, d| total.checked_add(d.bytes))
+            .ok_or(Error::Invalid("source byte estimate overflow"))?;
+        let baseline_bytes = self.inputs.baseline.as_ref().map_or(0, |b| b.bytes);
+        let admission_bytes = baseline_bytes
+            .checked_add(delta_bytes)
+            .and_then(|n| n.checked_add(self.metrics.checkpoint_verified_bytes))
+            .ok_or(Error::Invalid("admission byte estimate overflow"))?;
+        let restore = target.map(|_| Work {
+            admission_bytes,
+            route_verify_bytes: if root.pending.is_some() {
+                baseline_bytes.saturating_add(delta_bytes)
+            } else {
+                0
+            },
             ..Work::default()
         });
         let parent = root
@@ -179,7 +196,12 @@ impl Job<'_> {
                 Work {
                     delta_rows: delta.rows,
                     touched_keys: delta.keys,
-                    verify_bytes: m.state_bytes(),
+                    admission_bytes,
+                    route_verify_bytes: baseline_bytes
+                        .checked_add(delta_bytes)
+                        .and_then(|n| n.checked_add(delta.bytes))
+                        .and_then(|n| n.checked_add(touched_bytes))
+                        .unwrap_or(u64::MAX),
                     write_bytes: reserve(touched_bytes + delta.rows * 60),
                     ..Work::default()
                 }
@@ -194,7 +216,12 @@ impl Job<'_> {
                 Work {
                     scan_rows: b.rows,
                     delta_rows,
-                    verify_bytes: b.bytes,
+                    admission_bytes,
+                    route_verify_bytes: b
+                        .bytes
+                        .checked_mul(3)
+                        .and_then(|n| n.checked_add(delta_bytes.checked_mul(2)?))
+                        .unwrap_or(u64::MAX),
                     write_bytes: if target.is_some() {
                         0
                     } else {
@@ -239,7 +266,6 @@ impl Job<'_> {
         };
         self.metrics.hot_entries_peak = hot.peak;
         self.metrics.arrangement_instances = 1;
-        self.metrics.view_consumers = 2;
         if let Some(existing) = existing {
             self.attest_inputs()?;
             let result =
@@ -444,6 +470,31 @@ fn reserve(bytes: u64) -> u64 {
 pub fn read(
     request: &Request,
     token: CancellationToken,
+    emit: impl FnMut(ViewRow) -> Result<()>,
+) -> Result<ReadOutcome> {
+    read_selected(request, None, token, emit)
+}
+
+/// Read one named view from the selected committed generation.
+/// # Errors
+/// Refuses an unknown view before opening the root or emitting rows.
+pub fn read_view(
+    request: &Request,
+    view: &str,
+    token: CancellationToken,
+    emit: impl FnMut(ViewRow) -> Result<()>,
+) -> Result<ReadOutcome> {
+    let index = VIEWS
+        .iter()
+        .position(|candidate| *candidate == view)
+        .ok_or(Error::Invalid("unknown maintained view"))?;
+    read_selected(request, Some(index), token, emit)
+}
+
+fn read_selected(
+    request: &Request,
+    selected_view: Option<usize>,
+    token: CancellationToken,
     mut emit: impl FnMut(ViewRow) -> Result<()>,
 ) -> Result<ReadOutcome> {
     request.validate()?;
@@ -479,7 +530,14 @@ pub fn read(
         )?;
         for (&key, group) in &shard.groups {
             guard.check()?;
-            for (view, total) in VIEWS.into_iter().zip([group.all, group.filtered]) {
+            for (view_index, (view, total)) in VIEWS
+                .into_iter()
+                .zip([group.all, group.filtered])
+                .enumerate()
+            {
+                if selected_view.is_some_and(|selected| selected != view_index) {
+                    continue;
+                }
                 if total.count > 0 {
                     seen += 1;
                     emit(ViewRow {
@@ -498,6 +556,7 @@ pub fn read(
         chain: m.chain.clone(),
         result: m.result.clone(),
         view_rows: seen,
+        views_read: if selected_view.is_some() { 1 } else { 2 },
         hot_entries_peak: hot.peak,
     })
 }

@@ -1,0 +1,114 @@
+{
+  "available_kib_at_apply": 0,
+  "expected_epoch0_result": "847bd7db139c55777a57767cfd353637ffbb6b8bbeddfdcac55eead2466b07df",
+  "failed_apply_exit": 1,
+  "failed_apply_stderr": "maintained v1 I/O: No space left on device (os error 28)\n",
+  "failed_apply_stdout": "",
+  "filesystem": "temporary 32 MiB HFS+ disk image mounted at /private/tmp/ade19-enospc-mnt",
+  "fill_attempts": [
+    {
+      "exit": 0,
+      "name": "large-0.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.007380 secs (284166938 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-1.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006569 secs (319249810 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-2.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006489 secs (323185699 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-3.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006604 secs (317557844 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-4.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006463 secs (324485842 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-5.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006522 secs (321550445 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-6.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006635 secs (316074152 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-7.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006452 secs (325039058 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-8.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006773 secs (309634136 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-9.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006893 secs (304243726 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-10.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006680 secs (313944910 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-11.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006901 secs (303891030 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "large-12.bin",
+      "stderr": "2+0 records in\n2+0 records out\n2097152 bytes transferred in 0.006728 secs (311705113 bytes/sec)\n"
+    },
+    {
+      "exit": 1,
+      "name": "large-13.bin",
+      "stderr": "dd: /private/tmp/ade19-enospc-mnt/large-13.bin: No space left on device\n2+0 records in\n1+0 records out\n1048576 bytes transferred in 0.006543 secs (160259208 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "small-0.bin",
+      "stderr": "256+0 records in\n256+0 records out\n262144 bytes transferred in 0.001515 secs (173032343 bytes/sec)\n"
+    },
+    {
+      "exit": 0,
+      "name": "small-1.bin",
+      "stderr": "256+0 records in\n256+0 records out\n262144 bytes transferred in 0.001521 secs (172349770 bytes/sec)\n"
+    },
+    {
+      "exit": 1,
+      "name": "small-2.bin",
+      "stderr": "dd: /private/tmp/ade19-enospc-mnt/small-2.bin: No space left on device\n241+0 records in\n240+0 records out\n245760 bytes transferred in 0.001445 secs (170076125 bytes/sec)\n"
+    }
+  ],
+  "plan_sha256": "a9d75e2bebe204eab52dfe286bfb53bd4cd6dd42d7815ae59dea9fe93008a3e7",
+  "read_epoch0_exit": 0,
+  "read_epoch0_footer": {
+    "chain": "a19deae7257ba8105ed7c24587428720a745e0ebdb292764c0cd78aa74019dcf",
+    "epoch": 0,
+    "hot_entries_peak": 16,
+    "result": "847bd7db139c55777a57767cfd353637ffbb6b8bbeddfdcac55eead2466b07df",
+    "view_rows": 2048,
+    "views_read": 2
+  },
+  "read_epoch0_stdout_sha256": "f5abf4f0836f64f6d0e7dd32f09bdc482915f083ae86fe926e51d2b9c02b8c25",
+  "read_epoch1_exit": 1,
+  "read_epoch1_stderr": "maintained v1 refusal: read requires the exact selected target\n",
+  "runtime_executable_sha256": "15e7d16ae2ac0f9f9ffd1cf848a82555fc009357f01c4bbb17e334bdc7876efd",
+  "selected_generation_directories": [
+    "g-00000000"
+  ],
+  "selected_manifest_sha256": "ad65f9596ef22ff94d5e34b49710006772399ea519f9b68b554f544f466fb764",
+  "source_history_delta_sha256": "0bcc7f1ddd534f16997c43d3fbe84c3d9e59c0a9c9dd6c73f19348802ab777ec"
+}

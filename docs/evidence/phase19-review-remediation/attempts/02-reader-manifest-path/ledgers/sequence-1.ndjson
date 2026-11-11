@@ -1,0 +1,10 @@
+{"view":"all_v1","key":0,"count":3,"sum":3}
+{"view":"filtered_v1","key":0,"count":3,"sum":3}
+{"view":"all_v1","key":128,"count":2,"sum":-2}
+{"view":"filtered_v1","key":128,"count":1,"sum":0}
+{"view":"all_v1","key":1,"count":1,"sum":0}
+{"view":"filtered_v1","key":1,"count":1,"sum":0}
+{"view":"all_v1","key":9,"count":1,"sum":-3}
+{"view":"all_v1","key":500,"count":2,"sum":0}
+{"view":"filtered_v1","key":500,"count":2,"sum":0}
+{"epoch":1,"chain":"886828a98d4c2ce4fce44e998d4444652015d44f3017e2fe078b41242e602131","result":"642f5a0e93da2be582c7e6fa051a5834d99444ed68f67df271e5e68e0415b79f","view_rows":9,"views_read":2,"hot_entries_peak":7}

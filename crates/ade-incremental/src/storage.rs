@@ -179,15 +179,6 @@ impl Manifest {
         {
             return Err(Error::Quota("committed shard hot entries"));
         }
-        let rows = self
-            .objects
-            .iter()
-            .flatten()
-            .map(|o| o.view_rows)
-            .sum::<u64>();
-        if 128 * rows > limits.output_bytes {
-            return Err(Error::Quota("view output bytes"));
-        }
         Ok(())
     }
 }

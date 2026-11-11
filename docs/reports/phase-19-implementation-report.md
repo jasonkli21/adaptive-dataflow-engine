@@ -99,3 +99,7 @@ Supported use is one operator-owned local lineage with bounded immutable Parquet
 General SQL maintenance, differential joins, live Kafka CDC, remote or distributed arrangements, physical rescale, automatic garbage collection, production HA and external transactions remain deferred. Earlier phase debt remains separate. Phase 20 has no authorization in this work.
 
 [Operator guide](../phase-19-maintained-dataflows-guide.md) · [ADR-0026](../adr/0026-incremental-maintained-dataflows-v1.md) · [Support matrix](phase-19-support.json) · [Evidence manifest](../evidence/phase19/manifest.json)
+
+## Independent review remediation
+
+The 2026-11-11 independent review findings F19-01–F19-05 are addressed in the additive [review remediation report](phase-19-review-remediation-2026-11-11.md). It records the strict optional baseline binding, exact CLI stream output cap, route read accounting, independently addressable views, a fresh matched acceptance archive and a real disposable-filesystem ENOSPC result. This implementation report's original source identity, samples and evidence archive remain unchanged; use the addendum for current-source qualification.

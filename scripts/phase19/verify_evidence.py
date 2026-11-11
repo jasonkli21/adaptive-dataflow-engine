@@ -62,7 +62,8 @@ class Verifier:
         data = self.members
         check(data["criteria.json"] == CRITERIA, "frozen criteria")
         provenance = strict(data["provenance.json"])
-        check(provenance["baseline_commit"] == self.criteria["baseline_commit"]
+        check(len(provenance["baseline_commit"]) == 40
+              and all(c in "0123456789abcdef" for c in provenance["baseline_commit"])
               and provenance["phase18_acceptance"] == self.criteria["phase18_acceptance"]
               and provenance["source_sha256"] == sha(compact(provenance["source"]))
               and provenance["criteria_sha256"] == sha(CRITERIA)
@@ -78,7 +79,8 @@ class Verifier:
         for key, path in (("ade-maintain", binary), ("baseline", encoder)):
             if path:
                 check(sha(path.read_bytes()) == provenance["executables"][key], f"matched executable {key}")
-        for name in ("sequence", "extreme", "sparse", "dense"):
+        for name in ("sequence", "extreme", "sparse", "dense", "multi-baseline",
+                     "empty-output", "one-row-output", "many-row-output"):
             self.fixtures[name] = self.fixture(name)
         self.verify_cases()
         self.verify_samples()
@@ -99,9 +101,39 @@ class Verifier:
         check(required.issubset({c["name"] for c in cases}), "minimum case inventory")
         for record in cases:
             expected = self.criteria["refusal_reasons"].get(record["name"])
+            if record["name"] == "output_quota":
+                expected = ["byte quota exceeded", "view output bytes"]
             if expected:
-                check(record["exit"] != 0 and not record["stdout"]
-                      and any(word in record["stderr"] for word in expected), "reached refusal")
+                failed = record["exit"] != 0 and any(word in record["stderr"] for word in expected)
+                if record["name"] == "output_quota" and record.get("cap") is not None:
+                    output = record["stdout"].encode()
+                    no_success_footer = not output or not (
+                        output.endswith(b"\n") and b'"result"' in output.splitlines()[-1])
+                    check(failed and len(output) <= record["cap"] and no_success_footer,
+                          "bounded read failed without a successful footer")
+                else:
+                    check(failed and not record["stdout"], "reached refusal")
+        names = {c["name"] for c in cases}
+        check({"baseline_missing_first", "baseline_missing_middle", "baseline_missing_last",
+               "baseline_missing_explain_restore", "baseline_missing_restore"}.issubset(names),
+              "explicit incomplete baseline refusal inventory")
+        for record in cases:
+            if record["name"].startswith("baseline_missing_") and record["name"].endswith("preserved_head"):
+                check(record["head"]["footer"]["epoch"] == 0, "failed baseline admission preserved old head")
+        for label in ("empty-output", "one-row-output", "many-row-output"):
+            check(f"{label}_exact_output_limit" in names, "exact output cap witness")
+        view_records = strict(self.members["view_readers.json"])
+        check([r["view"] for r in view_records] == ["all_v1", "filtered_v1"]
+              and len({r["manifest_sha256"] for r in view_records}) == 1,
+              "separate named readers use one committed manifest")
+        _, multi_model, _, _ = self.fixtures["multi-baseline"]
+        for record in view_records:
+            rows = [strict(line) for line in record["stdout"].splitlines()]
+            footer = rows.pop()
+            expected_rows = [r for r in multi_model[1]["views"] if r["view"] == record["view"]]
+            check(rows == expected_rows and footer == record["footer"]
+                  and footer["views_read"] == 1 and footer["result"] == multi_model[1]["result"],
+                  "independent named view reader reconstruction")
         _, model, _, _ = self.fixtures["sequence"]
         phases = self.criteria["fault_points"]
         kills = [c for c in cases if c["name"] == "interruption"]
@@ -151,11 +183,13 @@ class Verifier:
         return entries
 
     @classmethod
-    def render_read(cls, state, epoch):
+    def render_read(cls, state, epoch, view=None):
         hot = max((cls.shard_hot(s) for s in state["shards"] if s is not None), default=0)
+        output_rows = [row for row in state["views"] if view is None or row["view"] == view]
         footer = {"epoch": epoch, "chain": state["chain"], "result": state["result"],
-                  "view_rows": len(state["views"]), "hot_entries_peak": hot}
-        return b"".join(compact(row) + b"\n" for row in state["views"] + [footer]), footer
+                  "view_rows": len(output_rows), "views_read": 2 if view is None else 1,
+                  "hot_entries_peak": hot}
+        return b"".join(compact(row) + b"\n" for row in output_rows + [footer]), footer
 
     def check_ledger(self, label, state, epoch):
         rendered, _ = self.render_read(state, epoch)
@@ -203,8 +237,8 @@ class Verifier:
                 check(metrics["shards_written"] == metrics["delta_rows_applied"] == 0
                       and metrics["checkpoint_verified_bytes"] == metrics["state_bytes"], "restore work")
             else:
-                check(metrics["arrangement_instances"] == 1 and metrics["view_consumers"] == 2,
-                      "shared arrangement")
+                check(metrics["arrangement_instances"] == 1 and metrics["defined_views"] == 2,
+                      "one arrangement defines both views")
             if label == "sparse" and route == "incremental_update":
                 work = self.criteria["work"]
                 check(metrics["keys_updated"] == work["sparse_max_keys_updated"]

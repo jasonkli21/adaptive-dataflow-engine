@@ -232,13 +232,18 @@ def expected_decision(model, file_sizes, rows, raw_rows, changes, epoch, parent_
     existing = parent_epoch == epoch
     can_increment = parent_epoch == epoch - 1 and parent_epoch is not None
     parent_sizes = [len(s or b"") for s in model[parent_epoch]["shards"]] if parent_epoch is not None else []
-    zeros = dict(scan_rows=0, delta_rows=0, touched_keys=0, verify_bytes=0, write_bytes=0)
+    delta_sizes = [len(compact({"version": 1, "plan": model[0]["plan"], "epoch": i + 1,
+                                "parent": model[i]["chain"], "rows": batch}))
+                   for i, batch in enumerate(raw_rows[:epoch])]
+    shared_bytes = sum(file_sizes) + sum(delta_sizes) + (sum(parent_sizes) if parent_epoch is not None else 0)
+    zeros = dict(scan_rows=0, delta_rows=0, touched_keys=0, admission_bytes=shared_bytes,
+                 route_verify_bytes=0, write_bytes=0)
     reserve = 2 * 32768 + 16 * SHARDS
     work = [
-        zeros | {"verify_bytes": sum(parent_sizes)} if existing else None,
+        zeros if existing else None,
         None,
         zeros | {"scan_rows": rows, "delta_rows": sum(map(len, raw_rows[:epoch])),
-                 "verify_bytes": sum(file_sizes),
+                 "route_verify_bytes": 3 * sum(file_sizes) + 2 * sum(delta_sizes),
                  "write_bytes": 0 if existing else reserve + 60 * (rows + sum(map(len, raw_rows[:epoch])))},
     ]
     if can_increment:
@@ -246,10 +251,12 @@ def expected_decision(model, file_sizes, rows, raw_rows, changes, epoch, parent_
         touched = {key % SHARDS for key in keys}
         delta_rows = len(raw_rows[epoch - 1])
         work[1] = zeros | {"delta_rows": delta_rows, "touched_keys": len(keys),
-                           "verify_bytes": sum(parent_sizes),
+                           "route_verify_bytes": sum(file_sizes) + sum(delta_sizes)
+                           + delta_sizes[-1] + sum(parent_sizes[i] for i in touched),
                            "write_bytes": reserve + 60 * delta_rows + sum(parent_sizes[i] for i in touched)}
     scores = [None if w is None else 4*w["scan_rows"] + w["delta_rows"] + 6*w["touched_keys"]
-              + w["verify_bytes"]//64 + w["write_bytes"]//32 for w in work]
+              + w["admission_bytes"]//64 + w["route_verify_bytes"]//64
+              + w["write_bytes"]//32 for w in work]
     routes = [(score, i) for i, score in enumerate(scores) if score is not None]
     winner = ROUTES[min(routes)[1]] if policy == "adaptive" else policy
     return winner, work, scores

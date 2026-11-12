@@ -1,0 +1,45 @@
+{
+  "candidate": 6,
+  "files": {
+    "baseline.txt": {
+      "bytes": 1211,
+      "sha256": "5b4144b2399a89843b1238cb496f56229c0df4091b9796bb031dda73cd73d474"
+    },
+    "candidate-final.seal-sha256": {
+      "bytes": 65,
+      "sha256": "12806fa59c262b144d9cc28be30b9757d5d2c568602b9187067e3e0ce72c39b0"
+    },
+    "candidate-final.tar.gz": {
+      "bytes": 138721,
+      "sha256": "4eefccd4cf9c0d34e041de95726c396b2e05b8aac58bbf521ebca9d7cc518a70"
+    },
+    "candidate4-failed.tar.gz": {
+      "bytes": 101521,
+      "sha256": "1f21eeb4d939df801a05013a192cfb2b93e51b471899879e244e2d1a603f8349"
+    },
+    "candidate5-unqualified.tar.gz": {
+      "bytes": 138597,
+      "sha256": "4cdb403679aad2fda62b3e5f4bc4c97166ebf3b113e5f25cc5264fc1629c8120"
+    },
+    "fully-rehashed-tamper.jsonl": {
+      "bytes": 1742,
+      "sha256": "12914aa8165483f30604748a0602c3df449d912ceb316e2737df89b9c863a75c"
+    },
+    "linux-runner.tar.gz": {
+      "bytes": 314082,
+      "sha256": "5198025e4564c52cb1c6e1b79087c4d037203095d18d91ff72757c1f4e8a12b1"
+    },
+    "macos-checks.tar.gz": {
+      "bytes": 24857,
+      "sha256": "2f33a82ae86a63a75e596fb7c3922a5c8759410b82cf8ab96c22aa3f39a56115"
+    },
+    "predecessors.tar.gz": {
+      "bytes": 190170,
+      "sha256": "ce83331ed68da349ecb51102bb8fe1b7813e6ff890aeec138993e217935681a2"
+    }
+  },
+  "release": "COMPLETE_BOUNDED_MULTILANGUAGE_UDF_PLATFORM_V1",
+  "runtime_inventory_sha256": "cd66def47aaa5662132b0b4a19fb0eac40a46bc6a07269f8e88949b59c4a5217",
+  "seal_sha256": "53e39d2ab7e3082eabb7f1ec76b819969ded982b580816313f5fbeed4e62fd74",
+  "version": 1
+}

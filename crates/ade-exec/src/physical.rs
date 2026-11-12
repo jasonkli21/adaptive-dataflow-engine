@@ -1,5 +1,7 @@
 //! Native IR entrypoint. All admission completes before operator side effects.
-use crate::{CancellationToken, Error, ExecutionConfig, ExecutionOutput, LocalPlan, Result};
+use crate::{
+    BatchMap, CancellationToken, Error, ExecutionConfig, ExecutionOutput, LocalPlan, Result,
+};
 use ade_physical::{Operator, PlanV1, Schema, Source, Target, Type};
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef, TimeUnit};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -201,22 +203,38 @@ pub fn lower(plan: &PlanV1, catalog: &Catalog, batch_size: usize) -> Result<Loca
     if plan.target != Target::Local || batch_size == 0 || batch_size > 8192 {
         return Err(invalid("local target and batch_size 1..8192 required"));
     }
-    lower_node(plan, catalog, plan.output, batch_size)
+    lower_node(plan, catalog, plan.output, batch_size, None)
 }
-fn lower_node(plan: &PlanV1, catalog: &Catalog, id: u32, batch: usize) -> Result<LocalPlan> {
+fn lower_node(
+    plan: &PlanV1,
+    catalog: &Catalog,
+    id: u32,
+    batch: usize,
+    map: Option<&Arc<dyn BatchMap>>,
+) -> Result<LocalPlan> {
     let n = plan.node(id).ok_or_else(|| invalid("missing node"))?;
     let name = |i: u32, c: usize| plan.nodes[i as usize].schema[c].name.clone();
-    let child = |i| lower_node(plan, catalog, i, batch).map(Box::new);
+    let child = |i| lower_node(plan, catalog, i, batch, map).map(Box::new);
     Ok(match &n.operator {
-        Operator::Scan { source } => LocalPlan::ParquetScan {
-            files: catalog
-                .bindings
-                .get(*source as usize)
-                .ok_or_else(|| invalid("missing binding"))?
-                .files
-                .clone(),
-            batch_size: batch,
-        },
+        Operator::Scan { source } => {
+            let scan = LocalPlan::ParquetScan {
+                files: catalog
+                    .bindings
+                    .get(*source as usize)
+                    .ok_or_else(|| invalid("missing binding"))?
+                    .files
+                    .clone(),
+                batch_size: batch,
+            };
+            if let Some(map) = map {
+                LocalPlan::MapBatches {
+                    input: Box::new(scan),
+                    map: map.clone(),
+                }
+            } else {
+                scan
+            }
+        }
         Operator::Filter {
             input,
             column,
@@ -272,6 +290,23 @@ pub fn execute(
     token: CancellationToken,
     timeout: Duration,
 ) -> Result<ExecutionOutput> {
+    execute_with_map(plan, catalog, config, batch_size, token, timeout, None)
+}
+
+/// Execute the local IR with an optional schema-preserving transform directly after its scan.
+/// The caller must bind and authenticate any external transform before invocation.
+/// # Errors
+/// Invalid plans, resource limits, cancellation, source drift and transform failures
+/// return no output.
+pub fn execute_with_map(
+    plan: &PlanV1,
+    catalog: &Catalog,
+    config: ExecutionConfig,
+    batch_size: usize,
+    token: CancellationToken,
+    timeout: Duration,
+    map: Option<&Arc<dyn BatchMap>>,
+) -> Result<ExecutionOutput> {
     if timeout.is_zero() || timeout > Duration::from_secs(120) {
         return Err(invalid("timeout must be 1ns..120s"));
     }
@@ -280,7 +315,21 @@ pub fn execute(
     if config.output_batch_rows > 8192 {
         return Err(invalid("physical output batch cap 8192"));
     }
-    let local = lower(plan, catalog, batch_size)?;
+    let local = if let Some(map) = map {
+        plan.validate().map_err(|e| invalid(e.to_string()))?;
+        if plan.target != Target::Local
+            || !(1..=8192).contains(&batch_size)
+            || matches!(
+                plan.nodes[plan.output as usize].operator,
+                Operator::Scan { .. }
+            )
+        {
+            return Err(invalid("mapped scan requires a local downstream operator"));
+        }
+        lower_node(plan, catalog, plan.output, batch_size, Some(map))?
+    } else {
+        lower(plan, catalog, batch_size)?
+    };
     catalog.verify(plan, &token, deadline, true)?;
     std::thread::scope(|scope| {
         let (tx, rx) = std::sync::mpsc::channel();

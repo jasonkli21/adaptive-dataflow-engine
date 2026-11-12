@@ -1,0 +1,45 @@
+[package]
+name = "ade-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+flight-sql-v1 = [
+    "dep:ade-exec", "dep:ade-frontend", "dep:ade-physical", "dep:arrow", "dep:arrow-flight",
+    "dep:blake3", "dep:clap", "dep:futures", "dep:prost", "dep:prost-types", "dep:rustix", "dep:serde",
+    "dep:serde_json", "dep:subtle", "dep:tokio", "dep:tonic", "dep:uuid",
+]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", optional = true }
+ade-frontend = { path = "../ade-frontend", optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+arrow = { workspace = true, features = ["ipc"], optional = true }
+arrow-flight = { version = "=59.3.1", default-features = false, features = ["flight-sql"], optional = true }
+blake3 = { version = "1", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+futures = { version = "0.3", optional = true }
+prost = { version = "0.14", optional = true }
+prost-types = { version = "0.14", optional = true }
+rustix = { version = "1", features = ["process", "fs"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+subtle = { version = "2", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"], optional = true }
+tonic = { version = "0.14", features = ["transport"], optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
+[[bin]]
+name = "ade-gateway"
+path = "src/main.rs"
+required-features = ["flight-sql-v1"]
+
+[[example]]
+name = "phase22-native"
+required-features = ["flight-sql-v1"]

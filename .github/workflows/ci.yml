@@ -47,3 +47,41 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check declared MSRV
         run: cargo check --workspace --all-targets --locked
+
+  phase22-interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: clients/java/pom.xml
+      - name: Build gateway and language clients
+        run: |
+          cargo build --locked -p ade-gateway --features flight-sql-v1 --bin ade-gateway --example phase22-native
+          python -m pip install ./clients/python blake3==1.0.8
+          mvn -B -f clients/java/pom.xml compile dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
+      - name: Live Flight SQL, native plan and registered function
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python scripts/phase22/campaign.py \
+            --binary target/debug/ade-gateway --native target/debug/examples/phase22-native \
+            --java "$(command -v java)" --java-classpath "$(cat clients/java/target/classpath.txt)" \
+            --interop-only --output "$RUNNER_TEMP/ade-phase22-smoke"
+      - name: Detached verification and fully rehashed tamper checks
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s clients/python/tests
+          PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s scripts/phase22 -p test_verify.py
+          mkdir -p "$RUNNER_TEMP/ade-phase22-evidence"
+          tar -xzf docs/evidence/phase22/candidate-final.tar.gz -C "$RUNNER_TEMP/ade-phase22-evidence"
+          phase22_pin="$(cat docs/evidence/phase22/candidate-final.seal-sha256)"
+          PYTHONDONTWRITEBYTECODE=1 python scripts/phase22/verify.py --mode historical-archive \
+            --receipt-pin "$phase22_pin" "$RUNNER_TEMP/ade-phase22-evidence"
+          PYTHONDONTWRITEBYTECODE=1 python scripts/phase22/tamper.py \
+            --receipt-pin "$phase22_pin" "$RUNNER_TEMP/ade-phase22-evidence"

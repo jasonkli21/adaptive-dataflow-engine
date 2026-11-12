@@ -1,0 +1,17 @@
+Branch: main, remote HEAD matched local HEAD
+Base: 31b627fa0c1f1a0da7822acb9f3dfaa839729cf3
+Tree: e6d721c1150899e51d733e0fdd9365e9bca5d211
+Cargo.lock SHA-256: 4df5f3d87615efa724980327d845ea51957aee589d98b301a770cbfba2f4d5f1
+Initially untracked: docs/plans/phase-22-implementation-plan.md (user input);
+sol-medium-phase-0-bootstrap-implementation-prompt.md (unrelated)
+Host: macOS arm64; Rust 1.99.1; declared MSRV 1.94; only stable initially installed
+System Python 3.9.6 has no PyArrow; uv CPython 3.10.20 and PyArrow 24.0.0 are available
+Homebrew OpenJDK 17; Maven 3.9.11 fetched and checksum verified in /private/tmp
+Sandbox DNS failed; escalated Maven Central connectivity and git ls-remote succeeded
+Phase 18: PARTIAL_PHASE18_UNIFIED_ADMISSION_V1
+Phase 20: PENDING_INDEPENDENT_REACCEPTANCE
+Phase 21: PARTIAL_REMEDIATION_PENDING_REACCEPTANCE; baseline Linux CI status unverified
+9ae1edb9ccbee59cc7ec9caa92977100ec2b890a06e83d6ece2b83dcd0550fe6  scripts/phase22/criteria.json
+Follow-up: baseline GitHub Actions run 43118673934 finished with success in
+both the rust and msrv jobs at 31b627fa0c1f1a0da7822acb9f3dfaa839729cf3.
+This is build/regression CI evidence only; it does not reaccept Phase 21 services.

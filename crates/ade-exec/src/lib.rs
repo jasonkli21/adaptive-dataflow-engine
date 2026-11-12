@@ -76,6 +76,8 @@ pub enum Error {
     },
     #[error("execution deadline: {0}")]
     Deadline(&'static str),
+    #[error("batch transform: {0}")]
+    BatchMap(&'static str),
     #[error("execution cancelled")]
     Cancelled,
 }
@@ -87,6 +89,13 @@ pub trait BatchSource: Send + std::fmt::Debug {
     /// Returns source or cancellation errors; errors fail the consuming operator.
     fn next_batch(&mut self, cancellation: &CancellationToken) -> Result<Option<RecordBatch>>;
     fn shutdown(&mut self) {}
+}
+
+/// A schema-preserving, synchronous transform hosted outside the native executor.
+pub trait BatchMap: Send + Sync + std::fmt::Debug {
+    /// # Errors
+    /// Failure aborts execution before a result is returned.
+    fn map(&self, batch: &RecordBatch, cancellation: &CancellationToken) -> Result<RecordBatch>;
 }
 
 /// Runtime result.
@@ -271,6 +280,10 @@ impl ExecContext {
 pub enum LocalPlan {
     /// One externally supplied live source, installed by `execute_merge_source_to_sink`.
     ExternalSource,
+    MapBatches {
+        input: Box<Self>,
+        map: Arc<dyn BatchMap>,
+    },
     /// Incremental Arrow IPC streams with identical schemas.
     IpcScan {
         files: Vec<PathBuf>,
@@ -337,6 +350,10 @@ struct Node {
 }
 enum Kind {
     External(Box<dyn BatchSource>),
+    MapBatches {
+        input: Box<Node>,
+        map: Arc<dyn BatchMap>,
+    },
     Scan(scan::Scan),
     IpcScan(ipc_scan::Scan),
     Filter {
@@ -461,6 +478,14 @@ impl Node {
                     .take()
                     .ok_or_else(|| Error::Invalid("external source not installed".into()))?;
                 (source.schema(), Kind::External(source), "external-source")
+            }
+            LocalPlan::MapBatches { input, map } => {
+                let input = Box::new(Self::build(*input, cx)?);
+                (
+                    input.schema.clone(),
+                    Kind::MapBatches { input, map },
+                    "map-batches",
+                )
             }
             LocalPlan::IpcScan { files } => {
                 let scan = ipc_scan::Scan::new(files)?;
@@ -659,6 +684,23 @@ impl Node {
                 }
                 batch
             }
+            Kind::MapBatches { input, map } => {
+                let Some(batch) = input.next_batch(cx)? else {
+                    input.shutdown(cx)?;
+                    return Ok(None);
+                };
+                cx.input(self.id, &batch);
+                let start = Instant::now();
+                let output = map.map(&batch, &cx.cancellation)?;
+                cx.work(self.id, start);
+                cx.cancellation.check()?;
+                if output.schema() != self.schema || output.num_rows() != batch.num_rows() {
+                    return Err(Error::Invalid(
+                        "batch map changed schema or cardinality".into(),
+                    ));
+                }
+                Some(output)
+            }
             Kind::IpcScan(scan) => scan.next()?,
             Kind::Scan(scan) => {
                 let start = Instant::now();
@@ -834,7 +876,8 @@ impl Node {
             Kind::Scan(scan) => cx.metrics.prefetch = scan.shutdown(),
             Kind::External(source) => source.shutdown(),
             Kind::IpcScan(scan) => scan.shutdown(),
-            Kind::Filter { input, .. }
+            Kind::MapBatches { input, .. }
+            | Kind::Filter { input, .. }
             | Kind::Project { input, .. }
             | Kind::ProjectSchema { input, .. }
             | Kind::Limit { input, .. } => input.shutdown(cx)?,
@@ -895,7 +938,8 @@ fn execute_in_bounded(
     parent: Option<&std::path::Path>,
     bounds: Option<(u64, u64)>,
 ) -> Result<ExecutionOutput> {
-    let mut cx = ExecContext::new(config, cancellation, parent)?;
+    let lazy_spill = !config.spill_enabled;
+    let mut cx = ExecContext::new_with_spill(config, cancellation, parent, lazy_spill)?;
     let (mut rows, mut bytes) = (0u64, 0u64);
     let mut batches = Vec::new();
     let mut retained = cx.memory.reservation(OperatorId(u32::MAX));

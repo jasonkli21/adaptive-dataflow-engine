@@ -1,0 +1,18 @@
+{
+  "release_rule": "G0–G15 must all pass on the same final source and executables",
+  "iterations": 12,
+  "timing_gate": null,
+  "budgets": {
+    "request_bytes": 16384, "query_ms": 10000, "input_rows": 32768,
+    "native_bytes": 16777216, "batch_rows": 256, "worker_frame_bytes": 1048576,
+    "result_bytes": 2097152, "ticket_slots": 16, "ticket_ttl_seconds": 15,
+    "queries": 1, "readers": 4, "workers": 1, "spool_bytes": 0
+  },
+  "cases": {
+    "success": ["sql", "plan", "udf", "empty", "single", "metadata", "schema", "repeat", "boundary"],
+    "admission": ["malformed_json", "oversized", "unknown_version", "duplicate", "unknown_field", "unsupported_target", "unknown_table", "invalid_utf8", "overflow", "unsupported_sql", "unsupported_write", "wrong_abi", "wrong_digest", "unknown_function", "forged_path", "artifact_drift", "symlink_escape", "source_drift", "non_loopback", "missing_auth"],
+    "worker": ["wrong_schema", "nulls", "wrong_rows", "wrong_order", "wrong_batch", "trailing", "malformed", "oversized_encoded", "oversized_decoded", "dictionary", "compression", "stderr", "exit", "hang", "cancel", "gateway_crash"],
+    "publication": ["forged_ticket", "cross_session", "stale", "restart", "ticket_cap", "concurrent", "result_overflow", "disconnect", "enospc"],
+    "evidence_tamper": ["missing_case", "request", "status", "rows", "schema", "function", "invocations", "ticket", "time", "peak"]
+  }
+}

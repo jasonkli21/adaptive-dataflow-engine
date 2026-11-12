@@ -119,6 +119,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-gateway"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-frontend",
+ "ade-physical",
+ "arrow",
+ "arrow-flight",
+ "blake3",
+ "clap",
+ "futures",
+ "prost",
+ "prost-types",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tokio",
+ "tonic",
+ "uuid",
+]
+
+[[package]]
 name = "ade-incremental"
 version = "0.1.0"
 dependencies = [
@@ -498,15 +521,21 @@ version = "59.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b543210778ac15d5f7a10153dc39e099f1eee756363589a842029e6c5c76e423"
 dependencies = [
+ "arrow-arith",
  "arrow-array",
  "arrow-buffer",
  "arrow-cast",
  "arrow-data",
  "arrow-ipc",
+ "arrow-ord",
+ "arrow-row",
  "arrow-schema",
+ "arrow-select",
+ "arrow-string",
  "base64 0.23.1",
  "bytes",
  "futures",
+ "once_cell",
  "prost",
  "prost-types",
  "tonic",

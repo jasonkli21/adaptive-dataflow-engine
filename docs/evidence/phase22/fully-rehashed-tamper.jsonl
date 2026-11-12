@@ -1,0 +1,12 @@
+{"mutation": "missing_case", "fully_rehashed": "59dff1e4c424593db24c3171eb22c185174df2f8dfa1c3e7fa123e90175e8314", "refused": "exact case set"}
+{"mutation": "request", "fully_rehashed": "d3a969c78ee1a81d3951549365eb7ff50c5ab7c9b3a51b215f017193b54ac75a", "refused": "request: udf"}
+{"mutation": "status", "fully_rehashed": "c9d892d021dd08036e3acf0cce90e5edc9416c855c74e73d570ab74f232a4da5", "refused": "refusal status: wrong_rows"}
+{"mutation": "rows", "fully_rehashed": "14e53a86ee7bdbfa92bd66ee4f58840638f701549427a087b658586f6da56c6c", "refused": "result rows"}
+{"mutation": "schema", "fully_rehashed": "57149b310e39e52db0a77c6d6fcc7d8ace11002d67490898aca544f312073096", "refused": "result schema"}
+{"mutation": "function", "fully_rehashed": "42b4e7f6e75425d1539a6bef09155d6ff866136616d21a69859d74355ce034ed", "refused": "function identity"}
+{"mutation": "invocations", "fully_rehashed": "87b75ae118146a5a41c276e1db3a74686c2129e323ddeb343f0b30319485a9c5", "refused": "UDF invocation count"}
+{"mutation": "ticket", "fully_rehashed": "1eb43e12395928f4445440d7688711f2cdc01f0f590e12c4e799d14a78927b48", "refused": "ticket ownership/restart/expiry witness"}
+{"mutation": "time", "fully_rehashed": "f686307f81da77ff5d06a3bbc2ce5c6b1e5c12899f1fe59a72deced180810ff7", "refused": "benchmark wall timing"}
+{"mutation": "peak", "fully_rehashed": "cbe314379d77b4d75651c868439e832875b3f0352d2504d6d98d3904772a863a", "refused": "native peak bound"}
+{"mutation": "relabel_archive", "fully_rehashed": "77386fb37a5a35027647f3404fecf36c39169aa6d87511d414896ee1a79516c4", "refused": "independent receipt pin"}
+{"mutation": "arrow_bytes", "fully_rehashed": "269a1c8b09821b423822a6e3031f6315b1750e8954658655ebf922c41d2f3ba1", "refused": "Arrow result digest"}

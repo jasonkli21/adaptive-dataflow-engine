@@ -441,3 +441,26 @@ reacceptance and a green Linux CI run are not yet established. The updated
 support matrix keeps affected gates partial until a matched source, executable,
 fixture and service campaign passes. Preserve all original evidence and
 Phase18/20 qualifications.
+
+## Phase22 authorization and completion — 2026-11-11
+
+The user authorized Phase22 under the supplied implementation handoff, without
+subagents and with one local project commit. Phase22 is
+`COMPLETE_BOUNDED_MULTILANGUAGE_UDF_PLATFORM_V1` under ADR-0029 and
+`docs/reports/phase-22-implementation-report.md`. Preserve the final and
+predecessor archives in `docs/evidence/phase22/`, the original criteria and
+fixture lock, and the separate macOS and local Linux executable identities.
+
+The default-off `ade-gateway/flight-sql-v1` supports finite authorized local
+EventV1 Parquet, read-only Flight SQL, Python and Java clients, a shared
+versioned query envelope, and one registered trusted Arrow batch transform
+before native downstream work. Keep PlanV1 and the dependency spine. Results
+are fully materialized before a session-bound ticket is published. Workers are
+nonreplayable. The acceptance envelope is a trusted local operator deployment,
+with measured macOS RSS, explicit Linux worker limits and zero result spool.
+WASM is optional and deferred. Remote listening, arbitrary code upload,
+distributed or unbounded UDFs, external transactions and multi-tenant
+execution are outside this contract.
+
+Phase18, Phase20 and Phase21 retain their existing qualifications and separate
+evidence. No Phase23 authorization is inferred.

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ade-flight-client"
+version = "0.1.0"
+description = "Bounded ADE Flight SQL and registered batch functions"
+requires-python = ">=3.10"
+dependencies = ["pyarrow==24.0.0", "protobuf==7.34.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

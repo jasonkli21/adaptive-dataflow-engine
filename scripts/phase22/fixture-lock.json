@@ -1,0 +1,23 @@
+{
+  "boundary": {
+    "fixture.parquet": "937d23558610bb66c46266e1b0b3d492c9d906ecd8dc40b62ed4f231fb437ed6",
+    "manifest.json": "3a704f300b4832278c2b4cee562ce2ec97eea63dd71bc9f49c6f1367bfe75b12"
+  },
+  "empty": {
+    "fixture.parquet": "5fa8f95d39f78d63cc36743df39bed338e99844f400534b898ca2314fcd38572",
+    "manifest.json": "46e5c7d8ed227d157f50860672ee3b679eb32655c5dc26029c16c61a86d5bf6a"
+  },
+  "function_blake3": "416c37e5117fa0ea7a7ddc4a775fd59bb5263820a844a62721301dc4996d049a",
+  "main": {
+    "fixture.parquet": "abe1043631c7b47439d90cd814bb5a6267992f793ce271125b76176ff86d7037",
+    "manifest.json": "65405ee8cae74955f13e3b1c362374012abfbaf46fd77680712316661feccd84"
+  },
+  "overflow": {
+    "fixture.parquet": "269d6d0952c2d56daa09aa9864f3ce5fb60821f467a4765d85417c508d50813d",
+    "manifest.json": "1362c373b7c5e55d35f5aaccb312374a201d1f8fdcada8c08e3da1dd1dddcf06"
+  },
+  "single": {
+    "fixture.parquet": "64d6da881f96df347c9e07422c81cf1e20c23a6875a26c086fd0b5867f604109",
+    "manifest.json": "76cf5903412c6e11834faa6e90d64fe31d6e94f2267a9ef153124f4e99e7c459"
+  }
+}

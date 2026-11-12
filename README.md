@@ -502,3 +502,15 @@ Phase16's opt-in adaptive state checkpoint path is described in the
 The default and fixed Phase15 v1 paths remain supported. V2 adds bounded adaptive
 cadence, physical shard incrementals, verified local/S3 copies and explicit
 trace-relative at-least-once replay/restore; production HA and exactly-once remain deferred.
+
+## Opt-in Flight SQL and Arrow batch functions
+
+The Phase 22 `ade-gateway` feature serves bounded, read-only Flight SQL on
+numeric loopback. Python and Java submit SQL or a shared versioned plan.
+An operator-registered Python function can transform Arrow batches inside
+the ADE native pipeline, before a native filter or projection. The gateway
+publishes a session-bound ticket only after materializing a complete result.
+See the [operator and client guide](docs/phase-22-multilanguage-udf-guide.md),
+[ADR-0029](docs/adr/0029-bounded-flight-sql-and-arrow-udf-v1.md), and the
+[implementation report](docs/reports/phase-22-implementation-report.md)
+for bounds and release evidence.

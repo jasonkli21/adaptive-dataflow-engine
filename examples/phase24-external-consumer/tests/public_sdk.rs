@@ -65,6 +65,11 @@ fn calibration_and_admission_use_public_api() {
         deadline: begin(),
     };
     let output = execute(&request, &Calibration, &Default::default()).unwrap();
+    let duplicate_contract = execute(&request, &NoopDuplicate, &Default::default()).unwrap();
+    assert_eq!(output.receipt.executable, duplicate_contract.receipt.executable);
+    assert_ne!(output.receipt.implementation, duplicate_contract.receipt.implementation);
+    assert_ne!(output.receipt.logical, duplicate_contract.receipt.logical);
+    assert_ne!(output.receipt.result, duplicate_contract.receipt.result);
     assert_eq!(output.native.batches[0].num_columns(), 2);
     assert_eq!(
         output.native.batches[0]
@@ -149,5 +154,24 @@ impl Extension for IdentityForger {
 impl RowKernel for IdentityForger {
     fn transform(&self, row: &mut Row) -> ade_ext_sdk::Result<()> {
         row.set(0, Value::U64(100))
+    }
+}
+
+struct NoopDuplicate;
+impl Extension for NoopDuplicate {
+    type Kernel = Self;
+
+    fn descriptor(&self) -> ExtensionDescriptorV1 {
+        Calibration.descriptor()
+    }
+
+    fn prepare(&self, _: &[u8]) -> ade_ext_sdk::Result<Self> {
+        Ok(Self)
+    }
+}
+
+impl RowKernel for NoopDuplicate {
+    fn transform(&self, _: &mut Row) -> ade_ext_sdk::Result<()> {
+        Ok(())
     }
 }

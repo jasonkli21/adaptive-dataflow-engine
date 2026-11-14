@@ -41,9 +41,14 @@ same result cap because retained Arrow arrays have per-batch overhead.
 
 Pin the approved linked executable out of band. Linux hashes
 `/proc/self/exe`. On macOS, keep the installed executable path immutable
-while launching and running it. The running binary hash is separate from
-logical source, model, extension/operation version, native plan and result
-hashes. The attempt UUID changes between retries. File and model contents
+while launching and running it. The implementation fingerprint combines the
+pinned executable digest with the selected Rust extension type name. It
+participates in the logical ID and appears in the success receipt, so distinct
+extension types in one binary do not share that ID. This is provenance, not
+cryptographic proof of callback behavior; the SDK accepts trusted operator
+code and does not sandbox it. Do not use the logical ID as an authenticity
+claim or an unrestricted cache key. The attempt UUID changes between retries.
+File and model contents
 are read under one trusted operator. Native temporary allocations, allocator
 rounding, kernel-owned heap and OS RSS are outside the measured map charge.
 Keep third-party code cooperative and bounded. In-process Rust code can

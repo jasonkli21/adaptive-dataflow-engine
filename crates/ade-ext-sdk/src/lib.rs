@@ -138,6 +138,9 @@ pub struct Request<'a> {
 pub struct Receipt {
     pub extension: String,
     pub extension_version: u16,
+    /// Identity of the selected Rust extension type in the pinned executable.
+    /// This is provenance, not cryptographic attestation of callback behavior.
+    pub implementation: Digest,
     pub logical: Digest,
     pub executable: Digest,
     pub model: Digest,
@@ -302,9 +305,15 @@ pub fn execute<E: Extension>(
     }
     source::verify(request, cancel)?;
     let semantic_plan = plan.digest()?;
+    let implementation = digest(&serde_json::to_vec(&(
+        "ade-extension-implementation-v1",
+        request.executable,
+        std::any::type_name::<E>(),
+    ))?);
     let logical = digest(&serde_json::to_vec(&(
         "ade-extension-logical-v1",
         request.descriptor,
+        implementation,
         request.model_pin,
         &semantic_plan,
     ))?);
@@ -341,6 +350,7 @@ pub fn execute<E: Extension>(
         receipt: Receipt {
             extension: request.descriptor.id.clone(),
             extension_version: request.descriptor.version,
+            implementation,
             logical,
             executable: request.executable,
             model: request.model_pin,

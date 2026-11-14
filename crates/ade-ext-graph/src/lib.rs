@@ -93,6 +93,27 @@ struct TerminalRow {
     component_min_vertex: u64,
 }
 
+fn validate_component_labels(vertices: &[u64], labels: &[u64]) -> Result<()> {
+    if vertices.len() != labels.len() {
+        return Err(Error::Refused("terminal vertex cardinality"));
+    }
+    let vertex_set: std::collections::BTreeSet<_> = vertices.iter().copied().collect();
+    let mut minima = BTreeMap::new();
+    for (&vertex, &leader) in vertices.iter().zip(labels) {
+        if !vertex_set.contains(&leader) {
+            return Err(Error::Refused("component leader is not a vertex"));
+        }
+        minima
+            .entry(leader)
+            .and_modify(|minimum: &mut u64| *minimum = (*minimum).min(vertex))
+            .or_insert(vertex);
+    }
+    if minima.iter().any(|(&leader, &minimum)| leader != minimum) {
+        return Err(Error::Refused("component leader is not group minimum"));
+    }
+    Ok(())
+}
+
 struct Guard<'a> {
     cancel: &'a CancellationToken,
     deadline: Instant,
@@ -170,6 +191,7 @@ fn verify_rows(
     hash.update(b"ade-cycle20-components-result-v1\0");
     let mut previous = None;
     let mut labels = Vec::with_capacity(terminal.rows);
+    let mut vertices = Vec::with_capacity(terminal.rows);
     for _ in 0..terminal.rows {
         guard.remaining()?;
         let line = lines
@@ -182,6 +204,7 @@ fn verify_rows(
             return Err(Error::Refused("terminal row identity order"));
         }
         hash.update(line);
+        vertices.push(row.vertex);
         labels.push(row.component_min_vertex);
         previous = Some(row.vertex);
     }
@@ -197,6 +220,7 @@ fn verify_rows(
     {
         return Err(Error::Refused("terminal footer or digest mismatch"));
     }
+    validate_component_labels(&vertices, &labels)?;
     Ok(labels)
 }
 
@@ -521,4 +545,17 @@ pub fn component_sizes_v1(
         },
         components: aggregated.components,
     })
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::validate_component_labels;
+
+    #[test]
+    fn rejects_foreign_or_nonminimum_component_leaders() {
+        assert!(validate_component_labels(&[10, 20], &[9, 9]).is_err());
+        assert!(validate_component_labels(&[10, 20], &[20, 20]).is_err());
+        assert!(validate_component_labels(&[10, 20], &[10, 10]).is_ok());
+        assert!(validate_component_labels(&[10, 20], &[10]).is_err());
+    }
 }

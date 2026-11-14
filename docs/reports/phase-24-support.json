@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "PARTIAL_PHASE24_HOSTED_CI_PENDING",
+  "status": "REMEDIATION_REQUIRED",
   "default_enabled": false,
   "baseline": "95e1153b2b75fbe8d9e2445e96b5f9081d293cfa",
   "local_candidate": {
@@ -29,75 +29,75 @@
   "gates": {
     "G0": {
       "status": "PARTIAL",
-      "evidence": "234 runtime and verification inputs match the local campaign. Detached current-source release and exact-SHA CI receipts are outstanding."
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G1": {
-      "status": "PASS",
-      "evidence": "Opt-in local-v1 features, directional dependencies and default/all-feature workspace regression tests."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G2": {
-      "status": "PASS",
-      "evidence": "Version, capability, exact schema, identity slots, executable pin, model pin and source pin checks."
+      "status": "PARTIAL",
+      "evidence": "Implementation fingerprint now binds the selected Rust type name and measured executable into the receipt/logical ID; focused same-binary duplicate-descriptor regression passes. Full source-bound identity and replay campaign remains NOT_RUN."
     },
     "G3": {
-      "status": "PASS",
-      "evidence": "Observed Scan/MapBatches/Project and native cyclic rounds followed by Scan/HashAggregate."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G4": {
-      "status": "PASS",
-      "evidence": "Independent union-find and terminal witness over mixed, reordered, empty, isolated and single graphs."
+      "status": "PARTIAL",
+      "evidence": "Terminal validation now rejects absent component leaders and nonminimum group labels; focused synthetic regression passes. Fresh original-edge topology/oracle process campaign remains NOT_RUN."
     },
     "G5": {
-      "status": "PASS",
-      "evidence": "Missing/provisional/wrong pin, corrupt input and terminal, changed stage, SIGKILL and an orphan-safe restart."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G6": {
-      "status": "PASS",
-      "evidence": "Independent hypot oracle, protected/signed-zero fields, empty/maximum inputs, finite extremes and all SDK batch splits."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G7": {
-      "status": "PASS",
-      "evidence": "Independently checked one- and four-dimensional affine output, model binding and overflow refusal."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G8": {
-      "status": "PASS",
-      "evidence": "Separate workspace, lockfile and calibration kernel using public SDK exports."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G9": {
-      "status": "PASS",
-      "evidence": "Bounded trusted primitive decode envelope, row/map/result/stage limits, native managed metrics and calibration off-by-one."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G10": {
-      "status": "PASS",
-      "evidence": "Cancellation, trusted-kernel panic, stalled pipe with incomplete prefix, drift, process kill, and real isolated ENOSPC."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G11": {
-      "status": "PASS",
-      "evidence": "Canonical paths and independent digest pins under the operator-owned, trusted native-code contract."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G12": {
-      "status": "PASS",
-      "evidence": "Stable plan/logical/result identities across batch splits, distinct attempts and replay-safe stage lifecycle."
+      "status": "PARTIAL",
+      "evidence": "Implementation fingerprint is part of logical identity and focused duplicate-type regression passes. Fresh batch-split, rebuild, independent-extension and full replay campaign remains NOT_RUN."
     },
     "G13": {
-      "status": "PASS",
-      "evidence": "Native operator counters and observed rounds, caps, identities, typed refusal and managed/RSS distinctions."
+      "status": "PARTIAL",
+      "evidence": "Review-confirmed success receipts exist, but refusal paths still lack the requested stable attributable failure receipt. P24-F06 remains open."
     },
     "G14": {
-      "status": "PASS",
-      "evidence": "Five matched samples and one warmup per control over verified results. Local debug profile, no speedup claim."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     },
     "G15": {
-      "status": "PASS",
-      "evidence": "88 detached observations, 32 verified attempts, and 12 fully rehashed mutations with attributed refusals."
+      "status": "PARTIAL",
+      "evidence": "Historical mutation archive is preserved. Review-required fresh semantic mutation distinctions and trusted runner evidence remain NOT_RUN."
     },
     "G16": {
-      "status": "PARTIAL",
-      "evidence": "Local checks are documented. Hosted Linux CI for the exact final SHA and independently pinned receipt are outstanding."
+      "status": "FAIL",
+      "evidence": "Exact review-target hosted Actions run 43652571438 failed in rust test coordinator_kills_recover_exactly_one_native_result_across_both_shapes; Phase 24 consumer and process steps were skipped. Linux root cause and hosted CI for remediation commit remain NOT_RUN."
     },
     "G17": {
-      "status": "PASS",
-      "evidence": "ADR-0031, reconciled plan, guide, current report, fixture lock, immutable campaign and preserved failed attempts."
+      "status": "PARTIAL",
+      "evidence": "Historical candidate evidence remains preserved, but a matched fresh reacceptance on the remediation source is NOT_RUN."
     }
   },
   "local_checks": {
@@ -109,5 +109,59 @@
     "msrv": "1.94.0",
     "external_consumer": true,
     "python_regressions": 76
+  },
+  "historical_candidate_status": "PARTIAL_PHASE24_HOSTED_CI_PENDING",
+  "current_remediation": {
+    "report": "phase-24-independent-remediation-2026-11-14.md",
+    "review_target": "7587484cad78c1ac53d2de4147301f2ba3ec3618",
+    "review_tree": "cf93fd45ec903037bcd4111445b9082aa0b545e9",
+    "remediates": [
+      "P24-F02",
+      "P24-F05"
+    ],
+    "open_release_blockers": [
+      "P24-F01",
+      "P24-F03",
+      "P24-F04",
+      "P24-F06",
+      "P24-F08"
+    ],
+    "hosted_ci_for_remediation_commit": "NOT_RUN"
+  },
+  "additional_review_gates": {
+    "G18": {
+      "status": "PARTIAL",
+      "evidence": "Selected Rust type plus executable fingerprint added. It is provenance, not cryptographic callback attestation; source-bound full matrix remains NOT_RUN."
+    },
+    "G19": {
+      "status": "PARTIAL",
+      "evidence": "Independent review identified caller-supplied JSON/hash as insufficient issuer authentication. No successful exact-final-commit GitHub receipt exists."
+    },
+    "G20": {
+      "status": "PARTIAL",
+      "evidence": "Positioned as trusted local Rust source SDK; no binary ABI or public package distribution claim. Fresh standalone consumer copied outside the checkout and tested successfully on macOS; Linux reacceptance remains NOT_RUN."
+    },
+    "G21": {
+      "status": "NOT_RUN",
+      "evidence": "No fresh Linux native fault, permission, isolated ENOSPC or process RSS campaign."
+    }
+  },
+  "remediation_checks": {
+    "format": "PASS",
+    "external_consumer_focused_tests": "PASS",
+    "graph_structural_regression": "PASS",
+    "python_script_regressions": 76,
+    "strict_clippy_changed_crates": "FAIL: dependency ade-iterate triggers clippy::unnecessary_wraps under Rust 1.99.1",
+    "native_crash_reproduction": "NOT_REPRODUCED: sandbox denied worker IPC before target assertion",
+    "hosted_exact_sha_ci": "NOT_RUN",
+    "workspace_all_features": "PASS outside restricted sandbox",
+    "workspace_default_tests": "PASS outside restricted sandbox",
+    "workspace_all_features_tests": "PASS outside restricted sandbox; includes all 13 native_crash tests",
+    "workspace_all_targets_all_features_check": "PASS",
+    "native_crash_target_test": "PASS on macOS outside restricted sandbox; Linux CI Owned failure remains undiagnosed",
+    "workspace_all_targets_all_features_clippy": "PASS",
+    "rust_1_94_workspace_all_features_check": "PASS",
+    "external_consumer_copied_outside_checkout": "PASS on macOS; source path points to this checkout",
+    "package_scoped_clippy_attempt": "FAIL under narrower feature graph due ade-iterate unnecessary_wraps; full workspace strict Clippy passes"
   }
 }

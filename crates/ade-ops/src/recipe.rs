@@ -54,6 +54,14 @@ fn default_runtime_value(n: &u64) -> bool {
     *n == default_runtime()
 }
 impl Recipe {
+    /// Validate and read the pinned source inventory without registering a job.
+    ///
+    /// # Errors
+    /// Refuses unsupported recipes, changed files or an expired deadline.
+    pub fn verify_inputs(&self, expires_ms: u64) -> Result<()> {
+        self.freeze(crate::deadline(expires_ms)?).map(drop)
+    }
+
     /// Validate metadata shape. Does not admit execution or contact workers.
     /// # Errors
     /// Refuses invalid IR, local targets, non-loopback cohorts and unsupported bounds.

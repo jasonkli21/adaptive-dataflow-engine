@@ -1,0 +1,90 @@
+   Compiling object_store v0.13.2
+   Compiling uuid v1.28.0
+   Compiling ade-distributed v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-distributed)
+   Compiling ade-ops v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-ops)
+   Compiling parquet v59.3.1
+   Compiling datafusion-common v55.2.0
+   Compiling ade-exec v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-exec)
+   Compiling datafusion-expr-common v55.2.0
+   Compiling datafusion-physical-expr-common v55.2.0
+   Compiling datafusion-functions-window-common v55.2.0
+   Compiling datafusion-functions-aggregate-common v55.2.0
+   Compiling datafusion-expr v55.2.0
+   Compiling datafusion-physical-expr v55.2.0
+   Compiling datafusion-execution v55.2.0
+   Compiling datafusion-functions v55.2.0
+   Compiling datafusion-functions-aggregate v55.2.0
+   Compiling datafusion-optimizer v55.2.0
+   Compiling datafusion-functions-window v55.2.0
+   Compiling datafusion-physical-plan v55.2.0
+   Compiling datafusion-physical-expr-adapter v55.2.0
+   Compiling datafusion-functions-nested v55.2.0
+   Compiling datafusion-sql v55.2.0
+   Compiling datafusion-session v55.2.0
+   Compiling datafusion-datasource v55.2.0
+   Compiling datafusion-catalog v55.2.0
+   Compiling datafusion-pruning v55.2.0
+   Compiling datafusion-datasource-json v55.2.0
+   Compiling datafusion-datasource-csv v55.2.0
+   Compiling datafusion-datasource-arrow v55.2.0
+   Compiling datafusion-physical-optimizer v55.2.0
+   Compiling datafusion-datasource-parquet v55.2.0
+   Compiling datafusion-functions-table v55.2.0
+   Compiling datafusion-catalog-listing v55.2.0
+   Compiling datafusion v55.2.0
+   Compiling ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 58s
+     Running tests/native.rs (target/debug/deps/native-ca49daea09165293)
+
+running 7 tests
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+thread 'real_runtime_quota_exhaustion_and_exact_output_staging_boundary' (4683766) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+
+thread 'independent_canonical_oracles_empty_skew_signed_and_overflow' (4683763) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+
+thread 'output_caps_and_source_drift_never_publish' (4683765) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+
+thread 'total_staging_exact_cap_and_one_less_count_ipc_plus_manifest' (4683768) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+worker0
+thread 'durable_native_both_shapes_preserve_values_schema_and_duplicate_bags' (4683762) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+: ade-worker: I/O: Operation not permitted (os error 1)
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+
+thread 'one_million_join_rows_stream_and_one_over_global_row_cap_cannot_publish' (4683764) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+test independent_canonical_oracles_empty_skew_signed_and_overflow ... FAILED
+test real_runtime_quota_exhaustion_and_exact_output_staging_boundary ... FAILED
+test output_caps_and_source_drift_never_publish ... FAILED
+test durable_native_both_shapes_preserve_values_schema_and_duplicate_bags ... FAILED
+test total_staging_exact_cap_and_one_less_count_ipc_plus_manifest ... FAILED
+test one_million_join_rows_stream_and_one_over_global_row_cap_cannot_publish ... FAILED
+worker0: ade-worker: I/O: Operation not permitted (os error 1)
+
+thread 'source_physical_byte_cap_and_one_million_input_rows_are_real_admissions' (4683767) panicked at crates/ade-ops/tests/support/mod.rs:244:10:
+called `Result::unwrap()` on an `Err` value: Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })
+test source_physical_byte_cap_and_one_million_input_rows_are_real_admissions ... FAILED
+
+failures:
+
+failures:
+    durable_native_both_shapes_preserve_values_schema_and_duplicate_bags
+    independent_canonical_oracles_empty_skew_signed_and_overflow
+    one_million_join_rows_stream_and_one_over_global_row_cap_cannot_publish
+    output_caps_and_source_drift_never_publish
+    real_runtime_quota_exhaustion_and_exact_output_staging_boundary
+    source_physical_byte_cap_and_one_million_input_rows_are_real_admissions
+    total_staging_exact_cap_and_one_less_count_ipc_plus_manifest
+
+test result: FAILED. 0 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s
+
+error: test failed, to rerun pass `-p ade-ops --test native`

@@ -524,3 +524,14 @@ See the [operator and client guide](docs/phase-22-multilanguage-udf-guide.md),
 [ADR-0029](docs/adr/0029-bounded-flight-sql-and-arrow-udf-v1.md), and the
 [implementation report](docs/reports/phase-22-implementation-report.md)
 for bounds and release evidence.
+
+## Phase 23 local resource manager
+
+The opt-in `ade-resource` service queues tenant-authenticated aggregate and
+HashOnly join work across two separately fenced native worker cohorts. It
+provides weighted priority scheduling, quota-based admission, cooperative
+preemption after native drain, per-attempt accounting and standby-cohort
+activation. Its scope is one trusted Unix operator deployment.
+
+See the [operator guide](docs/phase-23-resource-manager-guide.md) and the
+[source-bound acceptance report](docs/reports/phase-23-implementation-report.md).

@@ -214,6 +214,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-resource"
+version = "0.1.0"
+dependencies = [
+ "ade-distributed",
+ "ade-exec",
+ "ade-ops",
+ "ade-physical",
+ "arrow",
+ "blake3",
+ "clap",
+ "getrandom 0.4.3",
+ "parquet",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "ade-stream"
 version = "0.1.0"
 dependencies = [

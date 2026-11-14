@@ -1,0 +1,42 @@
+[
+  {
+    "case": "duplicate_job",
+    "refusal": "duplicate logical result",
+    "resealed_pin": "cc75212cb72bc0951a8d1f393689eee20a7393531ca0b4cc62c2a9df6dc19f1b"
+  },
+  {
+    "case": "swapped_tenant",
+    "refusal": "tenant/result binding",
+    "resealed_pin": "046fa20113ec7a93ff560ea4d32c51bff17f32d87d951dc3f4de8b6ac0e92a55"
+  },
+  {
+    "case": "missing_failure",
+    "refusal": "required live cases missing",
+    "resealed_pin": "9c5239409a9c5cd73eeff8b15c4ee9c4e1fcc441d0b25b03b0eff8194667691e"
+  },
+  {
+    "case": "forged_cost",
+    "refusal": "charge",
+    "resealed_pin": "09a4a2b2faa2d280f9055cbe1bc7ffb6f8c4724ffbda9577ab58a51b855ba51b"
+  },
+  {
+    "case": "forged_share",
+    "refusal": "weighted fairness and age",
+    "resealed_pin": "42eca551e5d2fb3a55a836f3407953d4b2e0a283810f8655f5cd9eb7da908212"
+  },
+  {
+    "case": "altered_worker_boot",
+    "refusal": "boot replacement",
+    "resealed_pin": "84b9ea2f704059bdf2eaa27fdd530e86898d079cce5edea23d3309970f13fbdb"
+  },
+  {
+    "case": "stale_sha",
+    "refusal": "baseline attribution",
+    "resealed_pin": "c7851616a24aff9087853aabc953a91d720bfcaf8b09ba9329c61dfeff82e02a"
+  },
+  {
+    "case": "relabeled_support",
+    "refusal": "support status conflicts with gates",
+    "resealed_pin": "f3e253ba15f049e1408f88e6e2c8cd676e37e98b1cee92921b7002ecf00ab137"
+  }
+]

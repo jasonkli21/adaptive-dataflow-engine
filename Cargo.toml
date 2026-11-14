@@ -7,6 +7,7 @@ members = [
     "crates/ade-iterate",
     "crates/ade-stream",
     "crates/ade-ops",
+    "crates/ade-resource",
     "crates/ade-physical",
     "crates/ade-frontend",
     "crates/ade-bench",

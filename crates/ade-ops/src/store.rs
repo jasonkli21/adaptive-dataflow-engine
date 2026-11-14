@@ -210,11 +210,12 @@ impl Database {
                 "recipe hash/size",
             )?;
             require(
-                job.expires_ms
-                    == job
-                        .created_ms
-                        .checked_add(job.recipe.timeout_ms)
-                        .ok_or(Error::Deadline)?
+                job.expires_ms > job.created_ms
+                    && job.expires_ms
+                        <= job
+                            .created_ms
+                            .checked_add(job.recipe.timeout_ms)
+                            .ok_or(Error::Deadline)?
                     && job.owner <= self.generation
                     && job.created_ms <= self.last_ms,
                 "job deadline/owner",
@@ -567,6 +568,25 @@ impl Store {
     /// # Errors
     /// Refuses source drift, incompatible reuse, bounds, history and queue exhaustion.
     pub fn submit(&mut self, key: &str, recipe: Recipe) -> Result<Job> {
+        self.submit_with_expiry(key, recipe, None)
+    }
+
+    /// Register against an absolute deadline inherited from a durable parent
+    /// submission. An idempotent lookup can reconcile an expired registration.
+    ///
+    /// # Errors
+    /// Refuses the same conditions as submit, a changed deadline on replay, or
+    /// a deadline outside the recipe's timeout window.
+    pub fn submit_before(&mut self, key: &str, recipe: Recipe, expires_ms: u64) -> Result<Job> {
+        self.submit_with_expiry(key, recipe, Some(expires_ms))
+    }
+
+    fn submit_with_expiry(
+        &mut self,
+        key: &str,
+        recipe: Recipe,
+        deadline_ms: Option<u64>,
+    ) -> Result<Job> {
         self.healthy()?;
         valid_key(key)?;
         recipe.validate()?;
@@ -576,7 +596,9 @@ impl Store {
         let hash = recipe.digest()?;
         if let Some(old) = self.data.jobs.values().find(|j| j.request_key == key) {
             require(
-                old.recipe_hash == hash && old.recipe == recipe,
+                old.recipe_hash == hash
+                    && old.recipe == recipe
+                    && deadline_ms.is_none_or(|expiry| expiry == old.expires_ms),
                 "idempotency key recipe conflict",
             )?;
             return Ok(old.clone());
@@ -595,15 +617,19 @@ impl Store {
             return Err(Error::Quota("queued jobs"));
         }
         let created_ms = now_ms()?;
-        let expires_ms = created_ms
+        let latest_ms = created_ms
             .checked_add(recipe.timeout_ms)
             .ok_or(Error::Deadline)?;
+        let expires_ms = deadline_ms.unwrap_or(latest_ms);
+        require(expires_ms <= latest_ms, "deadline exceeds recipe timeout")?;
         let files = self.with_released_lock(|| recipe.freeze(deadline(expires_ms)?))?;
         // Another submit may have won the same idempotency key while files were
         // being hashed. Re-read under the lock and honor its original record.
         if let Some(old) = self.data.jobs.values().find(|j| j.request_key == key) {
             require(
-                old.recipe_hash == hash && old.recipe == recipe,
+                old.recipe_hash == hash
+                    && old.recipe == recipe
+                    && deadline_ms.is_none_or(|expiry| expiry == old.expires_ms),
                 "idempotency key recipe conflict",
             )?;
             return Ok(old.clone());

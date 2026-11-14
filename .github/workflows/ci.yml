@@ -85,3 +85,18 @@ jobs:
             --receipt-pin "$phase22_pin" "$RUNNER_TEMP/ade-phase22-evidence"
           PYTHONDONTWRITEBYTECODE=1 python scripts/phase22/tamper.py \
             --receipt-pin "$phase22_pin" "$RUNNER_TEMP/ade-phase22-evidence"
+
+  phase23-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the manager and matched worker
+        run: |
+          cargo build --locked -p ade-resource -p ade-ops -p ade-distributed --features ade-resource/fault-injection --bins --example phase23-fixture
+      - name: Authenticated socket, separate native cohorts and preemption
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/phase23/campaign.py --bin-dir target/debug \
+            --output "$RUNNER_TEMP/ade-phase23-smoke" --only auth --only overlap --only preemption \
+            --only commit_race --only crash_aggregate_gather --only crash_join_marker_published

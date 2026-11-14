@@ -1,0 +1,34 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running tests/native.rs (target/debug/deps/native-ca49daea09165293)
+
+running 7 tests
+ADE exchange receive failed: Arrow: Io error: managed disk write quota
+ADE exchange receive failed: Arrow: Io error: managed disk write quota
+ADE_NATIVE_ORACLE join=false workers=2 canonical=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab ipc=679c36550d4fdc883bcf2338309b4b441bf0ecca6c8239c6ab44d481829f2855
+ADE_NATIVE_ORACLE join=false workers=2 canonical=be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca ipc=369b5586235f35785b69d5acae8f50f580ac0e06f56d2e60ebb36210d501356a
+test output_caps_and_source_drift_never_publish ... ok
+ADE exchange receive failed: Arrow: Io error: managed disk write quota
+ADE exchange receive failed: local execution: execution cancelled
+worker0: ADE exchange receive failed: I/O: managed disk write quota
+worker0: ADE exchange receive failed: local execution: execution cancelled
+worker1: ADE exchange receive failed: I/O: managed disk write quota
+worker1: ADE exchange receive failed: I/O: failed to fill whole buffer
+ADE_NATIVE_ORACLE join=false workers=2 canonical=19cbfd572a66ccdc8351539b288bd2949aae66bf85fbb04f48549419a96c035a ipc=919a9746c150eb9cf8ce311758be29137e6639b00ad8f3701a3e13ed010c07e1
+ADE_NATIVE_ORACLE join=false workers=4 canonical=be7cd6a4b69e222e49852dffa16aabfe0c1072b48d93a3dee03ab6d5b4aaf5ca ipc=bf3dd9f624ba73ed81fc5461fd5a15cee46710b9abbedd0758e82b78e05e5a00
+test real_runtime_quota_exhaustion_and_exact_output_staging_boundary ... ok
+test total_staging_exact_cap_and_one_less_count_ipc_plus_manifest ... ok
+ADE_NATIVE_ORACLE join=false workers=2 canonical=559e856fc3aa64e123a2959c24da7b96e4f5f59a9d6280f95c7b15b25dd27604 ipc=c6f9124ebe1e4303f9def8e49068a1f87492a16b4ff25e55a1e491ec5a1e0e02
+ADE_NATIVE_ORACLE join=true workers=2 canonical=a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c ipc=f6bb121fd98a36b9afd9ec14b8cc6c8868f57b8d2e3a5ec3a5fa2604b7272937
+ADE_NATIVE_ORACLE join=false workers=2 canonical=1f875d0afc4b7374031ab1b9926288571d525d6f30cf5f0ed8b968f76a63570c ipc=449f5f044eab5aa4472a9bf567d61274b92f35cbdada88b8379a4939587aee82
+ADE_NATIVE_ORACLE join=true workers=2 canonical=d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab ipc=f49e5abe5c4382c206b9fce9a8734ea888bbcd14ddc37badeff66563a19b9025
+ADE_NATIVE_ORACLE join=true workers=4 canonical=a4f521afa394eaf9628f0f02ab891560651b5bfd76cef5e2548ed624e1506b9c ipc=64598bee3364b57a23e0eca95af751bcdf5401cb58997bf4d2197256a94b13ec
+test durable_native_both_shapes_preserve_values_schema_and_duplicate_bags ... ok
+ADE_NATIVE_ORACLE join=true workers=2 canonical=b8001fdbaa5b0807e51b6f8dd8f988dbedc171acb9e620e33ec0accd63c0f6f1 ipc=953528801cf74654d3c80e1fbebe94aec86857e10af5a1a90a810c4949f51b54
+ADE_NATIVE_ORACLE join=true workers=2 canonical=784dd72b40533f33d5566ba54ece8c1a1819e312f7bcd9bb247664e6538d08fe ipc=7093c680615f81b910daa067f8dab8946afc4cbf78b92abf36ba7514fdc4379c
+ADE_NATIVE_ORACLE join=true workers=2 canonical=71d927884f823f699598372862d9bf1971e5cbd67c5016b82bbfe45e43b108ac ipc=5a1e3cdfef2c5dedc4003bd787bc0801c3224b02c8bae6a5fda18dd0ba554af8
+test independent_canonical_oracles_empty_skew_signed_and_overflow ... ok
+ADE exchange receive failed: local execution: execution cancelled
+test one_million_join_rows_stream_and_one_over_global_row_cap_cannot_publish ... ok
+test source_physical_byte_cap_and_one_million_input_rows_are_real_admissions ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.93s

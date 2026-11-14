@@ -475,3 +475,22 @@ interpreter path replacement race, imported-module identity, stalled-reader
 recovery and independently authored fixture remain untested. Phase18, Phase20
 and Phase21 retain their existing qualifications and evidence. No Phase23
 authorization is inferred.
+
+## Phase23 authorization — 2026-11-14
+
+The user authorized Phase23 in this session without subagents and with one
+project commit. Follow ADR-0030, the reconciled plan and the source-bound
+support matrix. The opt-in bounded local resource manager runs static
+aggregate and bounded HashOnly join across two independently supervised and
+leased worker cohorts. Preserve Phase12 native ownership, drain, publication,
+defaults and prior evidence. The manager uses authenticated local IPC, bounded
+tenant reservations, priority/fairness, whole-job preemption and preprovisioned
+standby activation. Same-UID isolation, physical provisioning, remote execution,
+streaming, UDFs, automatic replacement, production HA and arbitrary sinks
+remain outside the contract. Phase18/20/21/22 qualifications remain separate.
+No Phase24 authorization is inferred.
+
+The local candidate11 proof passes G0–G14 and G16–G17. Its 37 cases, 112 verified
+results and two disposable-filesystem ENOSPC cases are source-bound. G15
+requires both the passing local workspace/1.94 checks and a separate hosted CI
+receipt for the exact final commit, as described in the Phase23 report.

@@ -1,0 +1,10 @@
+fmt 0
+check 0
+clippy 0
+build 0
+workspace-test 0
+resource-all 0
+resource-default 0
+smoke 0
+python 0
+msrv 0

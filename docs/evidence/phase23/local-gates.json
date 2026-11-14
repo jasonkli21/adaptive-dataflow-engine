@@ -1,0 +1,126 @@
+{
+  "build": {
+    "sha256": "917305154235cba471fbd582dff2aed6dc33195a911ff729e80682e05a214fc7",
+    "tail": [
+      "   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)",
+      "warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected",
+      "  |",
+      "  = note: `#[warn(linker_messages)]` on by default",
+      "",
+      "warning: `ade-gateway` (bin \"ade-gateway\") generated 1 warning",
+      "warning: `ade-connectors` (bin \"ade-connect\") generated 1 warning (1 duplicate)",
+      "warning: `ade-frontend` (bin \"ade-query\") generated 1 warning (1 duplicate)",
+      "warning: `ade-bench` (bin \"ade-bench\") generated 1 warning (1 duplicate)",
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.14s"
+    ]
+  },
+  "check": {
+    "sha256": "3ad455b659c5fa9ebac43edef1792f9fa7564ac371c15457174e3fe514449b5a",
+    "tail": [
+      "   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)",
+      "    Checking ade-resource v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-resource)",
+      "    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)",
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.86s"
+    ]
+  },
+  "clippy": {
+    "sha256": "95722129f3be5e8fa0be2896e2971c958e77ca0e58cae7276e0087140216e9a7",
+    "tail": [
+      "   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)",
+      "    Checking ade-resource v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-resource)",
+      "    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)",
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.22s"
+    ]
+  },
+  "fmt": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tail": []
+  },
+  "msrv": {
+    "sha256": "4790f438654c08c9615290e4ba7632f2cb26cd88a0791945b84525c010cab980",
+    "tail": [
+      "   Compiling ade-bench v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-bench)",
+      "    Checking ade-resource v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-resource)",
+      "    Checking ade-frontend v0.1.0 (/Users/jasonkli/projects/adaptive-dataflow-engine/crates/ade-frontend)",
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.68s"
+    ]
+  },
+  "python": {
+    "sha256": "cb9b6956d8e7d5d884832366f40f5073b450dea96b6389a6dd9bbd445241dcb4",
+    "tail": [
+      "........................................................................",
+      "----------------------------------------------------------------------",
+      "Ran 72 tests in 1.698s",
+      "",
+      "OK"
+    ]
+  },
+  "resource-all": {
+    "sha256": "26d1c33f6afca0f664ae279e510abd4a74726df758f73afd7952295d793449f7",
+    "tail": [
+      "     Running unittests src/main.rs (target/debug/deps/ade_resource-4e869272943aab28)",
+      "",
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "",
+      "   Doc-tests ade_resource",
+      "",
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      ""
+    ]
+  },
+  "resource-default": {
+    "sha256": "63df24ce74b072604c907596927a14fd4bb616a7da0b9ac9757d1f9bdbda4a33",
+    "tail": [
+      "     Running unittests src/main.rs (target/debug/deps/ade_resource-200e81ca60085cce)",
+      "",
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "",
+      "   Doc-tests ade_resource",
+      "",
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      ""
+    ]
+  },
+  "smoke": {
+    "sha256": "f71798c1fa078a0d3b3839a9fc1cf66ce734ed7654667adaa53711b5f28a31ca",
+    "tail": [
+      "  \"candidate_stddev_ns\": 0.0,",
+      "  \"rows_output\": 9930,",
+      "  \"warnings\": [",
+      "    \"run configuration/verification policy differs\",",
+      "    \"engine version/configuration differs\",",
+      "    \"dirty source tree\"",
+      "  ]",
+      "}",
+      "{",
+      "  \"children\": 1,",
+      "  \"validated\": true",
+      "}"
+    ]
+  },
+  "workspace-test": {
+    "sha256": "ecb71edfca9ad56d17d7f4d21a6c318458252591f4232df3e851ed243b0ffdf0",
+    "tail": [
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "",
+      "   Doc-tests ade_stream",
+      "",
+      "running 2 tests",
+      "test crates/ade-stream/src/unified.rs - unified::Admission (line 51) - compile fail ... ok",
+      "test crates/ade-stream/src/unified.rs - unified::NativeStreamSpecV1 (line 16) - compile fail ... ok",
+      "",
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s",
+      ""
+    ]
+  }
+}

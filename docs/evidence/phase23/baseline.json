@@ -1,0 +1,21 @@
+{
+  "source": "a9ccf823f320c683d68c05d7d27ad25c3deb6f14",
+  "git_tree": "edb40e95241da66660109b875a0c6154de4c063d",
+  "branch": "main",
+  "untracked": [
+    "docs/plans/phase-23-implementation-plan.md",
+    "sol-medium-phase-0-bootstrap-implementation-prompt.md"
+  ],
+  "baseline_ci": {
+    "status": "PASS",
+    "workflow": "ci",
+    "run": 43628106281,
+    "head": "a9ccf823f320c683d68c05d7d27ad25c3deb6f14"
+  },
+  "phase12": "COMPLETE bounded v1; one unresolved job per native operations root; independent roots required",
+  "phase18": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1",
+  "phase20": "PENDING_INDEPENDENT_REACCEPTANCE",
+  "phase21": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE",
+  "phase22": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE",
+  "phase23": "No preexisting runtime; supplied plan was present in the workspace"
+}

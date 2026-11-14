@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "criteria": {
+    "G0": "Exact baseline, `HEAD`/dirty input inventory, toolchain, feature flags, executable hashes, host/process identity, criteria/fixture lock before runs; immutable earlier evidence; independent acceptance witness.",
+    "G1": "ADR decision compares alternatives; precise supported/unsupported matrix maps all eight PRD Phase23 features, INV1\u201310 and Phase12 constraints; no hidden widening.",
+    "G2": "Two real principals/tokens, authenticated UDS, per-tenant visibility/cancel/result policy, revocation; cross-tenant key and ID oracle; symlink/path/race/forgery refusals; no secrets in logs.",
+    "G3": "New, duplicate, changed-key, concurrent duplicate, crash-between-fsync and acknowledgment, overflow/exhaustion; original deadline, enqueue order, immutable request persist across restart.",
+    "G4": "Pure policy model/property checks plus real multi-tenant backlogged native runs; predeclared equal/weighted share and finite-aging witness; no starvation or undocumented priority inversion.",
+    "G5": "At every boundary: tenant/global queued/active/slot/managed-byte/staging/output/cost constraints; reject vs wait distinction; checked arithmetic; no worker effects on refused admission; refunds exactly once.",
+    "G6": "Two separate externally supervised 2\u20134 worker cohorts actually overlap; cohort-store/boot pins and all `runner.lock`/drain invariants; negative same-cohort double-claim and worker reuse tests.",
+    "G7": "Running low-priority preemptible native aggregate/join canceled/drained then restarted as fresh native job with stable logical ID; high priority progresses; nonpreemptible refusal; native committed-vs-cancel race; poison/unreachable cohort quarantine.",
+    "G8": "SIGKILL at every persisted-effect boundary, manager restart, native coordinator death, worker death, slow/unresponsive control peer, metadata ENOSPC, bad/checksummed snapshots, clock rollback, duplicate notifications; no replay before drain.",
+    "G9": "Independently recompute per-job and per-attempt measured/unknown cost, retries/preemptions, reservation lifetimes, billable/idle pool usage, pinned price model; no double billing, fabricated zero or budget underflow.",
+    "G10": "Real 1->2->1 active-cohort change under queue pressure/idle, observed simultaneous native execution and safe downshift; standby remains provisioned explicitly, no physical-autoscale claim.",
+    "G11": "Two tenants, at least one nontrivial aggregate and join, expected outputs from **independently authored literal fixture/oracle**, empty/boundary outputs, no foreign/partial reads; exact schema/multiplicity/committed hash and worker closure.",
+    "G12": "Oversized/slow/forged request, auth brute/resource exhaustion bounds, unauthorized source, symlink swaps, state corruption, disk-full/permission errors, cancellation while output link races, failure-message redaction; demonstrate safe denial.",
+    "G13": "Stable structured reason codes for enqueue/admit/defer/preempt/activate/quarantine; monotonic lifecycle transitions, tenant-filtered views, counters with explicit unknowns; operator recovery runbook and true capability surface.",
+    "G14": "Predeclared matched static FIFO/single-cohort versus adaptive scheduling campaign on same executable/data/host: throughput, p50/p95 queue latency, fairness, cost/slot-ms, actual overlapping processes, peak RSS, disk, CPU where measured. Correctness guards and raw samples, no unjustified speedup claim.",
+    "G15": "`cargo fmt --all -- --check`; `cargo check --workspace --all-targets --locked`; strict all-feature `clippy -D warnings`; all-feature workspace build/test with feature-matched workers; new crate no-default where applicable; `bash scripts/smoke.sh`; repository Python unittest suite; Rust 1.94 MSRV; final-SHA CI status. Do not hide service-dependent skips.",
+    "G16": "Offline verifier validates source/binary/fixture/criteria/receipt integrity, independent positive and negative case counts, stage-reached witnesses, schedules and output semantics; fully rehashed tamper archives (duplicate job, swapped tenant, missing failure, forged cost/share, altered worker boot, stale SHA, relabeled support) **must be rejected**.",
+    "G17": "Accepted ADR, operator guide, implementation report, support JSON, evidence manifest/archives and README/AGENTS updates; `PASS/FAIL/PARTIAL/NOT_RUN` for each gate, blockers and deferred scope; historical predecessor claims unchanged."
+  }
+}

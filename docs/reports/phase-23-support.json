@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "status": "PARTIAL_PHASE23_FINAL_SHA_CI_PENDING",
+  "full_local_campaign": true,
+  "gates": {
+    "G0": {
+      "status": "PASS",
+      "evidence": "Frozen criteria and literal oracle, matched source inventory and four executable digests.",
+      "cases": []
+    },
+    "G1": {
+      "status": "PASS",
+      "evidence": "ADR-0030 and unchanged Phase 12 fences and default selectors.",
+      "cases": []
+    },
+    "G2": {
+      "status": "PASS",
+      "evidence": "Authenticated UDS, scoped requests, rotation/revocation and source refusals.",
+      "cases": [
+        "auth",
+        "drift"
+      ]
+    },
+    "G3": {
+      "status": "PASS",
+      "evidence": "Concurrent idempotency, lost response, synced unpublished snapshot, capacity bounds and original expiry.",
+      "cases": [
+        "auth",
+        "history",
+        "crash_submitted_before_reply",
+        "crash_snapshot_before_rename"
+      ]
+    },
+    "G4": {
+      "status": "PASS",
+      "evidence": "Independent pure model and two native contention chronologies, including finite age promotion.",
+      "cases": [
+        "fairness_1",
+        "fairness_2"
+      ]
+    },
+    "G5": {
+      "status": "PASS",
+      "evidence": "Native reservations, queue and per-dimension refusals, tightening and release.",
+      "cases": [
+        "quotas",
+        "history"
+      ]
+    },
+    "G6": {
+      "status": "PASS",
+      "evidence": "Distinct store/boot/process identities, actual post-claim overlap, sibling lease and changed-worker refusal.",
+      "cases": [
+        "overlap",
+        "cohort_identity"
+      ]
+    },
+    "G7": {
+      "status": "PASS",
+      "evidence": "Running aggregate preempted and drained, fresh native job, commit-wins and retained poison.",
+      "cases": [
+        "preemption",
+        "commit_race",
+        "quarantine",
+        "crash_preempt_persisted_before_cancel",
+        "crash_drained_before_settlement"
+      ]
+    },
+    "G8": {
+      "status": "PASS",
+      "evidence": "Reached process kill stages, restart, corruption/clock refusals and ambiguity quarantine.",
+      "cases": [
+        "corruption",
+        "quarantine",
+        "crash_join_gather",
+        "crash_aggregate_gather"
+      ]
+    },
+    "G9": {
+      "status": "PASS",
+      "evidence": "Independently recomputed slot occupancy, pinned rate, attempt ceilings and preemption charges.",
+      "cases": [
+        "preemption",
+        "quotas"
+      ]
+    },
+    "G10": {
+      "status": "PASS",
+      "evidence": "Observed standby transitions with two running assignments and four still-provisioned workers.",
+      "cases": [
+        "overlap"
+      ]
+    },
+    "G11": {
+      "status": "PASS",
+      "evidence": "Literal signed/duplicate bag, empty and 1025-row boundary outputs with actual marker and IPC.",
+      "cases": [
+        "auth",
+        "overlap"
+      ]
+    },
+    "G12": {
+      "status": "PASS",
+      "evidence": "Bounded socket refusals, private-root corruption/mode checks and reached real volume exhaustion.",
+      "cases": [
+        "auth",
+        "corruption",
+        "enospc_manager",
+        "enospc_native"
+      ]
+    },
+    "G13": {
+      "status": "PASS",
+      "evidence": "Stable sanitized tenant and operator APIs, support matrix and operations guide.",
+      "cases": [
+        "auth",
+        "quotas"
+      ]
+    },
+    "G14": {
+      "status": "PASS",
+      "evidence": "Three descriptive matched FIFO and adaptive trials with raw process and output observations.",
+      "cases": [
+        "measure_fifo_0",
+        "measure_fifo_1",
+        "measure_fifo_2",
+        "measure_adaptive_0",
+        "measure_adaptive_1",
+        "measure_adaptive_2"
+      ]
+    },
+    "G15": {
+      "status": "PARTIAL",
+      "evidence": "Local workspace and MSRV suite recorded separately. Final-SHA hosted CI is pending.",
+      "cases": []
+    },
+    "G16": {
+      "status": "PASS",
+      "evidence": "Detached source/executable validation, literal/policy oracle and rehashed tamper refusals.",
+      "cases": []
+    },
+    "G17": {
+      "status": "PASS",
+      "evidence": "ADR, guide, report, matrix, sealed evidence and preserved predecessors.",
+      "cases": []
+    }
+  },
+  "hosted_ci": "Combine this source-bound local matrix with a GitHub Actions success receipt for the exact release commit. That receipt advances G15 and the phase status.",
+  "predecessors": {
+    "phase18": "PARTIAL_PHASE18_UNIFIED_ADMISSION_V1",
+    "phase20": "PENDING_INDEPENDENT_REACCEPTANCE",
+    "phase21": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE",
+    "phase22": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE"
+  }
+}

@@ -1,9 +1,8 @@
 {
   "version": 1,
-  "status": "COMPLETE_BOUNDED_MULTILANGUAGE_UDF_PLATFORM_V1",
+  "status": "PARTIAL_REMEDIATION_PENDING_REACCEPTANCE",
   "default_off": true,
   "feature": "ade-gateway/flight-sql-v1",
-  "source_identity": "cd66def47aaa5662132b0b4a19fb0eac40a46bc6a07269f8e88949b59c4a5217",
   "evidence": "../evidence/phase22/manifest.json",
   "targets": [
     "finite_local"
@@ -15,72 +14,109 @@
   },
   "gates": {
     "G0": {
-      "status": "PASS",
-      "proof": "Matched runtime inputs, executable hashes, fixtures, environments and baseline"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Matched runtime inputs, executable hashes, fixtures, environments and baseline"
     },
     "G1": {
-      "status": "PASS",
-      "proof": "SQL/plan digest parity, strict request admission, authorized source binding"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "SQL/plan digest parity, strict request admission, authorized source binding"
     },
     "G2": {
-      "status": "PASS",
-      "proof": "Native scan, three maps, downstream filter/project and independent 247-row oracle"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Native scan, three maps, downstream filter/project and independent 247-row oracle"
     },
     "G3": {
-      "status": "PASS",
-      "proof": "Valid multi/empty/single/boundary results and typed ABI/IPC refusals"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Valid multi/empty/single/boundary results and typed ABI/IPC refusals"
     },
     "G4": {
-      "status": "PASS",
-      "proof": "Exact registered function identity, stale artifact, bad ABI/digest and path refusal"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Exact registered function identity, stale artifact, bad ABI/digest and path refusal"
     },
     "G5": {
-      "status": "PASS",
-      "proof": "Installed Python SDK, real SQL/plan/UDF, timeout classification and refusal tests"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Installed Python SDK, real SQL/plan/UDF, timeout classification and refusal tests"
     },
     "G6": {
-      "status": "PASS",
-      "proof": "Maven compile and live Java SQL, plan, mapped and numeric-boundary parity"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Maven compile and live Java SQL, plan, mapped and numeric-boundary parity"
     },
     "G7": {
-      "status": "PASS",
-      "proof": "Standard Flight SQL statement, schema, SQL Info and ticket DoGet on macOS and Linux"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Standard Flight SQL statement, schema, SQL Info and ticket DoGet on macOS and Linux"
     },
     "G8": {
-      "status": "PASS",
-      "proof": "Repeat read, 15-second expiry, forged/stolen tickets, restart and slot exhaustion"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Repeat read, 15-second expiry, forged/stolen tickets, restart and slot exhaustion"
     },
     "G9": {
-      "status": "PASS",
-      "proof": "Wrong rows on batch two, worker exit/hang, client disconnect, gateway kill and actual ENOSPC"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Wrong rows on batch two, worker exit/hang, client disconnect, gateway kill and actual ENOSPC"
     },
     "G10": {
-      "status": "PASS",
-      "proof": "Native/IPC/result bounds, active query contention, ticket counters, observed RSS and zero spool"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Native/IPC/result bounds, active query contention, ticket counters, observed RSS and zero spool"
     },
     "G11": {
-      "status": "PASS",
-      "proof": "Loopback, authentication, read-only surface, path/source isolation and redacted errors"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Loopback, authentication, read-only surface, path/source isolation and redacted errors"
     },
     "G12": {
-      "status": "PASS",
-      "proof": "Existing PlanV1, workspace and legacy correctness regressions on both platforms"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Existing PlanV1, workspace and legacy correctness regressions on both platforms"
     },
     "G13": {
-      "status": "PASS",
-      "proof": "Independent fixture oracle, exact Python/Java/native results and typed refusal parity"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Independent fixture oracle, exact Python/Java/native results and typed refusal parity"
     },
     "G14": {
-      "status": "PASS",
-      "proof": "Detached current-source match, historical replay and 12 fully rehashed mutation refusals"
+      "status": "PARTIAL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Detached current-source match, historical replay and 12 fully rehashed mutation refusals"
     },
     "G15": {
-      "status": "PASS",
-      "proof": "Local Linux job, macOS workspace checks, Rust 1.94 checks, client builds and support artifacts"
+      "status": "FAIL",
+      "proof": "Current remediation source has not completed matched reacceptance; historical candidate6 evidence is retained separately.",
+      "historical_status": "PASS",
+      "historical_proof": "Local Linux job, macOS workspace checks, Rust 1.94 checks, client builds and support artifacts",
+      "reviewed_commit_status": "FAIL",
+      "reviewed_commit_proof": "Reviewed commit 54973e9 failed strict Clippy in GitHub Actions run 43622953656; the source fix passes locally, but a green final-SHA workflow is pending."
     },
     "O1": {
       "status": "DEFERRED_OPTIONAL",
       "proof": "WASM"
     }
-  }
+  },
+  "historical_source_identity": "cd66def47aaa5662132b0b4a19fb0eac40a46bc6a07269f8e88949b59c4a5217",
+  "current_source_identity": "6febea9b035467905b4f22eca10d6ea35b59169d2b466df14516bee19568c47b",
+  "review_remediation": "phase-22-independent-remediation-2026-11-14.md"
 }

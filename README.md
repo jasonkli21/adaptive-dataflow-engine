@@ -505,6 +505,16 @@ trace-relative at-least-once replay/restore; production HA and exactly-once rema
 
 ## Opt-in Flight SQL and Arrow batch functions
 
+Phase 22's candidate6 `COMPLETE_BOUNDED_MULTILANGUAGE_UDF_PLATFORM_V1`
+qualification is historical for its recorded source and executables. Following
+the 2026-11-14 independent review, current status is
+`PARTIAL_REMEDIATION_PENDING_REACCEPTANCE`: the strict Clippy finding is fixed
+in source and passes locally, but final-SHA CI and the matched live
+fault/resource campaign have not run. Interpreter/dependency immutability,
+stalled-reader recovery and a separately authored literal fixture also remain
+unverified. See the [additive review remediation report](docs/reports/phase-22-independent-remediation-2026-11-14.md)
+and [current support matrix](docs/reports/phase-22-support.json).
+
 The Phase 22 `ade-gateway` feature serves bounded, read-only Flight SQL on
 numeric loopback. Python and Java submit SQL or a shared versioned plan.
 An operator-registered Python function can transform Arrow batches inside

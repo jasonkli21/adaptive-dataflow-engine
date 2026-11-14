@@ -445,11 +445,19 @@ Phase18/20 qualifications.
 ## Phase22 authorization and completion — 2026-11-11
 
 The user authorized Phase22 under the supplied implementation handoff, without
-subagents and with one local project commit. Phase22 is
+subagents and with one local commit. The original candidate6 result is
 `COMPLETE_BOUNDED_MULTILANGUAGE_UDF_PLATFORM_V1` under ADR-0029 and
-`docs/reports/phase-22-implementation-report.md`. Preserve the final and
-predecessor archives in `docs/evidence/phase22/`, the original criteria and
-fixture lock, and the separate macOS and local Linux executable identities.
+`docs/reports/phase-22-implementation-report.md`, historical for its recorded
+source and executables. Preserve the final and predecessor archives in
+`docs/evidence/phase22/`, original criteria and fixture lock, and separate
+macOS and local Linux executable identities. The 2026-11-14 independent review
+found final-SHA CI failure plus outstanding independent reacceptance gaps.
+Current status is `PARTIAL_REMEDIATION_PENDING_REACCEPTANCE` under
+`docs/reports/phase-22-independent-remediation-2026-11-14.md` and
+`docs/reports/phase-22-support.json`. The Clippy loop finding is fixed in
+source, but G15 remains FAIL until required CI passes on a new final SHA;
+G0–G14 remain partial until matched live reacceptance. Do not describe the
+historical report as current-source acceptance or overwrite its evidence.
 
 The default-off `ade-gateway/flight-sql-v1` supports finite authorized local
 EventV1 Parquet, read-only Flight SQL, Python and Java clients, a shared
@@ -462,5 +470,8 @@ WASM is optional and deferred. Remote listening, arbitrary code upload,
 distributed or unbounded UDFs, external transactions and multi-tenant
 execution are outside this contract.
 
-Phase18, Phase20 and Phase21 retain their existing qualifications and separate
-evidence. No Phase23 authorization is inferred.
+The deployment still trusts operator-managed Python and dependencies. The
+interpreter path replacement race, imported-module identity, stalled-reader
+recovery and independently authored fixture remain untested. Phase18, Phase20
+and Phase21 retain their existing qualifications and evidence. No Phase23
+authorization is inferred.

@@ -249,7 +249,7 @@ impl Aggregate {
             return Ok(());
         }
         cx.spill.event(id);
-        for p in 0..PARTITIONS {
+        for (p, path_slot) in self.paths.iter_mut().enumerate() {
             cx.cancellation.check()?;
             if !table
                 .slots
@@ -259,11 +259,11 @@ impl Aggregate {
             {
                 continue;
             }
-            let (file, fresh) = if let Some(path) = &self.paths[p] {
+            let (file, fresh) = if let Some(path) = path_slot.as_ref() {
                 (OpenOptions::new().append(true).open(path)?, false)
             } else {
                 let (path, file) = cx.spill.create(id)?;
-                self.paths[p] = Some(path);
+                *path_slot = Some(path);
                 (file, true)
             };
             let before = file.metadata()?.len();

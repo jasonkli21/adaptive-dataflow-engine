@@ -219,3 +219,16 @@ Final-SHA GitHub Actions is post-commit evidence. The checked-in matrix records
 the local source-bound campaign and the at-recording CI status. A final CI receipt
 must refer to the exact release commit and satisfy every required CI job. The
 receipt is external to that commit so it can attest the commit's immutable ID.
+
+## 12. Independent review reconciliation — 2026-11-14
+
+The additive review remediation is recorded in
+`docs/reports/phase-23-independent-remediation-2026-11-14.md`. It corrects
+deadline-aware aging, permanently exhausted native history, adds an initial
+bounded durable decision receipt, and strengthens current-source CI and attempt
+verification. These are within the existing Phase23 contract. This amendment
+does not waive any G0–G17 evidence requirement. All gates remain partial until
+a fresh campaign matches the committed source, release documents, executables
+and fixtures. The prior candidate11 measurements and acceptance report are
+historical. An out-of-archive receipt pin must be obtained independently after
+all exact-final-SHA CI jobs complete.

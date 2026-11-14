@@ -115,6 +115,24 @@ marker that won cancellation produces exactly one logical result. Standby
 activation changes eligible execution capacity while both cohorts stay
 running under their supervisors.
 
+The configured aging interval is capped by each request's deadline minus one
+millisecond, so an unexpired request reaches the top rank before its original
+deadline. This is bounded progress only when the request remains eligible and a
+cohort completes work; impossible deadlines, quotas, source drift and unavailable
+cohorts do not receive a service guarantee. If all permitted native stores have
+reached their immutable 32-registration history limit, new requests receive
+`NATIVE_HISTORY_FULL`; previously queued requests become terminal with the same
+reason and are never mislabeled as deadline expiry.
+
+Operator inspection includes a bounded durable `decisions` receipt list for
+dispatch, expiry, permanent history refusal, preemption and standby changes.
+Each record carries a policy version, config digest, reason, time, queue depth,
+rank and bounded work/share inputs. The current receipts do not yet cover every
+admission denial, deferred quota comparison, settlement or quarantine transition;
+the release matrix keeps diagnostics acceptance partial until those records and
+the independent reconstruction campaign are complete. The list refuses further
+policy changes at its fixed cap rather than deleting history.
+
 ## Recover and inspect
 
 Restart `serve` against the same manager root with the same worker processes,

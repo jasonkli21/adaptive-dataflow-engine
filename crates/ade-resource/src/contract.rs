@@ -452,7 +452,34 @@ pub struct Ledger {
     pub standby_changed_ms: u64,
     pub standby_idle_since_ms: Option<u64>,
     pub standby_transitions: Vec<(u64, bool)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<DecisionReceipt>,
 }
+
+/// A bounded, credential-free record of a scheduler transition. The config is
+/// represented by its digest so diagnostics do not disclose local paths.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecisionReceipt {
+    pub version: u32,
+    pub sequence: u64,
+    pub at_ms: u64,
+    pub policy: String,
+    pub config_digest: String,
+    pub action: String,
+    pub reason: String,
+    pub job: Option<Uuid>,
+    pub related_job: Option<Uuid>,
+    pub cohort: Option<usize>,
+    pub queue_depth: usize,
+    pub rank: Option<u8>,
+    pub requested_work: Option<u64>,
+    pub tenant_granted_work: Option<u64>,
+    pub tenant_weight: Option<u64>,
+    pub active_cohorts: usize,
+}
+
+pub const MAX_DECISIONS: usize = 512;
 
 pub fn valid_key(key: &str) -> bool {
     (1..=128).contains(&key.len())

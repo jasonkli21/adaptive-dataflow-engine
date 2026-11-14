@@ -494,3 +494,17 @@ The local candidate11 proof passes G0–G14 and G16–G17. Its 37 cases, 112 ver
 results and two disposable-filesystem ENOSPC cases are source-bound. G15
 requires both the passing local workspace/1.94 checks and a separate hosted CI
 receipt for the exact final commit, as described in the Phase23 report.
+
+## Phase23 independent review remediation — 2026-11-14
+
+The candidate11 report and evidence are historical and unchanged. Current status
+is `PARTIAL_PHASE23_INDEPENDENT_REVIEW_REMEDIATION_PENDING_REACCEPTANCE` in
+`docs/reports/phase-23-support.json`; all G0–G17 require matched reacceptance.
+The deadline-aware aging and permanent native-history refusal defects are fixed,
+and scheduler transitions now have bounded durable operator receipts. Current-
+source release verification requires an externally pinned receipt for all four
+required CI jobs and the exact final SHA. Candidate11 is not current-source
+acceptance. New live campaign, crash/accounting adversarial suite, source-bound
+release inventory, hosted CI and external receipt remain outstanding. Preserve
+candidate11 and all Phase18–22 qualifications. No Phase24 authorization is
+inferred.

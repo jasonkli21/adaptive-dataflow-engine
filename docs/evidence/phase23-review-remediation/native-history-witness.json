@@ -1,0 +1,89 @@
+[
+  {
+    "cohorts": [
+      {
+        "pids": [
+          79281,
+          79283
+        ],
+        "store": "aabc051e-0808-4839-864f-ee8ae042166f",
+        "workers": [
+          {
+            "control": "127.0.0.1:54325",
+            "exchange": "127.0.0.1:54326",
+            "id": 0,
+            "instance": "d7553906-83c1-4600-a15b-f6bff823dc51"
+          },
+          {
+            "control": "127.0.0.1:54327",
+            "exchange": "127.0.0.1:54328",
+            "id": 1,
+            "instance": "9b044715-0cd0-4903-bb4f-5f7d55d4d459"
+          }
+        ]
+      },
+      {
+        "pids": [
+          79285,
+          79286
+        ],
+        "store": "3c8c40d3-0d3d-47c3-a50d-8fa90566a780",
+        "workers": [
+          {
+            "control": "127.0.0.1:54329",
+            "exchange": "127.0.0.1:54330",
+            "id": 0,
+            "instance": "386e51b0-7827-42c3-8550-2f89da11672a"
+          },
+          {
+            "control": "127.0.0.1:54331",
+            "exchange": "127.0.0.1:54332",
+            "id": 1,
+            "instance": "d8676d36-a3a2-4a9a-9341-2753d2900360"
+          }
+        ]
+      }
+    ],
+    "config": {
+      "aging_ms": 7000,
+      "limits": {
+        "cost_microunits": 2000000,
+        "cumulative_write_bytes": 536870912,
+        "managed_bytes": 805306368,
+        "queued": 16,
+        "retained_bytes": 8388608,
+        "running": 2,
+        "slots": 4,
+        "staging_bytes": 1048576
+      },
+      "mode": "fifo",
+      "preempt_after_ms": 20,
+      "price": {
+        "currency": "USD",
+        "microunits_per_slot_ms": 1,
+        "version": 1
+      },
+      "standby_idle_ms": 100,
+      "version": 1
+    },
+    "events": [
+      {
+        "check": "native_history_full",
+        "code": "NATIVE_HISTORY_FULL"
+      },
+      {
+        "check": "history",
+        "native_count": 32,
+        "native_history_refusal": {
+          "code": "NATIVE_HISTORY_FULL"
+        }
+      }
+    ],
+    "launches": 1,
+    "name": "history",
+    "tenant_ids": [
+      "a1c748bc-61bd-43ec-894a-7eb72d56aec0",
+      "c02c3a16-8525-4614-9a77-1711063cbc4e"
+    ]
+  }
+]

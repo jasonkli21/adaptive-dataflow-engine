@@ -185,6 +185,9 @@ pub fn can_ever_fit(ledger: &Ledger, job: &Job, now: u64) -> Result<bool> {
         2
     };
     for cohort in 0..choices {
+        if native_history(ledger, cohort) >= MAX_NATIVE_JOBS {
+            continue;
+        }
         let mut trial = Totals::default();
         trial.reserve(&grant(ledger, job, cohort, now)?)?;
         if trial.fits(&ledger.config.limits) && trial.fits(&ledger.tenants[&job.tenant].limits) {
@@ -192,6 +195,30 @@ pub fn can_ever_fit(ledger: &Ledger, job: &Job, now: u64) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+fn native_history(ledger: &Ledger, cohort: usize) -> usize {
+    ledger
+        .jobs
+        .values()
+        .flat_map(|j| j.attempts.iter())
+        .filter(|attempt| {
+            attempt.cohort == cohort
+                && attempt
+                    .usage
+                    .as_ref()
+                    .is_none_or(|usage| usage.outcome != Outcome::Refused)
+        })
+        .count()
+}
+
+pub fn history_exhausted(ledger: &Ledger) -> bool {
+    let choices = if ledger.config.mode == Mode::Fifo {
+        1
+    } else {
+        2
+    };
+    (0..choices).all(|cohort| native_history(ledger, cohort) >= MAX_NATIVE_JOBS)
 }
 
 fn eligible(
@@ -237,7 +264,14 @@ fn eligible(
 }
 
 pub fn rank(ledger: &Ledger, job: &Job, now: u64) -> u8 {
-    if now.saturating_sub(job.queued_ms) >= ledger.config.aging_ms {
+    // Promote before the original deadline whenever service is still
+    // possible. A job whose deadline is <= the configured interval otherwise
+    // expires before the starvation guard can ever take effect.
+    let age = ledger
+        .config
+        .aging_ms
+        .min(job.spec.deadline_ms.saturating_sub(1));
+    if now.saturating_sub(job.queued_ms) >= age {
         2
     } else {
         job.spec.priority
@@ -275,6 +309,7 @@ fn best(ledger: &Ledger, cohort: usize, now: u64, omit: Option<Uuid>) -> Result<
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Expire(Uuid),
+    HistoryFull(Uuid),
     Dispatch(Uuid, usize),
     Activate,
     IdleSince(Option<u64>),
@@ -283,6 +318,11 @@ pub enum Decision {
 }
 
 pub fn decide(ledger: &Ledger, now: u64) -> Result<Option<Decision>> {
+    for (&id, job) in &ledger.jobs {
+        if job.state == State::Queued && history_exhausted_for(ledger) {
+            return Ok(Some(Decision::HistoryFull(id)));
+        }
+    }
     if let Some((&id, _)) = ledger
         .jobs
         .iter()
@@ -351,6 +391,15 @@ pub fn decide(ledger: &Ledger, now: u64) -> Result<Option<Decision>> {
     Ok(None)
 }
 
+fn history_exhausted_for(ledger: &Ledger) -> bool {
+    let choices = if ledger.config.mode == Mode::Fifo {
+        1
+    } else {
+        2
+    };
+    (0..choices).all(|cohort| native_history(ledger, cohort) >= MAX_NATIVE_JOBS)
+}
+
 fn eligible_for_relaunch(ledger: &Ledger, job: &Job, cohort: usize, now: u64) -> Result<bool> {
     let fresh = grant(ledger, job, cohort, now)?;
     for (principal, limits) in [
@@ -375,12 +424,111 @@ fn eligible_for_relaunch(ledger: &Ledger, job: &Job, cohort: usize, now: u64) ->
     Ok(true)
 }
 
+// Keep receipt construction and the matching state transition in one policy
+// transaction so the durable event cannot get ahead of its state change.
+#[allow(clippy::too_many_lines)]
 pub fn apply(ledger: &mut Ledger, decision: Decision, now: u64) -> Result<()> {
+    use crate::contract::{DecisionReceipt, MAX_DECISIONS};
+    if !matches!(decision, Decision::IdleSince(_)) {
+        require(
+            ledger.decisions.len() < MAX_DECISIONS,
+            "DECISION_HISTORY_FULL",
+        )?;
+    }
+    let (action, reason, job, related_job, cohort, rank_value) = match decision {
+        Decision::Expire(id) => ("expire", "deadline_expired", Some(id), None, None, None),
+        Decision::HistoryFull(id) => (
+            "refuse",
+            "native_history_exhausted",
+            Some(id),
+            None,
+            None,
+            None,
+        ),
+        Decision::Dispatch(id, cohort) => (
+            "dispatch",
+            "eligible_and_reserved",
+            Some(id),
+            None,
+            Some(cohort),
+            Some(rank(ledger, &ledger.jobs[&id], now)),
+        ),
+        Decision::Activate => (
+            "activate",
+            "eligible_demand_requires_standby",
+            None,
+            None,
+            Some(1),
+            None,
+        ),
+        Decision::IdleSince(_) => ("standby_idle", "idle_cooldown", None, None, Some(1), None),
+        Decision::Deactivate => (
+            "deactivate",
+            "standby_idle_cooldown_elapsed",
+            None,
+            None,
+            Some(1),
+            None,
+        ),
+        Decision::Preempt(victim, demand) => (
+            "preempt",
+            "higher_rank_demand",
+            Some(victim),
+            Some(demand),
+            ledger.jobs[&victim].attempts.last().map(|a| a.cohort),
+            Some(rank(ledger, &ledger.jobs[&demand], now)),
+        ),
+    };
+    let config_digest = hash(&encode(&ledger.config)?);
+    let sequence = ledger
+        .decisions
+        .last()
+        .map_or(Some(1), |receipt| receipt.sequence.checked_add(1))
+        .ok_or(Error("DECISION_HISTORY_FULL"))?;
+    let queue_depth = ledger
+        .jobs
+        .values()
+        .filter(|job| job.state == State::Queued)
+        .count();
+    let active_cohorts = ledger
+        .jobs
+        .values()
+        .filter(|job| job.state.holds_cohort())
+        .count();
+    let selected = job.and_then(|id| ledger.jobs.get(&id));
+    let tenant = selected.and_then(|selected| ledger.tenants.get(&selected.tenant));
+    let receipt = DecisionReceipt {
+        version: 1,
+        sequence,
+        at_ms: now,
+        policy: match ledger.config.mode {
+            Mode::Fifo => "fifo-v1",
+            Mode::Adaptive => "adaptive-v1",
+        }
+        .into(),
+        config_digest,
+        action: action.into(),
+        reason: reason.into(),
+        job,
+        related_job,
+        cohort,
+        queue_depth,
+        rank: rank_value,
+        requested_work: selected.map(|job| job.spec.work),
+        tenant_granted_work: tenant.map(|tenant| tenant.granted_work),
+        tenant_weight: tenant.map(|tenant| tenant.weight),
+        active_cohorts,
+    };
     match decision {
         Decision::Expire(id) => {
             let job = ledger.jobs.get_mut(&id).ok_or(Error("CORRUPT_LEDGER"))?;
             job.state = State::Expired;
             job.reason = "DEADLINE_EXPIRED".into();
+        }
+        Decision::HistoryFull(id) => {
+            let job = ledger.jobs.get_mut(&id).ok_or(Error("CORRUPT_LEDGER"))?;
+            job.state = State::Failed;
+            job.reason = "NATIVE_HISTORY_FULL".into();
         }
         Decision::Dispatch(id, cohort) => {
             let job = &ledger.jobs[&id];
@@ -436,6 +584,9 @@ pub fn apply(ledger: &mut Ledger, decision: Decision, now: u64) -> Result<()> {
             )?;
             ledger.standby_transitions.push((now, ledger.standby_on));
         }
+    }
+    if !matches!(decision, Decision::IdleSince(_)) {
+        ledger.decisions.push(receipt);
     }
     Ok(())
 }
@@ -523,6 +674,7 @@ mod tests {
             standby_changed_ms: 0,
             standby_idle_since_ms: None,
             standby_transitions: vec![],
+            decisions: vec![],
         };
         (root, ledger)
     }
@@ -594,6 +746,19 @@ mod tests {
                 assert_eq!(decision, Decision::Dispatch(*expected, 0));
                 let selected = *expected;
                 apply(&mut ledger, decision, at).unwrap();
+                let receipt = ledger.decisions.last().unwrap();
+                assert_eq!(receipt.action, "dispatch");
+                assert_eq!(receipt.reason, "eligible_and_reserved");
+                assert_eq!(receipt.job, Some(selected));
+                assert_eq!(receipt.policy, "adaptive-v1");
+                assert_eq!(
+                    receipt.config_digest,
+                    hash(&encode(&ledger.config).unwrap())
+                );
+                assert_eq!(
+                    receipt.requested_work,
+                    Some(ledger.jobs[&selected].spec.work)
+                );
                 finish(&mut ledger, selected, at + 1);
             }
         }
@@ -623,6 +788,107 @@ mod tests {
         );
         assert_eq!(decide(&ledger, 60).unwrap(), None);
         assert_eq!(decide(&ledger, 200).unwrap(), Some(Decision::Expire(high)));
+    }
+
+    #[test]
+    fn aging_promotes_before_short_equal_and_long_deadlines() {
+        let (_root, mut ledger) = model();
+        ledger.config.aging_ms = 100;
+        for deadline in [99, 100, 101] {
+            let low = queue(&mut ledger, 1, 0, 1);
+            let job = ledger.jobs.get_mut(&low).unwrap();
+            job.spec.deadline_ms = deadline;
+            job.expires_ms = deadline;
+            assert_eq!(rank(&ledger, &ledger.jobs[&low], deadline - 1), 2);
+            if deadline > 1 {
+                assert_eq!(rank(&ledger, &ledger.jobs[&low], deadline - 2), 0);
+            }
+            ledger.jobs.remove(&low);
+        }
+        let mut short = queue(&mut ledger, 1, 0, 1);
+        ledger.jobs.get_mut(&short).unwrap().spec.deadline_ms = 1;
+        ledger.jobs.get_mut(&short).unwrap().expires_ms = 1;
+        assert_eq!(rank(&ledger, &ledger.jobs[&short], 0), 2);
+        short = queue(&mut ledger, 1, 0, 1);
+        ledger.jobs.get_mut(&short).unwrap().queued_ms = u64::MAX - 30;
+        ledger.jobs.get_mut(&short).unwrap().expires_ms = u64::MAX;
+        ledger.jobs.get_mut(&short).unwrap().spec.deadline_ms = 20;
+        assert_eq!(rank(&ledger, &ledger.jobs[&short], u64::MAX), 2);
+
+        // Under continuous high-priority arrivals, a deadline-eligible aged
+        // tenant receives the next grant through weighted work accounting.
+        let (_root, mut ledger) = model();
+        ledger.config.aging_ms = 120_000;
+        let low = queue(&mut ledger, 1, 0, 1);
+        for _ in 0..4 {
+            let high = queue(&mut ledger, 2, 2, 1);
+            ledger.tenants.get_mut(&id(2)).unwrap().granted_work += 1;
+            ledger.jobs.get_mut(&high).unwrap().queued_ms = 98;
+            ledger.jobs.get_mut(&high).unwrap().expires_ms = 200;
+            ledger.jobs.get_mut(&high).unwrap().spec.deadline_ms = 102;
+        }
+        ledger.jobs.get_mut(&low).unwrap().queued_ms = 0;
+        ledger.jobs.get_mut(&low).unwrap().expires_ms = 100;
+        ledger.jobs.get_mut(&low).unwrap().spec.deadline_ms = 100;
+        assert_eq!(
+            decide(&ledger, 99).unwrap(),
+            Some(Decision::Dispatch(low, 0))
+        );
+    }
+
+    #[test]
+    fn native_history_exhaustion_is_permanent_and_mode_aware() {
+        for mode in [Mode::Fifo, Mode::Adaptive] {
+            let (_root, mut ledger) = model();
+            ledger.config.mode = mode;
+            for _ in 0..MAX_NATIVE_JOBS - 1 {
+                let id = queue(&mut ledger, 1, 0, 1);
+                apply(&mut ledger, Decision::Dispatch(id, 0), 1).unwrap();
+                finish(&mut ledger, id, 2);
+            }
+            let pending = queue(&mut ledger, 2, 1, 1);
+            assert_eq!(native_history(&ledger, 0), MAX_NATIVE_JOBS - 1);
+            assert!(!history_exhausted(&ledger));
+            assert!(can_ever_fit(&ledger, &ledger.jobs[&pending], 3).unwrap());
+            let final_registration = queue(&mut ledger, 1, 0, 1);
+            apply(&mut ledger, Decision::Dispatch(final_registration, 0), 3).unwrap();
+            finish(&mut ledger, final_registration, 4);
+            if mode == Mode::Adaptive {
+                assert_eq!(native_history(&ledger, 0), MAX_NATIVE_JOBS);
+                assert_eq!(native_history(&ledger, 1), 0);
+                assert!(!history_exhausted(&ledger));
+                assert!(can_ever_fit(&ledger, &ledger.jobs[&pending], 5).unwrap());
+                assert_ne!(
+                    decide(&ledger, 3).unwrap(),
+                    Some(Decision::HistoryFull(pending))
+                );
+                for _ in 0..MAX_NATIVE_JOBS {
+                    let id = queue(&mut ledger, 2, 1, 1);
+                    apply(&mut ledger, Decision::Dispatch(id, 1), 3).unwrap();
+                    finish(&mut ledger, id, 4);
+                }
+            }
+            assert!(history_exhausted(&ledger));
+            assert_eq!(
+                decide(&ledger, 5).unwrap(),
+                Some(Decision::HistoryFull(pending))
+            );
+            apply(&mut ledger, Decision::HistoryFull(pending), 5).unwrap();
+            assert_eq!(ledger.jobs[&pending].state, State::Failed);
+            assert_eq!(ledger.jobs[&pending].reason, "NATIVE_HISTORY_FULL");
+            assert!(ledger.jobs[&pending].attempts.is_empty());
+        }
+    }
+
+    #[test]
+    fn empty_decision_history_keeps_legacy_ledger_encoding() {
+        let (_root, ledger) = model();
+        let encoded = encode(&ledger).unwrap();
+        assert!(
+            !String::from_utf8(encoded)
+                .unwrap()
+                .contains("\"decisions\"")
+        );
     }
 
     #[test]

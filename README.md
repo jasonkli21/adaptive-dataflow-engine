@@ -534,4 +534,6 @@ preemption after native drain, per-attempt accounting and standby-cohort
 activation. Its scope is one trusted Unix operator deployment.
 
 See the [operator guide](docs/phase-23-resource-manager-guide.md) and the
-[source-bound acceptance report](docs/reports/phase-23-implementation-report.md).
+[historical candidate report](docs/reports/phase-23-implementation-report.md).
+Current status is partial pending source-bound independent reacceptance; see
+the [review remediation report](docs/reports/phase-23-independent-remediation-2026-11-14.md).

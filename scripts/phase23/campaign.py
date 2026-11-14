@@ -37,7 +37,16 @@ def json_file(path, data):
 
 def inventory():
     paths = ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml",
-             ".github/workflows/ci.yml", "scripts/smoke.sh"]
+             ".github/workflows/ci.yml", "scripts/smoke.sh", "AGENTS.md", "README.md",
+             "docs/product/prd.md", "docs/architecture/architecture.md",
+             "docs/plans/phase-23-implementation-plan.md",
+             "docs/adr/0030-bounded-local-multitenant-resource-manager-v1.md",
+             "docs/phase-23-resource-manager-guide.md",
+             "docs/reports/phase-23-implementation-report.md",
+             "docs/reports/phase-23-independent-remediation-2026-11-14.md",
+             "docs/reports/phase-23-support.json",
+             "docs/evidence/phase23-review-remediation/README.md",
+             "docs/evidence/phase23-review-remediation/native-history-witness.json"]
     paths += [str(p.relative_to(REPO)) for p in (REPO / "crates").rglob("*")
               if p.is_file() and (p.suffix == ".rs" or p.name == "Cargo.toml")]
     paths += [str(p.relative_to(REPO)) for p in (REPO / "scripts/phase23").glob("*.py")]
@@ -200,6 +209,7 @@ class Case:
     def refusal(self, name, reply, code):
         assert reply == {"ok": False, "code": code}, (name, reply, code)
         self.events.append(dict(check=name, code=reply["code"]))
+        return {"code": reply["code"]}
 
     def sample(self):
         pids = [self.manager.pid] + [p for _, group in self.cohorts for p in group]
@@ -384,7 +394,7 @@ def crash(case, stage, native=False, kind="aggregate"):
     job = case.submit(0, "crash", kind)
     assert job["expires_ms"] == job["queued_ms"] + spec["deadline_ms"]
     result = case.wait(0, job["id"])
-    case.events.append(dict(check="crash", stage=stage, reached=reached,
+    case.events.append(dict(check="crash", job_id=job["id"], stage=stage, reached=reached,
                             killed_exit=killed_exit, status=result))
     if result["state"] == "succeeded":
         case.check_result(0, result, kind)
@@ -415,7 +425,7 @@ def fault_preemption(case, stage):
     a, b = result["attempts"]
     assert active["attempts"][0]["native_id"] == a["native_id"] != b["native_id"]
     assert a["usage"]["outcome"] == "preempted"
-    case.events.append(dict(check="crash", stage=stage, reached=reached,
+    case.events.append(dict(check="crash", job_id=low["id"], stage=stage, reached=reached,
                             killed_exit=killed_exit, status=result))
 
 
@@ -634,21 +644,13 @@ def cohort_identity(case):
 
 def history(case):
     case.setup(mode="fifo")
-    last = None
     for j in range(32):
-        last = case.submit(j % 2, f"history-{j}", "empty", preemptible=False)
-        assert case.wait(j % 2, last["id"])["state"] == "succeeded"
-    queued = case.submit(0, "native-history-full", deadline_ms=250)
-    status = case.wait(0, queued["id"])
-    assert status["state"] == "expired" and status["attempts"] == []
-    for j in range(31):
-        job = case.submit(0, f"cancel-{j}", preemptible=False)
-        assert case.ok(case.token(0), "cancel", job=job["id"])["state"] == "cancelled"
-    case.refusal("history_full", case.ask(case.token(0), "submit", key="extra",
-                   spec=case.specs[0, "empty"]), "HISTORY_FULL")
-    assert case.submit(1, "history-31", "empty", preemptible=False)["id"] == last["id"]
-    case.events.append(dict(check="history", native_count=32, logical_count=64,
-                            no_native_after_exhaustion=status))
+        job = case.submit(j % 2, f"history-{j}", "empty", preemptible=False)
+        assert case.wait(j % 2, job["id"])["state"] == "succeeded"
+    refusal = case.refusal("native_history_full", case.ask(case.token(0), "submit",
+                           key="native-history-full", spec=case.specs[0, "empty"]),
+                           "NATIVE_HISTORY_FULL")
+    case.events.append(dict(check="history", native_count=32, native_history_refusal=refusal))
 
 
 def run_cases(args, names):
@@ -692,7 +694,10 @@ def main():
     json_file(args.output / "executables.json",
               {n: sha(getattr(args, n)) for n in ("manager", "batch", "worker", "fixture")})
     json_file(args.output / "host.json", dict(
-        baseline=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
+        baseline=json.loads((EVIDENCE / "baseline.json").read_text())["source"],
+        candidate_sha=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
+        tree_sha=subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=REPO, text=True).strip(),
+        clean_worktree=not bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=REPO, text=True).strip()),
         uname={key: getattr(os.uname(), key) for key in ("sysname","release","machine")},
         features=["workspace/all-features"],
         rustc=subprocess.check_output(["rustc", "--version"], text=True).strip(),

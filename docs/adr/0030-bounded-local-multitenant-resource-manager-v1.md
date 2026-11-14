@@ -77,6 +77,22 @@ capacity actually released by the victim. Native cancellation is cooperative.
 Standby activates when eligible demand cannot fit the primary and downshifts
 after an idle cooldown with no unresolved standby work.
 
+The 2026-11-14 review remediation derives the effective promotion interval per
+job as `min(configured_aging_ms, deadline_ms - 1)`. This makes promotion
+reachable before expiry while preserving the strict original deadline. It does
+not promise service when the job cannot remain eligible until a cohort is
+available. Submission refuses with `NATIVE_HISTORY_FULL` when every cohort
+permitted by the current mode is permanently at its native registration cap;
+queued work that becomes impossible receives a durable terminal failure with
+that reason. Native history is not recycled.
+
+Scheduler transition receipts are persisted in a bounded versioned list,
+operator-only in the inspection response. They include policy and config
+identity plus a limited scheduling snapshot, and contain no credentials or
+filesystem paths. Full admission/defer/settlement/quarantine event coverage and
+independent reconstruction are still release requirements; the support matrix
+does not mark G13 accepted on these initial receipts alone.
+
 Admission reserves counts, actual worker slots and native managed-budget
 allocations, staging and output before effects. A replay-eligible active job
 retains one queue obligation. Attempt disk write allowance is charged

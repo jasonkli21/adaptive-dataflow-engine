@@ -2,11 +2,13 @@
 """Detached receipt and semantic verification for the bounded Phase 23 campaign."""
 import argparse
 from collections import Counter
+from datetime import datetime
 from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 RECEIPTS = {"criteria.json", "fixture.json", "frozen.sha256", "host.json", "cases.json",
@@ -182,7 +184,45 @@ def verify_fairness(case):
             "aged low-priority tenant progress")
 
 
-def phase_status(support):
+REQUIRED_CI = {"rust", "msrv", "phase22-interop", "phase23-local"}
+
+
+def verify_ci_receipt(path, pin, final_sha):
+    require(path is not None and DIGEST.fullmatch(pin or "") and final_sha is not None,
+            "external exact-SHA CI receipt and detached pin required")
+    require(re.fullmatch(r"[0-9a-f]{40}", final_sha), "invalid final SHA")
+    receipt = load(path)
+    require(digest_file(path) == pin, "CI receipt detached pin mismatch")
+    require(receipt.get("version") == 1 and receipt.get("repository")
+            == "jasonkli21/adaptive-dataflow-engine"
+            and receipt.get("commit_sha") == final_sha
+            and isinstance(receipt.get("run_id"), int) and receipt["run_id"] > 0
+            and receipt.get("workflow") == "ci"
+            and receipt.get("workflow_path") == ".github/workflows/ci.yml"
+            and receipt.get("event") == "push" and receipt.get("ref") == "refs/heads/main"
+            and receipt.get("run_url")
+            == f'https://github.com/{receipt["repository"]}/actions/runs/{receipt["run_id"]}'
+            and isinstance(receipt.get("created_at"), str)
+            and isinstance(receipt.get("completed_at"), str), "CI receipt provenance or SHA")
+    try:
+        created = datetime.fromisoformat(receipt["created_at"].replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(receipt["completed_at"].replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("CI receipt timestamps") from error
+    require(created.tzinfo is not None and completed.tzinfo is not None and completed >= created,
+            "CI receipt chronology")
+    checks = receipt.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(REQUIRED_CI), "CI check inventory")
+    rows = {check.get("name"): check for check in checks if isinstance(check, dict)}
+    require(set(rows) == REQUIRED_CI and all(row.get("conclusion") == "success"
+            and row.get("status") == "completed" and row.get("head_sha") == final_sha
+            for row in rows.values()), "required CI checks")
+    require(receipt.get("run_status") == "completed" and receipt.get("run_conclusion") == "success",
+            "CI run incomplete or unsuccessful")
+    return receipt
+
+
+def phase_status(support, mode="historical-archive", ci_receipt=None, ci_pin=None, final_sha=None):
     require(list(sorted(support["gates"])) == sorted(f"G{i}" for i in range(18)), "gate coverage")
     statuses = {g["status"] for g in support["gates"].values()}
     require(statuses <= {"PASS", "FAIL", "PARTIAL", "NOT_RUN"}, "unknown gate status")
@@ -190,12 +230,17 @@ def phase_status(support):
     require((final == "COMPLETE_BOUNDED_LOCAL_MULTITENANT_MANAGER_V1") == (statuses == {"PASS"}),
             "support status conflicts with gates")
     if support["gates"]["G15"]["status"] == "PASS":
-        require(DIGEST.fullmatch(support.get("ci_receipt_sha256", "")), "final CI receipt")
+        if mode == "current-source" or final_sha is not None:
+            receipt = verify_ci_receipt(ci_receipt, ci_pin, final_sha)
+            require(support.get("ci_receipt_sha256") == digest_file(ci_receipt),
+                    "support CI receipt digest mismatch")
+            require(receipt["commit_sha"] == final_sha, "support final SHA mismatch")
 
 
-def verify_semantics(root, decoder=None):
+def verify_semantics(root, decoder=None, mode="historical-archive", ci_receipt=None, ci_pin=None,
+                    final_sha=None):
     fixture, support = load(root / "fixture.json"), load(root / "support.json")
-    phase_status(support)
+    phase_status(support, mode, ci_receipt, ci_pin, final_sha)
     cases = load(root / "cases.json") + load(root / "enospc.json")
     names = {c["name"] for c in cases}
     require(len(names) == len(cases), "duplicate cases")
@@ -209,6 +254,25 @@ def verify_semantics(root, decoder=None):
         name = case["name"]
         verify_processes(case)
         results = verify_outputs(case, fixture, root, decoder)
+        # Recompute every attempt visible in terminal/nonterminal receipts,
+        # including cancellation and quarantine, rather than trusting only
+        # successful result events.
+        seen_job_receipts = {}
+        for event in case["events"]:
+            witnesses = []
+            if isinstance(event.get("status"), dict) and "attempts" in event["status"]:
+                witnesses.append(event["status"])
+            if isinstance(event.get("cancelled"), dict) and "attempts" in event["cancelled"]:
+                witnesses.append(event["cancelled"])
+            for job in witnesses:
+                canonical = json.dumps(job, sort_keys=True, separators=(",", ":"))
+                prior = seen_job_receipts.setdefault(job["id"], canonical)
+                require(prior == canonical, "conflicting logical job receipts")
+                require(1 <= len(job["attempts"]) <= 2 or job["state"] in
+                        ("queued", "cancelled", "failed", "expired"), "attempt count")
+                for attempt in job["attempts"]:
+                    verify_attempt(job, attempt, case["cohorts"][attempt["cohort"]],
+                                   case["config"]["price"])
         if name == "auth":
             findings = Counter((e["check"], e.get("code")) for e in case["events"] if "code" in e)
             require(all(findings[key, code] == n for key, (code, n) in AUTH.items()), "auth probes")
@@ -257,6 +321,9 @@ def verify_semantics(root, decoder=None):
                     and case["launches"] == (3 if event["stage"] == "snapshot_before_rename" else 2)
                     and name.endswith(event["stage"]),
                     "reached crash and restart")
+            require(event.get("job_id") == event["status"].get("id"), "crash logical identity")
+            require(event["status"]["state"] in ("succeeded", "failed"),
+                    "crash terminal state is not justified")
             require(len(results) >= 1, "recovery oracle")
         if name == "quotas":
             q = one(case, "quota_release")
@@ -270,10 +337,9 @@ def verify_semantics(root, decoder=None):
                     "bounded queue and price")
         if name == "history":
             h = one(case, "history")
-            require(h["native_count"] == 32 and h["logical_count"] == 64
-                    and h["no_native_after_exhaustion"]["state"] == "expired"
-                    and h["no_native_after_exhaustion"]["attempts"] == []
-                    and one(case, "history_full")["code"] == "HISTORY_FULL", "history bounds")
+            require(h["native_count"] == 32
+                    and h["native_history_refusal"]["code"] == "NATIVE_HISTORY_FULL",
+                    "native history bounds")
         if name == "corruption":
             require(Counter(e["code"] for e in case["events"] if e["check"] == "reopen_refusal")
                     == {"CLOCK_ROLLBACK":1, "CORRUPT_LEDGER":1, "PRIVATE_FILE":3}, "reopen refusals")
@@ -300,7 +366,7 @@ def verify_semantics(root, decoder=None):
     return len(cases)
 
 
-def verify(root, pin, mode, source=None, bin_dir=None):
+def verify(root, pin, mode, source=None, bin_dir=None, ci_receipt=None, ci_pin=None, final_sha=None):
     require(DIGEST.fullmatch(pin) and digest_file(root / "seal.json") == pin, "detached receipt pin")
     archive = load(root / "seal.json")
     require(RECEIPTS <= set(archive), "sealed artifact inventory")
@@ -330,11 +396,18 @@ def verify(root, pin, mode, source=None, bin_dir=None):
         from campaign import inventory
         require(source is not None and source.resolve() == ROOT and bin_dir is not None, "current-source inputs")
         require(source_hashes == inventory(), "current-source mismatch")
+        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=source, text=True).strip()
+        dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=source, text=True).strip()
+        require(final_sha is not None and host.get("candidate_sha") == final_sha == head
+                and host.get("tree_sha") == tree and host.get("clean_worktree") is True
+                and not dirty, "candidate/final source identity or clean tree")
         names = {"manager": "ade-resource", "worker": "ade-worker", "batch": "ade-batch",
                  "fixture": "examples/phase23-fixture"}
         require(all(digest_file(bin_dir / path) == executables[label] for label, path in names.items()),
                 "binary mismatch")
-    return verify_semantics(root, bin_dir / "examples/phase23-fixture" if mode == "current-source" else None)
+    return verify_semantics(root, bin_dir / "examples/phase23-fixture" if mode == "current-source" else None,
+                            mode, ci_receipt, ci_pin, final_sha)
 
 
 def main():
@@ -344,9 +417,13 @@ def main():
     parser.add_argument("--receipt-pin", required=True)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--bin-dir", type=Path)
+    parser.add_argument("--ci-receipt", type=Path)
+    parser.add_argument("--ci-receipt-pin")
+    parser.add_argument("--final-sha")
     args = parser.parse_args()
     try:
-        count = verify(args.root, args.receipt_pin, args.mode, args.source, args.bin_dir)
+        count = verify(args.root, args.receipt_pin, args.mode, args.source, args.bin_dir,
+                       args.ci_receipt, args.ci_receipt_pin, args.final_sha)
     except (ValueError, KeyError, IndexError, TypeError, OSError, StopIteration) as error:
         parser.exit(1, f"verification refused: {error}\n")
     print(f"{args.mode}: authenticated and semantically verified {count} recorded cases")

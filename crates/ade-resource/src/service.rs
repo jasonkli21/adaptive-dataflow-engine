@@ -450,6 +450,7 @@ fn inspect(state: &Ledger) -> Result<Value> {
         "mode":config.mode,"aging_ms":config.aging_ms,"standby_idle_ms":config.standby_idle_ms,
         "preempt_after_ms":config.preempt_after_ms,"limits":config.limits,"price":config.price,
         "standby_on":state.standby_on,"standby_transitions":state.standby_transitions,
+        "decisions":state.decisions,
         "jobs":jobs,"tenants":tenants,
     },"totals":global}))
 }
@@ -491,6 +492,7 @@ fn duplicate(state: &Ledger, tenant: Uuid, key: &str, digest: &str) -> Result<Op
 
 fn check_submit(state: &Ledger, job: &Job, at: u64) -> Result<()> {
     require(state.jobs.len() < MAX_JOBS, "HISTORY_FULL")?;
+    require(!policy::history_exhausted(state), "NATIVE_HISTORY_FULL")?;
     require(
         policy::totals(state, None, None)?.queued < state.config.limits.queued
             && policy::totals(state, Some(job.tenant), None)?.queued

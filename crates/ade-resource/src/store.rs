@@ -64,6 +64,7 @@ impl Store {
             standby_changed_ms: at,
             standby_idle_since_ms: None,
             standby_transitions: vec![],
+            decisions: vec![],
         };
         let mut store = Self::lock(root, state)?;
         store.change(at, |_| Ok(()))?;
@@ -276,6 +277,7 @@ fn verify_attempts(ledger: &Ledger, id: uuid::Uuid, job: &Job) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate(state: &Ledger) -> Result<()> {
     require(
         state.generation > 0
@@ -283,6 +285,24 @@ fn validate(state: &Ledger) -> Result<()> {
             && state.tenants.len() <= MAX_TENANTS
             && state.jobs.len() <= MAX_JOBS
             && state.standby_transitions.len() <= 2 * MAX_JOBS * MAX_LAUNCHES
+            && state.decisions.len() <= crate::contract::MAX_DECISIONS
+            && state
+                .decisions
+                .windows(2)
+                .all(|pair| pair[0].sequence < pair[1].sequence)
+            && state.decisions.iter().all(|decision| {
+                decision.version == 1
+                    && decision.at_ms <= state.clock_ms
+                    && decision.config_digest.len() == 64
+                    && decision.reason.len() <= 96
+                    && decision.action.len() <= 32
+                    && decision.policy.len() <= 32
+                    && decision.cohort.is_none_or(|cohort| cohort < 2)
+                    && decision.job.is_none_or(|id| state.jobs.contains_key(&id))
+                    && decision
+                        .related_job
+                        .is_none_or(|id| state.jobs.contains_key(&id))
+            })
             && state.standby_changed_ms <= state.clock_ms
             && state
                 .standby_idle_since_ms

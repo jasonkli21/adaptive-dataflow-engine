@@ -1,20 +1,20 @@
 {
   "version": 1,
-  "status": "PARTIAL_PHASE23_FINAL_SHA_CI_PENDING",
-  "full_local_campaign": true,
+  "status": "PARTIAL_PHASE23_INDEPENDENT_REVIEW_REMEDIATION_PENDING_REACCEPTANCE",
+  "full_local_campaign": false,
   "gates": {
     "G0": {
-      "status": "PASS",
-      "evidence": "Frozen criteria and literal oracle, matched source inventory and four executable digests.",
+      "status": "PARTIAL",
+      "evidence": "Candidate 11 inventory remains historical. Current release requirements and exact final source SHA are not yet externally pinned.",
       "cases": []
     },
     "G1": {
-      "status": "PASS",
-      "evidence": "ADR-0030 and unchanged Phase 12 fences and default selectors.",
+      "status": "PARTIAL",
+      "evidence": "ADR-0030 scope remains; independent gate reacceptance is pending.",
       "cases": []
     },
     "G2": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Authenticated UDS, scoped requests, rotation/revocation and source refusals.",
       "cases": [
         "auth",
@@ -22,7 +22,7 @@
       ]
     },
     "G3": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Concurrent idempotency, lost response, synced unpublished snapshot, capacity bounds and original expiry.",
       "cases": [
         "auth",
@@ -32,7 +32,7 @@
       ]
     },
     "G4": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Independent pure model and two native contention chronologies, including finite age promotion.",
       "cases": [
         "fairness_1",
@@ -40,7 +40,7 @@
       ]
     },
     "G5": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Native reservations, queue and per-dimension refusals, tightening and release.",
       "cases": [
         "quotas",
@@ -48,7 +48,7 @@
       ]
     },
     "G6": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Distinct store/boot/process identities, actual post-claim overlap, sibling lease and changed-worker refusal.",
       "cases": [
         "overlap",
@@ -56,7 +56,7 @@
       ]
     },
     "G7": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Running aggregate preempted and drained, fresh native job, commit-wins and retained poison.",
       "cases": [
         "preemption",
@@ -67,7 +67,7 @@
       ]
     },
     "G8": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Reached process kill stages, restart, corruption/clock refusals and ambiguity quarantine.",
       "cases": [
         "corruption",
@@ -77,7 +77,7 @@
       ]
     },
     "G9": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Independently recomputed slot occupancy, pinned rate, attempt ceilings and preemption charges.",
       "cases": [
         "preemption",
@@ -85,14 +85,14 @@
       ]
     },
     "G10": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Observed standby transitions with two running assignments and four still-provisioned workers.",
       "cases": [
         "overlap"
       ]
     },
     "G11": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Literal signed/duplicate bag, empty and 1025-row boundary outputs with actual marker and IPC.",
       "cases": [
         "auth",
@@ -100,7 +100,7 @@
       ]
     },
     "G12": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Bounded socket refusals, private-root corruption/mode checks and reached real volume exhaustion.",
       "cases": [
         "auth",
@@ -110,7 +110,7 @@
       ]
     },
     "G13": {
-      "status": "PASS",
+      "status": "PARTIAL",
       "evidence": "Stable sanitized tenant and operator APIs, support matrix and operations guide.",
       "cases": [
         "auth",
@@ -118,8 +118,8 @@
       ]
     },
     "G14": {
-      "status": "PASS",
-      "evidence": "Three descriptive matched FIFO and adaptive trials with raw process and output observations.",
+      "status": "PARTIAL",
+      "evidence": "Candidate 11 descriptive trials remain historical; matched measurements after remediation are not run.",
       "cases": [
         "measure_fifo_0",
         "measure_fifo_1",
@@ -131,17 +131,17 @@
     },
     "G15": {
       "status": "PARTIAL",
-      "evidence": "Local workspace and MSRV suite recorded separately. Final-SHA hosted CI is pending.",
+      "evidence": "Candidate 11 checks and green checks for a639a93 are historical. This remediation SHA needs its own exact-SHA CI receipt.",
       "cases": []
     },
     "G16": {
-      "status": "PASS",
-      "evidence": "Detached source/executable validation, literal/policy oracle and rehashed tamper refusals.",
+      "status": "PARTIAL",
+      "evidence": "Verifier now requires a separately pinned exact-SHA CI receipt for current-source release claims. New matched archive and full semantic tamper campaign are pending.",
       "cases": []
     },
     "G17": {
-      "status": "PASS",
-      "evidence": "ADR, guide, report, matrix, sealed evidence and preserved predecessors.",
+      "status": "PARTIAL",
+      "evidence": "Additive remediation report records findings and blockers; final-source campaign and post-commit receipt remain pending.",
       "cases": []
     }
   },

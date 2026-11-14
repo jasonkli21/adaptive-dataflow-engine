@@ -42,11 +42,34 @@ def mutations():
     def unsupported_label(support):
         support["status"] = "COMPLETE_BOUNDED_LOCAL_MULTITENANT_MANAGER_V1"
 
+    def forged_ci(support):
+        for gate in support["gates"].values():
+            gate["status"] = "PASS"
+        support["status"] = "COMPLETE_BOUNDED_LOCAL_MULTITENANT_MANAGER_V1"
+        support["ci_receipt_sha256"] = "f" * 64
+
+    def cancelled_charge(cases):
+        q = nested(cases, "quotas", "quota_release")
+        q["cancelled"]["attempts"][0]["usage"]["charge"] += 1
+
+    def crash_identity(cases):
+        case = next(c for c in cases if c["name"] == "crash_reserved_before_registration")
+        event = next(e for e in case["events"] if e["check"] == "crash")
+        event["status"]["id"] = "00000000-0000-0000-0000-000000000001"
+
+    def impossible_crash_transition(cases):
+        event = nested(cases, "crash_mapped_before_start", "crash")
+        event["status"]["state"] = "cancelled"
+
     return {
         "duplicate_job": ("cases.json", duplicate), "swapped_tenant": ("cases.json", swapped_tenant),
         "missing_failure": ("cases.json", missing_fault), "forged_cost": ("cases.json", forged_cost),
         "forged_share": ("cases.json", forged_share), "altered_worker_boot": ("cases.json", swapped_boot),
         "stale_sha": ("host.json", stale_sha), "relabeled_support": ("support.json", unsupported_label),
+        "coordinated_forged_ci": ("support.json", forged_ci),
+        "cancelled_attempt_charge": ("cases.json", cancelled_charge),
+        "crash_identity": ("cases.json", crash_identity),
+        "impossible_crash_transition": ("cases.json", impossible_crash_transition),
     }
 
 
@@ -56,9 +79,13 @@ def main():
     p.add_argument("--receipt-pin", required=True)
     p.add_argument("--source", required=True, type=Path)
     p.add_argument("--bin-dir", required=True, type=Path)
+    p.add_argument("--final-sha", required=True)
+    p.add_argument("--ci-receipt", type=Path)
+    p.add_argument("--ci-receipt-pin")
     p.add_argument("--output", type=Path)
     args = p.parse_args()
-    verify(args.root, args.receipt_pin, "current-source", args.source, args.bin_dir)
+    verify(args.root, args.receipt_pin, "current-source", args.source, args.bin_dir,
+           args.ci_receipt, args.ci_receipt_pin, args.final_sha)
     outcomes = []
     with tempfile.TemporaryDirectory(prefix="ade23-tamper-") as tmp:
         for name, (file, mutate) in mutations().items():
@@ -70,7 +97,8 @@ def main():
             pin = seal(work)
             require(pin != args.receipt_pin, "mutation must reseal")
             try:
-                verify(work, pin, "current-source", args.source, args.bin_dir)
+                verify(work, pin, "current-source", args.source, args.bin_dir,
+                       args.ci_receipt, args.ci_receipt_pin, args.final_sha)
             except ValueError as error:
                 outcomes.append({"case": name, "resealed_pin": pin, "refusal": str(error)})
             else:

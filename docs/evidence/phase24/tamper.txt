@@ -1,0 +1,12 @@
+omitted-success: required case inventory
+success-to-failure: required exit disposition
+model-substitution: frozen fixtures or model changed
+source-swap: frozen fixtures or model changed
+fabricated-terminal: fabricated or invalid graph terminal footer
+duplicate-result-row: graph union-find oracle
+numerical-drift: numerical oracle bound
+forged-route: vector native route
+forged-stage-ownership: forged stage ownership
+case-relabel: case label or execution route
+semantically-false-trace: native graph feedback sequence
+sample-change: altered measurement samples or summary

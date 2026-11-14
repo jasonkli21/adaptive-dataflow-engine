@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "baseline": "95e1153b2b75fbe8d9e2445e96b5f9081d293cfa",
+  "gate_authority": "docs/plans/phase-24-implementation-plan.md#5-mandatory-acceptance-gates-provisionally-g0g17",
+  "vector_comparison": {"absolute_tolerance": 1e-12, "relative_tolerance": 1e-12, "row_ids": "exact"},
+  "limits": {"rows":32768,"batch_rows":256,"source_bytes":16777216,"result_bytes":4194304,"extension_batch_bytes":131072,"model_bytes":4096,"vector_deadline_ms":10000,"graph_stage_bytes":1048576},
+  "measurements": {"warmups":1,"samples":5,"vector_rows":32768,"graph_vertices":128,"controls":["vector-identity","vector-combined","vector-reference","graph-native","graph-reference"],"clock":"parent monotonic wall time","required_speedup":null},
+  "required_tampering":["omitted-success","success-to-failure","model-substitution","source-swap","fabricated-terminal","duplicate-result-row","numerical-drift","forged-route","sample-change","case-relabel"]
+}

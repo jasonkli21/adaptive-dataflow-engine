@@ -1,0 +1,23 @@
+[package]
+name = "ade-ext-vector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+local-v1 = ["dep:ade-ext-sdk", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+ade-ext-sdk = { path = "../ade-ext-sdk", features = ["local-v1"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[dev-dependencies]
+arrow.workspace = true
+parquet.workspace = true
+tempfile = "3"

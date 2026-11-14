@@ -30,6 +30,19 @@ jobs:
         run: cargo build --workspace --all-features --locked
       - name: Test
         run: cargo test --workspace --all-features --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Phase 24 standalone extension consumer
+        run: cargo test --locked --manifest-path examples/phase24-external-consumer/Cargo.toml
+      - name: Phase 24 native process correctness and detached verification
+        run: |
+          python -m pip install -r scripts/phase24/requirements.txt
+          cargo build --locked -p ade-ext-graph --features fault-injection --example phase24-native
+          output="$RUNNER_TEMP/ade24-native"
+          seal="$(python scripts/phase24/campaign.py --binary target/debug/examples/phase24-native --output "$output" --no-benchmarks)"
+          python scripts/phase24/verify.py "$output" --mode historical-archive --seal-pin "$seal"
+          python scripts/phase24/tamper.py "$output" --seal-pin "$seal"
       - name: Build CLI
         run: cargo build --workspace --locked
       - name: Benchmark correctness smoke (no timing gate)

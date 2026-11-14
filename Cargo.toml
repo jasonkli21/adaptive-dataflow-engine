@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "crates/ade-ext-sdk",
+    "crates/ade-ext-vector",
+    "crates/ade-ext-graph",
     "crates/ade-gateway",
     "crates/ade-logical",
     "crates/ade-connectors",
@@ -14,6 +17,7 @@ members = [
     "crates/ade-exec",
     "crates/ade-distributed",
 ]
+exclude = ["examples/phase24-external-consumer"]
 resolver = "3"
 
 [workspace.dependencies]

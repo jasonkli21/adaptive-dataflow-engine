@@ -65,3 +65,5 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0025: Unified bounded/unbounded planning v1](0025-unified-bounded-unbounded-planning-v1.md) — shared semantic admission, bounded native choices and same-topic history/live continuity.
 
 - [ADR-0030: Bounded local multi-tenant resource manager v1](0030-bounded-local-multitenant-resource-manager-v1.md) — tenant scheduling above two separately leased native operations stores.
+
+- [ADR-0031 — Bounded specialized extension SDK v1](0031-specialized-extension-sdk-v1.md)

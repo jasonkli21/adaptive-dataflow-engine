@@ -1,0 +1,27 @@
+[package]
+name = "ade-ext-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+local-v1 = ["dep:ade-exec", "dep:ade-physical", "dep:arrow", "dep:blake3", "dep:parquet", "dep:serde", "dep:serde_json", "dep:thiserror", "dep:uuid"]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+arrow = { workspace = true, optional = true }
+blake3 = { version = "1", optional = true }
+parquet = { workspace = true, optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"

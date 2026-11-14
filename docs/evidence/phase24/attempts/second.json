@@ -1,0 +1,76 @@
+{
+  "request.json": {
+    "checkpoint_every": 1,
+    "inventory": {
+      "edges": [
+        {
+          "blake3": "3b2dae11e4b4403294cf3d8180de6f571ea42b37530142e9f0d9e267b34ad4ce",
+          "bytes": 618,
+          "name": "edges.parquet",
+          "rows": 8
+        }
+      ],
+      "vertices": [
+        {
+          "blake3": "6c4f88d0ab65072114e1e0d1e2afa444c1c5ac599b6de37db20c834a670b0e83",
+          "bytes": 434,
+          "name": "vertices.parquet",
+          "rows": 9
+        }
+      ]
+    },
+    "plan": {
+      "algorithm": {
+        "kind": "weak_components_min_label_v1"
+      },
+      "arcs": [
+        {
+          "delay": 0,
+          "from": 0,
+          "schema": "label_candidate",
+          "to": 1
+        },
+        {
+          "delay": 0,
+          "from": 1,
+          "schema": "label_candidate",
+          "to": 2
+        },
+        {
+          "delay": 1,
+          "from": 2,
+          "schema": "label_frontier",
+          "to": 0
+        }
+      ],
+      "nodes": [
+        "expand",
+        "reduce",
+        "delay"
+      ],
+      "version": 1
+    },
+    "root": "/private/tmp/ade24-second/roots/graph-mixed",
+    "source_dir": "/private/tmp/ade24-second/fixtures/mixed",
+    "trace": true,
+    "version": 1
+  },
+  "process.json": {
+    "argv": [
+      "/Users/jasonkli/projects/adaptive-dataflow-engine/target/debug/examples/phase24-native",
+      "graph-run",
+      "/private/tmp/ade24-second/cases/graph-mixed-run/request.json"
+    ],
+    "elapsed_ns": 13257583,
+    "end_ns": 24023421541,
+    "exit": 1,
+    "name": "graph-mixed-run",
+    "operation": "graph-run",
+    "pid": 80784,
+    "reached": null,
+    "stage_after": {},
+    "stage_before": {},
+    "start_ns": 24010163958
+  },
+  "stderr": "physical v1 admission: unsupported cyclic topology, version, delay or port\n"
+}

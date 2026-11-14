@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "status": "PARTIAL_PHASE24_HOSTED_CI_PENDING",
+  "default_enabled": false,
+  "baseline": "95e1153b2b75fbe8d9e2445e96b5f9081d293cfa",
+  "local_candidate": {
+    "archive": "../evidence/phase24/candidate.tar.gz",
+    "seal_sha256": "f12febab059e057c33b6fe86790265cca36d95d6f5dad52d8c6c7dbf0a6b213c",
+    "executable_sha256": "068722bc48ca1d76e5b37d95af42d4f3a0d922972952e0948c7cfc78783f2190",
+    "observations": 88,
+    "checked_attempts": 32,
+    "rehashed_mutations": 12
+  },
+  "families": {
+    "graph": "local_weak_component_sizes",
+    "ml_data_prep_iterative": "finite_vector_prep_only",
+    "batch_inference": "fixed_affine_only",
+    "vector_embedding": "finite_l2_normalization",
+    "cep": "deferred",
+    "geospatial": "deferred"
+  },
+  "predecessor_qualifications_preserved": [
+    18,
+    20,
+    21,
+    22,
+    23
+  ],
+  "gates": {
+    "G0": {
+      "status": "PARTIAL",
+      "evidence": "234 runtime and verification inputs match the local campaign. Detached current-source release and exact-SHA CI receipts are outstanding."
+    },
+    "G1": {
+      "status": "PASS",
+      "evidence": "Opt-in local-v1 features, directional dependencies and default/all-feature workspace regression tests."
+    },
+    "G2": {
+      "status": "PASS",
+      "evidence": "Version, capability, exact schema, identity slots, executable pin, model pin and source pin checks."
+    },
+    "G3": {
+      "status": "PASS",
+      "evidence": "Observed Scan/MapBatches/Project and native cyclic rounds followed by Scan/HashAggregate."
+    },
+    "G4": {
+      "status": "PASS",
+      "evidence": "Independent union-find and terminal witness over mixed, reordered, empty, isolated and single graphs."
+    },
+    "G5": {
+      "status": "PASS",
+      "evidence": "Missing/provisional/wrong pin, corrupt input and terminal, changed stage, SIGKILL and an orphan-safe restart."
+    },
+    "G6": {
+      "status": "PASS",
+      "evidence": "Independent hypot oracle, protected/signed-zero fields, empty/maximum inputs, finite extremes and all SDK batch splits."
+    },
+    "G7": {
+      "status": "PASS",
+      "evidence": "Independently checked one- and four-dimensional affine output, model binding and overflow refusal."
+    },
+    "G8": {
+      "status": "PASS",
+      "evidence": "Separate workspace, lockfile and calibration kernel using public SDK exports."
+    },
+    "G9": {
+      "status": "PASS",
+      "evidence": "Bounded trusted primitive decode envelope, row/map/result/stage limits, native managed metrics and calibration off-by-one."
+    },
+    "G10": {
+      "status": "PASS",
+      "evidence": "Cancellation, trusted-kernel panic, stalled pipe with incomplete prefix, drift, process kill, and real isolated ENOSPC."
+    },
+    "G11": {
+      "status": "PASS",
+      "evidence": "Canonical paths and independent digest pins under the operator-owned, trusted native-code contract."
+    },
+    "G12": {
+      "status": "PASS",
+      "evidence": "Stable plan/logical/result identities across batch splits, distinct attempts and replay-safe stage lifecycle."
+    },
+    "G13": {
+      "status": "PASS",
+      "evidence": "Native operator counters and observed rounds, caps, identities, typed refusal and managed/RSS distinctions."
+    },
+    "G14": {
+      "status": "PASS",
+      "evidence": "Five matched samples and one warmup per control over verified results. Local debug profile, no speedup claim."
+    },
+    "G15": {
+      "status": "PASS",
+      "evidence": "88 detached observations, 32 verified attempts, and 12 fully rehashed mutations with attributed refusals."
+    },
+    "G16": {
+      "status": "PARTIAL",
+      "evidence": "Local checks are documented. Hosted Linux CI for the exact final SHA and independently pinned receipt are outstanding."
+    },
+    "G17": {
+      "status": "PASS",
+      "evidence": "ADR-0031, reconciled plan, guide, current report, fixture lock, immutable campaign and preserved failed attempts."
+    }
+  },
+  "local_checks": {
+    "format": true,
+    "check": true,
+    "default_tests": 254,
+    "all_feature_tests": 345,
+    "clippy": true,
+    "msrv": "1.94.0",
+    "external_consumer": true,
+    "python_regressions": 76
+  }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "phase24-external-consumer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[workspace]
+
+[dependencies]
+ade-ext-sdk = { path = "../../crates/ade-ext-sdk", features = ["local-v1"] }
+
+[dev-dependencies]
+arrow = { version = "59.3.1", default-features = false }
+parquet = { version = "59.3.1", default-features = false, features = ["arrow"] }
+tempfile = "3"

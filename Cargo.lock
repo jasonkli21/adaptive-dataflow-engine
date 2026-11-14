@@ -99,6 +99,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-ext-graph"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-ext-sdk",
+ "ade-ext-vector",
+ "ade-iterate",
+ "ade-physical",
+ "arrow",
+ "blake3",
+ "parquet",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "ade-ext-sdk"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-physical",
+ "arrow",
+ "blake3",
+ "parquet",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "ade-ext-vector"
+version = "0.1.0"
+dependencies = [
+ "ade-ext-sdk",
+ "arrow",
+ "parquet",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ade-frontend"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,36 @@
+[package]
+name = "ade-ext-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+fault-injection = ["local-v1"]
+local-v1 = ["dep:ade-exec", "dep:ade-ext-sdk", "dep:ade-iterate", "dep:ade-physical", "dep:arrow", "dep:blake3", "dep:parquet", "dep:serde", "dep:serde_json", "dep:tempfile", "dep:thiserror", "dep:uuid"]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", optional = true }
+ade-ext-sdk = { path = "../ade-ext-sdk", features = ["local-v1"], optional = true }
+ade-iterate = { path = "../ade-iterate", features = ["cyclic-v1"], optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+arrow = { workspace = true, optional = true }
+blake3 = { version = "1", optional = true }
+parquet = { workspace = true, optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+tempfile = { version = "3", optional = true }
+thiserror = { version = "2", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
+[dev-dependencies]
+rustix = { version = "1", features = ["fs"] }
+ade-ext-vector = { path = "../ade-ext-vector", features = ["local-v1"] }
+
+[[example]]
+name = "phase24-native"
+required-features = ["local-v1"]

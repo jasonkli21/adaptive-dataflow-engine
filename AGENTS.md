@@ -508,3 +508,20 @@ acceptance. New live campaign, crash/accounting adversarial suite, source-bound
 release inventory, hosted CI and external receipt remain outstanding. Preserve
 candidate11 and all Phase18–22 qualifications. No Phase24 authorization is
 inferred.
+
+## Phase24 authorization — 2026-11-14
+
+The user authorized Phase24 in this session, without subagents and with one
+project commit. Use ADR-0031, the reconciled Phase24 plan and the current support
+matrix. The opt-in Unix Rust SDK admits one statically linked trusted row kernel
+over finite immutable Parquet and invokes a native projection. The vector library
+supports finite L2 normalization and fixed-model affine scoring. The graph
+library composes the existing weak-components terminal with native aggregation
+under its local Phase20-only prerequisite carve-out. Preserve all predecessor
+qualifications, historical evidence, defaults and protocols. No remote or
+untrusted plugins, generic cyclic API, durable result publication, or Phase25
+authorization is inferred.
+
+The current qualification is `PARTIAL_PHASE24_HOSTED_CI_PENDING`. The
+source-bound local campaign and mutation tests are recorded in the Phase24
+implementation report. The exact-commit hosted CI receipt remains outstanding.

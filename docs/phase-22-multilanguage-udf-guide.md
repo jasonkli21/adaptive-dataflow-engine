@@ -176,8 +176,11 @@ outside this contract. WASM isolation is deferred.
 
 The gateway builds the full result and completes source verification before
 publishing its ticket. Expired, unknown and cross-session tickets refuse.
-Valid repeat reads use the same retained frames. A dropped DoGet ends that
-reader. Transport failures can interrupt delivery of an already verified
+Valid repeat reads use the same retained frames. The 15-second expiry applies
+to ticket redemption. An active DoGet retains its frames and reader slot until
+completion or transport closure. The server configures a 120-second connection
+age and 15-second grace period. A dropped DoGet ends that reader. Transport
+failures can interrupt delivery of an already verified
 result. A process restart discards all ticket state. ENOSPC on TMPDIR cannot
 leave a partially published result because the bounded path uses no spool
 or spill files. Service startup, file IO, and interpreter calls rely on

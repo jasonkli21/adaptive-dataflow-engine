@@ -11,7 +11,12 @@ Use monotonically increasing four-digit IDs:
 0002-benchmark-result-schema.md
 ```
 
-Phase 0 is expected to create ADR-0001 through ADR-0004 described in the implementation plan.
+Start with the [component map](../index.md) for decisions relevant to a change.
+The original workspace and benchmark contracts are recorded in
+[ADR-0001](0001-phase-0-workspace.md),
+[ADR-0002](0002-benchmark-result-schema.md),
+[ADR-0003](0003-dataset-manifest.md) and
+[ADR-0004](0004-datafusion-baseline.md).
 
 ## Template
 

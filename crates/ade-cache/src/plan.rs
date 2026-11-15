@@ -153,8 +153,12 @@ pub(crate) struct Cut {
 impl Cut {
     pub(crate) fn new(original: &PlanV1, cut: u32) -> Result<Self> {
         let unsupported = || Error::Request("unsupported native cut or suffix");
+        if !original.sources[0].replayable {
+            return Err(Error::Request(
+                "cache requires a replayable source snapshot",
+            ));
+        }
         if original.target != Target::Local
-            || !original.sources[0].replayable
             || !matches!(cut, 1 | 2)
             || original.output <= cut
             || original.sources[0]

@@ -7,9 +7,21 @@ import shutil
 import subprocess
 
 from fixtures import canonical, write
-from verify import require, sha
+from evidence_inventory import sha
 
-ROOT_INPUTS = ("Cargo.toml", "Cargo.lock", ".github/workflows/ci.yml")
+ROOT_INPUTS = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".github/workflows/ci.yml",
+               "scripts/phase23/verify.py")
+SOURCE_PATHS = (*ROOT_INPUTS, "crates", "scripts/phase26")
+
+
+def require(ok, reason):
+    if not ok:
+        raise ValueError(reason)
+
+
+def source_paths(raw):
+    return {p for p in raw.decode().split("\0")
+            if p and "__pycache__" not in Path(p).parts and not p.endswith(".pyc")}
 
 
 def git(repo, *args):
@@ -17,9 +29,8 @@ def git(repo, *args):
 
 
 def snapshot(repo, out):
-    paths = git(repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                "--", *ROOT_INPUTS, "crates", "scripts/phase26").decode().split("\0")
-    paths = sorted({p for p in paths if p and "__pycache__" not in p and not p.endswith(".pyc")})
+    paths = sorted(source_paths(git(repo, "ls-files", "-z", "--cached", "--others",
+                                    "--exclude-standard", "--", *SOURCE_PATHS)))
     require(len(paths) > 20, "incomplete workspace sources")
     out.mkdir(mode=0o700)
     files = {}
@@ -41,11 +52,14 @@ def snapshot(repo, out):
     print(manifest["build_inputs_sha256"])
 
 
-def compare(repo, archive, revision):
+def verify_source(repo, archive, revision):
     locked = json.loads((archive / "inputs.json").read_bytes())
     files = locked["files"]
     require(locked["build_inputs_sha256"] == hashlib.sha256(canonical(files)).hexdigest(),
             "source manifest identity")
+    if revision:
+        paths = source_paths(git(repo, "ls-tree", "-rz", "--name-only", revision, "--", *SOURCE_PATHS))
+        require(set(files) == paths, "incomplete or extra revision source inputs")
     for path, expected in files.items():
         relative = Path(path)
         require(not relative.is_absolute() and ".." not in relative.parts, "source path")
@@ -53,13 +67,15 @@ def compare(repo, archive, revision):
         actual = git(repo, "show", f"{revision}:{path}") if revision else (repo / path).read_bytes()
         require(hashlib.sha256(actual).hexdigest() == expected, f"checkout drift {path}")
     if revision:
-        require(git(repo, "rev-parse", f"{revision}^").decode().strip() == locked["baseline_sha"],
-                "commit parent does not match baseline")
-    print(json.dumps(dict(
+        baseline = locked["baseline_sha"]
+        require(baseline in (revision, git(repo, "rev-parse", f"{revision}^").decode().strip())
+                and git(repo, "rev-parse", f"{baseline}^{{tree}}").decode().strip()
+                == locked["baseline_tree"], "commit or parent does not match baseline")
+    return dict(
         verified_source_inputs=len(files), build_inputs_sha256=locked["build_inputs_sha256"],
         commit=git(repo, "rev-parse", revision).decode().strip() if revision else None,
         tree=git(repo, "rev-parse", f"{revision}^{{tree}}").decode().strip() if revision else None,
-    ), indent=2))
+    )
 
 
 def main():
@@ -70,7 +86,8 @@ def main():
     cli.add_argument("--revision")
     args = cli.parse_args()
     if args.compare:
-        compare(args.repo, args.archive, args.revision)
+        revision = git(args.repo, "rev-parse", args.revision).decode().strip() if args.revision else None
+        print(json.dumps(verify_source(args.repo, args.archive, revision), indent=2))
     else:
         snapshot(args.repo, args.archive)
 

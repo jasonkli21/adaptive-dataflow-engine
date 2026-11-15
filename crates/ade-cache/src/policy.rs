@@ -164,7 +164,7 @@ pub(crate) fn select(
         .saturating_sub(available);
     let count_need = count.saturating_add(1).saturating_sub(max_entries);
     // A forced incumbent with no calibration can only be evicted at expiry.
-    let eligible: Vec<_> = decision
+    let mut eligible: Vec<_> = decision
         .alternatives
         .iter()
         .filter_map(|entry| {
@@ -179,6 +179,7 @@ pub(crate) fn select(
             }
         })
         .collect();
+    eligible.sort_unstable_by(|left, right| left.1.cmp(right.1));
     let selected = least_loss_subset(&eligible, byte_need, count_need)?;
     if let Some(selected) = selected {
         let displaced = selected.iter().try_fold(0i64, |sum, index| {
@@ -233,9 +234,7 @@ fn least_loss_subset(
         let mut minima = vec![0usize; group.len()];
         let mut best = None;
         for i in (0..group.len()).rev() {
-            if best.is_none_or(|j: usize| {
-                (group[i].1, group[i].0, group[i].3) < (group[j].1, group[j].0, group[j].3)
-            }) {
+            if best.is_none_or(|j: usize| group[i].rank() < group[j].rank()) {
                 best = Some(i);
             }
             minima[i] = best.expect("nonempty suffix");
@@ -277,6 +276,14 @@ fn least_loss_subset(
 #[derive(Clone, Copy)]
 struct Subset(u64, i64, u32, u32);
 
+impl Subset {
+    fn rank(self) -> (i64, u64, u32) {
+        // Each bucket has a fixed cardinality. At the first differing key,
+        // selecting the earlier key makes the sorted key list smaller.
+        (self.1, self.0, !self.3.reverse_bits())
+    }
+}
+
 fn subsets(entries: &[(i64, &String, u64)]) -> Result<Vec<Subset>> {
     let mut result = vec![Subset(0, 0, 0, 0)];
     for (index, (value, _, bytes)) in entries.iter().enumerate() {
@@ -296,6 +303,27 @@ fn subsets(entries: &[(i64, &String, u64)]) -> Result<Vec<Subset>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_subset_ties_use_sorted_key_order_within_a_bucket() {
+        let keys = ["a", "b", "c", "d", "e", "f", "g", "h"].map(String::from);
+        let entries = [
+            (10, 1),
+            (10, 1),
+            (10, 1),
+            (10, 1),
+            (1, 1),
+            (1, 2),
+            (1, 4),
+            (1, 5),
+        ];
+        let entries = entries
+            .into_iter()
+            .zip(&keys)
+            .map(|((loss, bytes), key)| (loss, key, bytes))
+            .collect::<Vec<_>>();
+        assert_eq!(least_loss_subset(&entries, 6, 0).unwrap(), Some(vec![4, 7]));
+    }
 
     #[test]
     fn checked_forecast_and_conservative_ties() {

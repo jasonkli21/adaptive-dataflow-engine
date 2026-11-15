@@ -73,9 +73,14 @@ already-paid write cost. A miss is admitted separately using the forecast after
 write, hold and invalidation costs. Missing forecasts or a restore estimate at
 least as large as recompute skip without opening the root. Incumbent value is
 reduced linearly by the remaining fraction of its original TTL; this assumes
-stationary expected use and does not learn demand. Eviction chooses the
-least-value feasible set under both quota and entry-count limits. Ties preserve
-incumbents. A failed fill can leave completed evictions in place.
+stationary expected use and a nondecreasing operator wall clock. A time before
+an entry's recorded creation refuses reuse and contributes zero incumbent
+value. There is no durable record of later observations, so backward steps
+within an entry's horizon can increase its residual value or make an untouched
+expired entry eligible again. Eviction chooses the least-value feasible set
+under both quota and entry-count limits. Equal candidate and displaced values
+preserve incumbents. Equal-cost victim sets prefer fewer freed bytes and then
+sorted key order. A failed fill can leave completed evictions in place.
 The residual-horizon policy writes manifest v2 entries. Pre-remediation v1
 entries are deliberately refused until explicitly purged by exact key; the
 updated policy does not silently reinterpret their forecast fields.
@@ -105,3 +110,33 @@ symlinks, unexpected children and active readers are refused; unknown layouts
 require offline operator repair. The cache requires an honest filesystem and
 makes a process-crash recovery claim. User-visible output is emitted only after
 native and provenance checks.
+
+## Verify a campaign
+
+For a fresh correctness run, build with `--features fault-injection`, install
+the pinned Python requirements, and use a new output directory.
+
+~~~sh
+cargo build --locked -p ade-cache --features fault-injection --bin ade-cache
+work=$(mktemp -d)
+python scripts/phase26/campaign.py target/debug/ade-cache "$work/campaign" --no-economics
+pin=$(python scripts/phase26/verify.py "$work/campaign" --seal)
+python scripts/phase26/verify.py "$work/campaign" --pin "$pin"
+~~~
+
+The frozen implementation archive is replayed with the verifier and source
+from commit `9134b4745c33029e27421b4d0a4c57c604c50ef2`. With that commit and
+its parent present locally and the Python environment active, run
+`bash scripts/phase26/historical.sh` from the repository root. It verifies
+the historical pin, locked source and semantic tamper cases. This also gives
+the revision to use for the checkout referenced in the frozen archive's README.
+
+Detached verification accepts valid evidence of a negative economic result.
+For current release prerequisites, pass `--release` along with the independently
+provided `--pin`, `--source` Git checkout, full `--revision`, `--binary`,
+`--ci-receipt` and its independent SHA-256 `--ci-pin`. The current script
+checks favorable economics under the existing thresholds, exact source inventory,
+binary identity, the pinned hosted receipt and fault supplements. Use the
+[support matrix](reports/phase-26-support.json) for the complete gate record.
+The exhaustive eviction oracle covers small cases of up to 16 eligible entries.
+The native policy permits 32 and has a separate maximum-inventory test.

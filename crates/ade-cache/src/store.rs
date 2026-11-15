@@ -88,6 +88,15 @@ struct Entry {
 }
 
 impl Entry {
+    fn reusable_at(&self, now: u64) -> Result<bool> {
+        if now < self.created_ms {
+            return Err(Error::Request(
+                "operator clock precedes cache entry creation",
+            ));
+        }
+        Ok(now < self.expires_ms)
+    }
+
     fn validate(&self, root: &Root<'_>, key: &str) -> Result<()> {
         if self.version != 2
             || self.semantics != SEMANTICS
@@ -667,7 +676,7 @@ fn reuse_or_populate(
         root.attest()?;
         root.limits(control)?;
         if let Some((entry, _)) = root.entry(key, control)?
-            && wall_ms()? < entry.expires_ms
+            && entry.reusable_at(wall_ms()?)?
         {
             audit.ledger.cache_lookup_us = elapsed_us(lookup);
             if job.mode == Mode::ExpectedValueV1 && !policy::hit_is_worthwhile(job.calibration) {
@@ -705,7 +714,7 @@ fn reuse_or_populate(
     let now = wall_ms()?;
     let entry = root.entry(key, control)?;
     let expired = if let Some((entry, bytes)) = entry {
-        if now < entry.expires_ms {
+        if entry.reusable_at(now)? {
             audit.ledger.cache_lookup_us += elapsed_us(lookup);
             if job.mode == Mode::ExpectedValueV1 && !policy::hit_is_worthwhile(job.calibration) {
                 root.lease.unlock()?;

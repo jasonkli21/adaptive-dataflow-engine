@@ -177,7 +177,7 @@ class Campaign:
         for name, opts, error in (
             ("row-cap", {"cap": 1}, "output cap"),
             ("byte-cap", {"cap_bytes": 8}, "output cap"),
-            ("nonreplayable", {"replayable": False}, "snapshot"),
+            ("nonreplayable", {"replayable": False}, "cache requires a replayable source snapshot"),
             ("limit", {"suffix_limit": True}, "PlanV1"),
         ):
             req = self.native(name, source, 4000, **opts)
@@ -241,7 +241,9 @@ class Campaign:
         empty = self.cache("f01-empty")
         bypass = self.call("f01-empty-negative-write", self.args(
             a, source, empty, mode="expected_value_v1", offer=forecast))
-        assert bypass["audit"]["actions"] == ["skip"]
+        assert (bypass["audit"]["actions"] == ["miss", "skip"]
+                and bypass["audit"]["decision"]["reason"] == "nonpositive_value"
+                and not bypass["audit"]["prefix"])
         assert self.call("f01-empty-inventory", ["inspect", "--cache", empty])["entries"] == []
 
         slow = self.offer("restore-slower-than-recompute", uses_milli=1000,

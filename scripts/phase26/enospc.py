@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from campaign import Campaign
+from evidence_inventory import sha
 from fixtures import make_fixture, write
 
 
@@ -45,7 +46,8 @@ def main():
         stat = os.statvfs(volume)
         assert stat.f_bavail == 0
         write(c.out / "enospc.json", dict(available_bytes=stat.f_bavail * stat.f_frsize,
-                                        errno=errno.ENOSPC, old_key=before["audit"]["prefix_key"]))
+                                        errno=errno.ENOSPC, old_key=before["audit"]["prefix_key"],
+                                        binary_sha256=sha(c.binary)))
         resume.touch()
         c.finish("kernel-enospc", pending, 1, error=f"local I/O error (Some({errno.ENOSPC}))")
     finally:

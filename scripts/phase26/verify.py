@@ -1,12 +1,12 @@
 """Verify detached Phase 26 bytes, original-source oracle and causal receipts."""
 import argparse
 from functools import lru_cache
-import hashlib
 from itertools import combinations
 import json
 from pathlib import Path
 import re
 import statistics
+import sys
 
 import blake3
 import pyarrow.compute as pc
@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 
 from fixtures import canonical, digest, write
 from evidence_inventory import file_inventory, sha
+from source_inventory import verify_source
 
 SEMANTICS = "ade.shared-prefix.v1/scan-filter-lt-project-1/parquet-1"
 MODES = {"disabled", "always", "expected_value_v1"}
@@ -130,50 +131,30 @@ def policy_oracle(decision, calibration, mode, reservation, limits, header_bytes
         expected, victims = "missing_calibration", []
     elif mode == "expected_value_v1" and score <= 0:
         expected, victims = "nonpositive_value", []
-    elif entries and "observed_ms" not in entries[0]:
-        # Read-only compatibility for the immutable candidate archive, whose
-        # original selector was greedy and whose receipts predate residual TTL.
-        remaining = {entry["key"]: entry for entry in entries}
-        eligible = [entry for entry in entries if entry["expired"] or
-                    (mode == "expected_value_v1" and entry["remaining_us"] is not None)]
-        paid = 0
-        victims = []
-        expected = "insufficient_capacity"
-        for alternative in [*sorted(eligible, key=lambda e: (
-                0 if e["expired"] else max(0, e["remaining_us"] or 0), e["key"])), None]:
-            charge = sum(entry["bytes"] for entry in remaining.values()) + reservation + header_bytes
-            if charge <= limits["quota_bytes"] and len(remaining) < limits["max_entries"]:
-                expected = "admit"
-                break
-            if alternative is None:
-                break
-            paid += 0 if alternative["expired"] else max(0, alternative["remaining_us"] or 0)
-            if mode == "expected_value_v1" and paid >= score:
-                expected = "protected_value"
-                break
-            del remaining[alternative["key"]]
-            victims.append(alternative["key"])
-        if expected != "admit":
-            victims = []
     else:
         eligible = [e for e in entries if e["expired"] or
                     (mode == "expected_value_v1" and e["remaining_us"] is not None)]
         byte_need = max(0, sum(e["bytes"] for e in entries) + reservation + header_bytes
                         - limits["quota_bytes"])
         count_need = max(0, len(entries) + 1 - limits["max_entries"])
-        options = []
-        for size in range(count_need, len(eligible) + 1):
-            for subset in combinations(eligible, size):
-                freed = sum(e["bytes"] for e in subset)
-                if freed < byte_need:
-                    continue
-                loss = sum(0 if e["expired"] else max(0, e["remaining_us"] or 0) for e in subset)
-                keys = sorted(e["key"] for e in subset)
-                options.append((loss, freed, keys))
-        if not options:
+        best = None
+        if byte_need == 0 and count_need == 0:
+            best = (0, 0, [])
+        else:
+            require(len(eligible) <= 16, "exhaustive policy oracle fixture exceeds 16 eligible entries")
+            for size in range(count_need, len(eligible) + 1):
+                for subset in combinations(eligible, size):
+                    freed = sum(e["bytes"] for e in subset)
+                    if freed < byte_need:
+                        continue
+                    loss = sum(0 if e["expired"] else max(0, e["remaining_us"] or 0) for e in subset)
+                    rank = (loss, freed, sorted(e["key"] for e in subset))
+                    if best is None or rank < best:
+                        best = rank
+        if best is None:
             expected, victims = "insufficient_capacity", []
         else:
-            loss, _, keys = min(options)
+            loss, _, keys = best
             if mode == "expected_value_v1" and loss >= score:
                 expected, victims = "protected_value", []
             else:
@@ -310,19 +291,17 @@ def verify_jobs(root, events):
             for entry in decision["alternatives"]:
                 prior = fills.get((cli_arg(e, "--cache"), entry["key"]))
                 require(prior is not None, "unobserved retained entry")
+                created, expires, observed = entry["created_ms"], entry["expires_ms"], entry["observed_ms"]
+                horizon = expires - created
+                require(horizon > 0 and entry["expired"] == (observed >= expires),
+                        "retention horizon or expiry")
                 calibration_ = prior["audit"]["calibration"]
                 if calibration_ is None:
                     require(entry["remaining_us"] is None, "uncalibrated retention input")
-                elif "observed_ms" in entry:
-                    horizon = entry["expires_ms"] - entry["created_ms"]
-                    observed = entry["observed_ms"]
-                    remaining_ms = (entry["expires_ms"] - observed
-                                    if entry["created_ms"] <= observed < entry["expires_ms"] else 0)
+                else:
+                    remaining_ms = expires - observed if created <= observed < expires else 0
                     expected_value = max(0, value(calibration_, False)) * remaining_ms // horizon
                     require(entry["remaining_us"] == expected_value, "residual retention input")
-                else:
-                    require(entry["remaining_us"] == value(calibration_, False),
-                            "historical full-horizon retention input")
                 require(
                         entry["bytes"] > prior["audit"]["payload_bytes"], "retention input binding")
             limits = configs.get(cli_arg(e, "--cache"), dict(quota_bytes=0, max_entries=0))
@@ -365,7 +344,10 @@ def scenarios(root, events, jobs):
     require(jobs["f01-profitable-hit-negative-write"]["audit"]["actions"] == ["hit"]
             and not jobs["f01-profitable-hit-negative-write"]["audit"]["prefix"],
             "existing hit incorrectly charged candidate write")
-    require(jobs["f01-empty-negative-write"]["audit"]["actions"] == ["skip"]
+    empty = jobs["f01-empty-negative-write"]["audit"]
+    require(empty["actions"] == ["miss", "skip"] and not empty["prefix"]
+            and empty["decision"]["reason"] == "nonpositive_value"
+            and events["f01-empty-inventory"]["value"]["entries"] == []
             and jobs["f01-slow-restore"]["audit"]["actions"] == ["skip"],
             "miss admission or uneconomic hit policy")
     require(jobs["f04-unrelated-hit"]["audit"]["actions"] == ["hit"]
@@ -389,6 +371,9 @@ def scenarios(root, events, jobs):
         inv = events["inventory-" + point]["value"]
         require(inv["stage_bytes"] == 0 and len(inv["entries"]) == 1, "restart cleanup")
     negatives = {
+        "nonreplayable": "cache requires a replayable source snapshot",
+        "limit": "invalid request: PlanV1",
+        "valid-unsupported-suffix": "unsupported native cut or suffix",
         "same-size-source-mutation": "snapshot", "postflight-same-size": "snapshot",
         "postflight-identical-inode-swap": "snapshot", "postflight-catalog-drift": "snapshot",
         "stale-pin": "snapshot", "physical-nullability": "invalid source",
@@ -401,7 +386,8 @@ def scenarios(root, events, jobs):
     }
     for name, error in negatives.items():
         ev = events[name]
-        require(ev["exit"] == 1 and error in ev["stderr"], f"negative runtime witness: {name}")
+        require(ev["exit"] == 1 and not ev["stdout"] and error in ev["stderr"],
+                f"negative runtime witness: {name}")
     if "reader-slot-cap" in events:
         cap = events["reader-slot-cap"]
         require(cap["exit"] == 1 and "deadline" in cap["stderr"], "reader slot bound")
@@ -465,22 +451,13 @@ def economics(root, events, jobs):
                 passes=(rel["selective"] <= .90 and rel["no-reuse"] <= 1.20))
 
 
-def supplements(root):
-    inputs = load(root / "source/inputs.json")
-    files = inputs["files"]
-    require(len(files) > 20 and {"Cargo.lock", "Cargo.toml", "crates/ade-cache/src/store.rs"} <= files.keys(),
-            "incomplete runtime source closure")
-    require(hashlib.sha256(canonical(files)).hexdigest() == inputs["build_inputs_sha256"],
-            "runtime identity")
-    for name, hashed in files.items():
-        path = Path(name)
-        require(not path.is_absolute() and ".." not in path.parts
-                and sha(root / "source" / "files" / path) == hashed, "locked source drift")
+def supplements(root, binary_sha256):
     disk = root / "enospc"
     raw, index = receipt_index(disk)
     jobs = verify_jobs(disk, raw)
     marker = load(disk / "enospc.json")
     failed = index["kernel-enospc"]
+    require(marker.get("binary_sha256") == binary_sha256, "ENOSPC executable differs from campaign")
     require(marker["available_bytes"] == 0 and marker["errno"] == 28 and failed["exit"] == 1
             and "phase26_pause before_data_write" in failed["stderr"] and "Some(28)" in failed["stderr"],
             "real kernel ENOSPC witness")
@@ -497,8 +474,7 @@ def supplements(root):
         require(case + ' exit=1 {"action":"refuse","error":"access refused","version":1}' in cross,
                 "cross-UID access refusal")
     require("other_raw_metadata_denied=true" in cross, "kernel refused foreign metadata read")
-    return dict(build_inputs_sha256=inputs["build_inputs_sha256"], files=len(files),
-                disk_full=28, uid=[int(owner[1]), int(other[1])])
+    return dict(disk_full=28, uid=[int(owner[1]), int(other[1])])
 
 
 def main():
@@ -507,8 +483,19 @@ def main():
     choice = cli.add_mutually_exclusive_group(required=True)
     choice.add_argument("--pin")
     choice.add_argument("--seal", action="store_true")
-    cli.add_argument("--release", action="store_true")
+    cli.add_argument("--release", action="store_true", help="check current release prerequisites")
+    cli.add_argument("--source", type=Path, help="Git checkout for the current release")
+    cli.add_argument("--revision", help="exact 40-character release commit SHA")
+    cli.add_argument("--binary", type=Path, help="current executable to match against the sealed copy")
+    cli.add_argument("--ci-receipt", type=Path, help="externally retrieved exact-commit CI receipt")
+    cli.add_argument("--ci-pin", help="independently pinned SHA-256 of the CI receipt")
     args = cli.parse_args()
+    release_inputs = (args.source, args.revision, args.binary, args.ci_receipt, args.ci_pin)
+    if args.release:
+        if not args.pin or not all(release_inputs) or not re.fullmatch("[0-9a-f]{40}", args.revision):
+            cli.error("--release requires --pin, --source, full --revision, --binary, --ci-receipt and --ci-pin")
+    elif any(release_inputs):
+        cli.error("release inputs require --release")
     root = args.archive.resolve()
     if args.seal:
         print(seal(root))
@@ -525,7 +512,15 @@ def main():
         result["economics"] = economics(root, indexed, jobs)
     if args.release:
         require("economics" in result, "release economics receipts absent")
-        result["supplements"] = supplements(root)
+        require(result["economics"]["passes"], "release economics thresholds did not pass")
+        require(sha(args.binary) == host["binary_sha256"], "release executable differs from archive")
+        result["source"] = verify_source(args.source, root / "source", args.revision)
+        # Reuse the same exact-commit hosted-receipt contract used by Phase 23.
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from phase23.verify import verify_ci_receipt
+        receipt = verify_ci_receipt(args.ci_receipt, args.ci_pin, args.revision)
+        result["ci_run_id"] = receipt["run_id"]
+        result["supplements"] = supplements(root, host["binary_sha256"])
     print(json.dumps(result, indent=2))
 
 

@@ -11,13 +11,13 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install native Kafka build dependencies
         run: sudo apt-get update && sudo apt-get install --yes cmake libcurl4-openssl-dev libsasl2-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Format
         run: cargo fmt --all --check
       - name: Evidence verifier unit tests (no timing gate)
@@ -36,7 +36,7 @@ jobs:
         run: bash scripts/phase25/portable-smoke.sh target/debug/ade-bench
       - name: Test
         run: cargo test --workspace --all-features --locked
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
       - name: Phase 24 standalone extension consumer
@@ -57,6 +57,10 @@ jobs:
           python scripts/phase26/campaign.py target/debug/ade-cache "$output" --no-economics
           pin="$(python scripts/phase26/verify.py "$output" --seal)"
           python scripts/phase26/verify.py "$output" --pin "$pin"
+      - name: Phase 26 frozen archive replay
+        run: |
+          git fetch --no-tags --depth=2 origin 9134b4745c33029e27421b4d0a4c57c604c50ef2
+          bash scripts/phase26/historical.sh
       - name: Build CLI
         run: cargo build --workspace --locked
       - name: Benchmark correctness smoke (no timing gate)
@@ -67,24 +71,24 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check declared MSRV
         run: cargo check --workspace --all-targets --locked
 
   phase22-interop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.10'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: '17'
@@ -116,9 +120,9 @@ jobs:
   phase23-local:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build the manager and matched worker
         run: |
           cargo build --locked -p ade-resource -p ade-ops -p ade-distributed --features ade-resource/fault-injection --bins --example phase23-fixture

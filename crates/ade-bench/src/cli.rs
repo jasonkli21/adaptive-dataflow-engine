@@ -5,6 +5,7 @@ use crate::{
     engine::{self, EngineRequest},
     environment::{BuildInfo, EnvironmentInfo, RepositoryInfo},
     result::{BenchmarkResultV1, DatasetVerification, RunConfig},
+    runner,
     spec::BenchmarkCase,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -318,7 +319,21 @@ async fn execute_case(case: &CaseArgs, full_inspection: bool) -> Result<()> {
     // Parse effective adapter settings before touching the dataset so bad options fail early.
     request.info()?;
     let manifest = dataset::inspect(&case.dataset, full_inspection)?;
-    let spec = BenchmarkCase::load(&case.spec)?;
+    let (spec, spec_digest) = BenchmarkCase::load_with_digest(&case.spec)?;
+    if !full_inspection {
+        let expected_spec = std::env::var_os(runner::CHILD_SPEC_DIGEST);
+        let expected_manifest = std::env::var_os(runner::CHILD_MANIFEST_IDENTITY);
+        if expected_spec.is_some() || expected_manifest.is_some() {
+            crate::require(
+                expected_spec.as_deref() == Some(std::ffi::OsStr::new(&spec_digest)),
+                "child workload spec differs from parent selection",
+            )?;
+            crate::require(
+                expected_manifest.as_deref() == Some(std::ffi::OsStr::new(&manifest.identity()?)),
+                "child dataset manifest differs from parent selection",
+            )?;
+        }
+    }
     json(&engine::execute_validated_request(&case.dataset, &manifest, &spec, &request).await?)
 }
 

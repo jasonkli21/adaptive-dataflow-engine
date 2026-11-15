@@ -106,7 +106,7 @@ impl BenchmarkResultV1 {
             "unsupported measurement policy",
         )?;
         let mut valid = true;
-        let mut fingerprint = None;
+        let mut output_identity = None;
         for (warmup, iterations) in [(true, &self.warmups), (false, &self.iterations)] {
             for (i, it) in iterations.iter().enumerate() {
                 require(
@@ -122,13 +122,14 @@ impl BenchmarkResultV1 {
                         !o.result_fingerprint.is_empty(),
                         "missing result fingerprint",
                     )?;
-                    if let Some(previous) = fingerprint {
+                    let identity = (&o.result_fingerprint, o.rows_output);
+                    if let Some(previous) = output_identity {
                         require(
-                            previous == &o.result_fingerprint,
+                            previous == identity,
                             "inconsistent canonical output across children",
                         )?;
                     }
-                    fingerprint = Some(&o.result_fingerprint);
+                    output_identity = Some(identity);
                     valid &= o.validated && it.exit_code == Some(0) && it.error.is_none();
                 } else {
                     valid = false;

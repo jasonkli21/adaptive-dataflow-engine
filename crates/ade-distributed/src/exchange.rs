@@ -606,6 +606,33 @@ impl Store {
         }
         Ok(metrics)
     }
+    pub(crate) fn abandon_gather_attempt(&self) -> Result<()> {
+        let registry = self
+            .registry
+            .lock()
+            .map_err(|_| Error::Invalid("registry poisoned".into()))?;
+        // Share the terminal publication lock with the receiver. A receiver
+        // may finish writing privately, but cannot publish after abandonment.
+        self.cancellation.cancel();
+        require(
+            registry.completed.is_empty(),
+            "ambiguous gather commit state",
+        )
+    }
+
+    fn publish_completion(
+        &self,
+        id: TransferId,
+        path: PathBuf,
+        metrics: NetworkMetrics,
+    ) -> Result<()> {
+        let mut registry = self.registry.lock().expect("registry lock");
+        self.cancellation.check()?;
+        #[cfg(feature = "research-hooks")]
+        registry.observed_batches.remove(&id);
+        registry.completed.insert(id, (path, metrics));
+        Ok(())
+    }
     /// Number of fully decoded and retained data batches for a transfer,
     /// including an incomplete transfer without a terminal.
     #[cfg(feature = "research-hooks")]
@@ -996,11 +1023,7 @@ impl Store {
                 .map_err(|e| Error::Io(e.error))?;
         }
         metrics.transfers = 1;
-        let mut registry = self.registry.lock().expect("registry lock");
-        #[cfg(feature = "research-hooks")]
-        registry.observed_batches.remove(&header.id);
-        registry.completed.insert(header.id, (path, metrics));
-        Ok(())
+        self.publish_completion(header.id, path, metrics)
     }
 }
 pub(crate) fn decode(encoded: &[u8]) -> Result<RecordBatch> {
@@ -1395,6 +1418,38 @@ mod tests {
     use crate::ids::{JobId, transfer};
     use arrow::array::{Int64Array, UInt64Array};
     use std::sync::mpsc;
+
+    #[test]
+    fn abandoned_gather_attempt_cannot_publish_a_late_completion() {
+        let parent = tempfile::tempdir().unwrap();
+        let id = transfer(JobId(9), 1, 0, 2);
+        let store = Store::new(parent.path(), [id].into(), CancellationToken::default()).unwrap();
+        let (persisted, ready) = mpsc::channel();
+        let (resume, allowed) = mpsc::channel();
+        thread::scope(|scope| {
+            let store_ref = &store;
+            let receiver = scope.spawn(move || {
+                // Model the receiver immediately after its private file was persisted.
+                let path = store_ref.root.path().join("final.arrow");
+                std::fs::write(&path, []).unwrap();
+                persisted.send(()).unwrap();
+                allowed.recv().unwrap();
+                store_ref.publish_completion(
+                    id,
+                    path,
+                    NetworkMetrics {
+                        transfers: 1,
+                        ..NetworkMetrics::default()
+                    },
+                )
+            });
+            ready.recv().unwrap();
+            store.abandon_gather_attempt().unwrap();
+            resume.send(()).unwrap();
+            assert!(receiver.join().unwrap().is_err());
+        });
+        assert_eq!(store.metrics().unwrap().transfers, 0);
+    }
 
     struct StalledSpillLog {
         started: mpsc::Sender<()>,

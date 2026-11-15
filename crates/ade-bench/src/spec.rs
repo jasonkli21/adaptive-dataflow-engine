@@ -57,9 +57,14 @@ impl BenchmarkCase {
     /// # Errors
     /// Returns an error for unsupported semantics, malformed TOML or unreadable input.
     pub fn load(path: &Path) -> Result<Self> {
-        let s: Self = toml::from_str(&fs::read_to_string(path)?)?;
+        Ok(Self::load_with_digest(path)?.0)
+    }
+
+    pub(crate) fn load_with_digest(path: &Path) -> Result<(Self, String)> {
+        let text = fs::read_to_string(path)?;
+        let s: Self = toml::from_str(&text)?;
         s.validate()?;
-        Ok(s)
+        Ok((s, blake3::hash(text.as_bytes()).to_hex().to_string()))
     }
     /// Checks supported semantic versions, dataset requirements and validation method.
     ///

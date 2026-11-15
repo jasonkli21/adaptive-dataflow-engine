@@ -13,6 +13,9 @@ use std::{
     time::Instant,
 };
 
+pub(crate) const CHILD_SPEC_DIGEST: &str = "ADE_BENCH_CHILD_SPEC_BLAKE3";
+pub(crate) const CHILD_MANIFEST_IDENTITY: &str = "ADE_BENCH_CHILD_MANIFEST_BLAKE3";
+
 /// Decode a child outcome only after successful exit and mandatory correctness.
 /// Checks successful exit, child schema and required correctness.
 ///
@@ -80,11 +83,12 @@ pub fn run(
 ) -> Result<BenchmarkResultV1> {
     crate::require(config.iterations > 0, "iterations must be positive")?;
     let engine = engine_request.info()?;
-    let case = BenchmarkCase::load(spec_path)?;
+    let (case, spec_digest) = BenchmarkCase::load_with_digest(spec_path)?;
     let manifest = crate::dataset::inspect(
         root,
         config.dataset_verification == crate::result::DatasetVerification::Full,
     )?;
+    let manifest_identity = manifest.identity()?;
     crate::require(
         case.dataset.required_schema == manifest.required_schema,
         "dataset/spec mismatch",
@@ -108,6 +112,9 @@ pub fn run(
                     warmup,
                 },
             );
+            command
+                .env(CHILD_SPEC_DIGEST, &spec_digest)
+                .env(CHILD_MANIFEST_IDENTITY, &manifest_identity);
             let mut it = invoke(&mut command, index, warmup)?;
             if let Some(o) = &it.outcome {
                 let identity = (o.result_fingerprint.clone(), o.rows_output);
@@ -162,7 +169,7 @@ pub fn run(
         build: BuildInfo::default(),
         engine,
         workload: case,
-        dataset_manifest_fingerprint: manifest.identity()?,
+        dataset_manifest_fingerprint: manifest_identity,
         dataset: manifest,
         run_config: config,
         valid,

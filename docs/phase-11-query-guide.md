@@ -57,8 +57,9 @@ Aggregates and joins are bags; duplicate join pairs remain duplicated. SUM uses
 checked i128 state and rejects final Int64 overflow. SQL COUNT is checked into
 Int64; its source bound makes count overflow unreachable. SUM output schema is
 nullable as required by SQL, although admitted groups have non-null values.
-Sort requires strictly increasing source row_id, checked at preflight; reordered
-selected columns are supported. General SQL, Python, streaming, writes and HA
+Sort requires strictly increasing source row_id, checked at preflight. The
+key, row_id and value consumed by Sort must trace to those original scan
+columns. Reordered selections are supported. General SQL, Python, streaming, writes and HA
 remain out of scope. There is no DataFusion execution fallback.
 
 Source ceilings are 64 files/1m rows/64MiB per registered table; metadata/footer

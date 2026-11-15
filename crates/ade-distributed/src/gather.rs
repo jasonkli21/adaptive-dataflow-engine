@@ -119,13 +119,7 @@ impl Gather {
             "duplicate/ambiguous gather recovery",
         )?;
         let old = &self.stores[&(partition, 0)];
-        // Cancel before checking the terminal registry: an in-flight terminal cannot
-        // be promoted after abandonment. A validated old terminal is ambiguous and fails.
-        old.cancellation.cancel();
-        require(
-            old.metrics()?.transfers == 0,
-            "ambiguous gather commit state",
-        )?;
+        old.abandon_gather_attempt()?;
         let store =
             Arc::new(Store::new(
                 parent,

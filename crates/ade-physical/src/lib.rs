@@ -366,7 +366,8 @@ impl PlanV1 {
                 require(
                     s[*key].name == "key"
                         && s[*row_id].name == "row_id"
-                        && s[*value].name == "value_i64",
+                        && s[*value].name == "value_i64"
+                        && self.original_sort_columns(*input, [*key, *row_id, *value]),
                     "sort requires original synthetic key,row_id,value_i64",
                 )?;
                 props.ordering = vec![0, 1];
@@ -471,6 +472,59 @@ impl PlanV1 {
             "serialized plan cap",
         )
     }
+    fn original_sort_columns(&self, mut input: NodeId, mut columns: [usize; 3]) -> bool {
+        let expected = ["key", "row_id", "value_i64"];
+        while let Some(node) = self.node(input) {
+            let previous = match &node.operator {
+                Operator::Scan { source } => {
+                    let Some(source) = self.sources.get(*source as usize) else {
+                        return false;
+                    };
+                    return columns.into_iter().zip(expected).all(|(ordinal, name)| {
+                        source
+                            .schema
+                            .get(ordinal)
+                            .is_some_and(|field| field.name == name)
+                    });
+                }
+                Operator::Filter { input, .. } | Operator::Limit { input, .. } => *input,
+                Operator::Project {
+                    input,
+                    columns: selections,
+                } => {
+                    for ordinal in &mut columns {
+                        let Some(selection) = selections.get(*ordinal) else {
+                            return false;
+                        };
+                        *ordinal = selection.column;
+                    }
+                    *input
+                }
+                Operator::Sort {
+                    input,
+                    key,
+                    row_id,
+                    value,
+                } => {
+                    let source_columns = [*key, *row_id, *value];
+                    for ordinal in &mut columns {
+                        let Some(column) = source_columns.get(*ordinal) else {
+                            return false;
+                        };
+                        *ordinal = *column;
+                    }
+                    *input
+                }
+                Operator::GroupSumCount { .. } | Operator::InnerJoin { .. } => return false,
+            };
+            if previous >= input {
+                return false;
+            }
+            input = previous;
+        }
+        false
+    }
+
     fn validate_target(&self) -> Result<()> {
         let output = self
             .node(self.output)
@@ -712,5 +766,52 @@ mod tests {
         })
         .unwrap();
         assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn sort_requires_original_ordinals_after_a_reordered_projection() {
+        let mut p = plan();
+        p.sources[0]
+            .schema
+            .push(Field::new("row_id", Type::U64, false));
+        p.nodes.clear();
+        p.push(Operator::Scan { source: 0 }).unwrap();
+        p.push(Operator::Project {
+            input: 0,
+            columns: vec![
+                Selection {
+                    column: 2,
+                    alias: "row_id".into(),
+                },
+                Selection {
+                    column: 1,
+                    alias: "value_i64".into(),
+                },
+                Selection {
+                    column: 0,
+                    alias: "key".into(),
+                },
+            ],
+        })
+        .unwrap();
+        p.push(Operator::Filter {
+            input: 1,
+            column: 2,
+            less_than: 3,
+        })
+        .unwrap();
+        p.push(Operator::Sort {
+            input: 2,
+            key: 2,
+            row_id: 0,
+            value: 1,
+        })
+        .unwrap();
+        p.push(Operator::Limit { input: 3, rows: 1 }).unwrap();
+        let mut wire = serde_json::to_value(p).unwrap();
+        assert!(PlanV1::from_json(&serde_json::to_vec(&wire).unwrap()).is_ok());
+        wire["nodes"][1]["operator"]["columns"][0]["column"] = 0.into();
+        let err = PlanV1::from_json(&serde_json::to_vec(&wire).unwrap()).unwrap_err();
+        assert!(err.to_string().contains("sort requires original synthetic"));
     }
 }

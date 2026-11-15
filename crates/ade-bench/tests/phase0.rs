@@ -333,6 +333,13 @@ fn cli_process_roundtrip_and_comparison_integrity() {
     );
     assert_eq!(result.iterations.len(), 2);
     assert_eq!(result.warmups.len(), 1);
+    let mut wrong_row_count = result.clone();
+    wrong_row_count.iterations[0]
+        .outcome
+        .as_mut()
+        .unwrap()
+        .rows_output += 1;
+    assert!(wrong_row_count.validate().is_err());
     success(cli(&["check-result", output.to_str().unwrap()]));
     success(cli(&[
         "compare",
@@ -481,6 +488,52 @@ fn cli_process_roundtrip_and_comparison_integrity() {
     assert!(!invalid.valid);
     assert!(invalid.summary.is_none());
     assert!(invalid.iterations[0].error.is_some());
+}
+
+#[test]
+fn child_binds_workload_and_physical_manifest_before_execution() {
+    let scratch = tempfile::tempdir().unwrap();
+    let original = scratch.path().join("original");
+    let reshaped = scratch.path().join("reshaped");
+    let mut config = SyntheticConfig {
+        rows: 16,
+        files: 1,
+        ..Default::default()
+    };
+    let manifest = dataset::generate(&original, "fixture", &config).unwrap();
+    config.files = 2;
+    let alternative = dataset::generate(&reshaped, "fixture", &config).unwrap();
+    assert_eq!(
+        manifest.logical_fingerprint,
+        alternative.logical_fingerprint
+    );
+
+    let spec_path = scratch.path().join("case.toml");
+    let spec_text = fs::read_to_string(spec("aggregate-skew")).unwrap();
+    fs::write(&spec_path, &spec_text).unwrap();
+    let spec_digest = blake3::hash(spec_text.as_bytes()).to_hex().to_string();
+    let manifest_identity = manifest.identity().unwrap();
+    let child = |root: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_ade-bench"))
+            .args(["__child-run", "--engine", "ade-local", "--spec"])
+            .arg(&spec_path)
+            .arg("--dataset")
+            .arg(root)
+            .env("ADE_BENCH_CHILD_SPEC_BLAKE3", &spec_digest)
+            .env("ADE_BENCH_CHILD_MANIFEST_BLAKE3", &manifest_identity)
+            .output()
+            .unwrap()
+    };
+    success(child(&original));
+    let changed_layout = child(&reshaped);
+    assert!(!changed_layout.status.success() && changed_layout.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&changed_layout.stderr).contains("child dataset manifest differs")
+    );
+    fs::write(&spec_path, format!("# same semantics\n{spec_text}")).unwrap();
+    let changed_spec = child(&original);
+    assert!(!changed_spec.status.success() && changed_spec.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&changed_spec.stderr).contains("child workload spec differs"));
 }
 
 #[test]

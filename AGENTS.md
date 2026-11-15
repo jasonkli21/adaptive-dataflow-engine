@@ -542,3 +542,15 @@ The measured local Phase25 candidate is recorded under
 `docs/reports/phase-25-implementation-report.md`. The forced NEON path has
 physical M3 evidence. The whole-query gain and exact-commit hosted CI gates
 remain open. Measured-auto selects scalar with the recorded profile.
+
+## Phase26 authorization — 2026-11-14
+
+The user authorized Phase26 in this session, without subagents and with one
+project commit. Follow ADR-0033, the reconciled Phase26 plan and its support
+matrix. The default-off local cache uses the Phase11 native IR and runtime,
+an externally pinned replayable Parquet snapshot, one effective-UID root,
+immutable intermediate publication, reader pins and expected-value eviction.
+Preserve earlier formats, qualifications and evidence. Phase26 is a local
+operator-owned cache with no remote, shared-UID isolation or general DAG
+coverage. Full acceptance requires the frozen economic criteria and the
+required hosted jobs on the exact implementation commit.

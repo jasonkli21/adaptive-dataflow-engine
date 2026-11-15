@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "phase": 26,
+  "status": "PARTIAL_PHASE26_HOSTED_CI_PENDING",
+  "baseline": {
+    "commit": "b364f63c27dc866a78116dea832419cd46d1ba46",
+    "tree": "ab0e0fc401db93208f94015fb49eadd2e2751d8e"
+  },
+  "source": {
+    "final_revision": "commit containing this matrix",
+    "workspace_input_count": 239,
+    "build_inputs_sha256": "266a68081bf7d9784232549ea5caf495cbae970277f4944dade798c79d0ff7ba",
+    "cargo_lock_sha256": "b8708ecef9b5bb264421ed0eb433859ac475d4cb0379ed9fddee735007351593",
+    "macos_arm64_sha256": "e2cc1197af8758f2a00fb78bd628d035ad74fb40695c8f100c28065195e5d1a0",
+    "linux_arm64_sha256": "71bb69844c1e25f912b8ec8c56c276afba37ba6045873ceaef9003d7d49fcdf0"
+  },
+  "release": {
+    "hosted_ci": {
+      "status": "NOT_RUN",
+      "required_jobs": [
+        "rust",
+        "msrv",
+        "phase22-interop",
+        "phase23-local"
+      ]
+    },
+    "evidence_archive": "docs/evidence/phase26/candidate-final.tar.gz",
+    "evidence_sha256": "827a17cfb297aa9dce400700984edc53c3306b60aa52de776587b55593592148",
+    "evidence_seal_sha256": "a03eb5fcb2e235a02aac30dd57672abefebc192664d2c1cbc3d082fe26a4301f"
+  },
+  "confirmed_economics": {
+    "wall": {
+      "selective": {
+        "always": {
+          "p50_ms": 1921.270042,
+          "p95_ms": 1930.714083
+        },
+        "expected_value_v1": {
+          "p50_ms": 1922.855291,
+          "p95_ms": 1943.703167
+        },
+        "disabled": {
+          "p50_ms": 2935.58,
+          "p95_ms": 2943.27225
+        }
+      },
+      "no-reuse": {
+        "always": {
+          "p50_ms": 64.571375,
+          "p95_ms": 67.455334
+        },
+        "expected_value_v1": {
+          "p50_ms": 13.977917,
+          "p95_ms": 14.318417
+        },
+        "disabled": {
+          "p50_ms": 13.55275,
+          "p95_ms": 13.763833
+        }
+      }
+    },
+    "adaptive_ratio": {
+      "selective": 0.6550171656027088,
+      "no-reuse": 1.0313712715131615
+    },
+    "passes": true
+  },
+  "gates": {
+    "G0": {
+      "label": "Source and authority",
+      "status": "PASS",
+      "evidence": "Baseline, build inputs, lockfile, compiler, executable hashes and commit-tree verification."
+    },
+    "G1": {
+      "label": "Architecture",
+      "status": "PASS",
+      "evidence": "ADR-0033 and reconciled plan."
+    },
+    "G2": {
+      "label": "Native execution path",
+      "status": "PASS",
+      "evidence": "Native scan/filter metrics in the producer and cached native suffix on the hit."
+    },
+    "G3": {
+      "label": "Rewrite semantics",
+      "status": "PASS",
+      "evidence": "Independent schema, bag and ordered prefix, edge and refusal cases."
+    },
+    "G4": {
+      "label": "Source and catalog identity",
+      "status": "PASS",
+      "evidence": "Strict catalog pin, native source hashes and lineage changes."
+    },
+    "G5": {
+      "label": "Cache integrity",
+      "status": "PASS",
+      "evidence": "Reopen validates footer, key, exact schema/count and digest. Rehashed cross-entry substitution refuses."
+    },
+    "G6": {
+      "label": "Durable publication",
+      "status": "PASS",
+      "evidence": "Sync and no-replace publication exercised across process kills and restart."
+    },
+    "G7": {
+      "label": "Reader lifetime",
+      "status": "PASS",
+      "evidence": "Shared pins, contending writers, GC refusal, slot saturation and killed holder recovery."
+    },
+    "G8": {
+      "label": "Security boundary",
+      "status": "PASS",
+      "evidence": "Real Linux cross-UID refusals and macOS path, mode, traversal and hardlink cases."
+    },
+    "G9": {
+      "label": "Resource accounting",
+      "status": "PASS",
+      "evidence": "Encoded reservation, exact inventory lengths, output caps, cancellation and HFS+ ENOSPC."
+    },
+    "G10": {
+      "label": "Source mutation and race",
+      "status": "PASS",
+      "evidence": "Same-size mutation, catalog change, inode replacement and revoked source refusal."
+    },
+    "G11": {
+      "label": "Defaults and compatibility",
+      "status": "PASS",
+      "evidence": "Disabled/never controls, feature matrix, external Rust consumer and legacy workspace tests."
+    },
+    "G12": {
+      "label": "Policy",
+      "status": "PASS",
+      "evidence": "Independent exact rational oracle, checked coefficient refusal, zero/missing forecasts and a tie."
+    },
+    "G13": {
+      "label": "Eviction",
+      "status": "PASS",
+      "evidence": "Lower-value victim physically removed with an opposite LRU ordering."
+    },
+    "G14": {
+      "label": "Audit",
+      "status": "PASS",
+      "evidence": "Versioned decisions and operator/byte observations with independent identity checks."
+    },
+    "G15": {
+      "label": "Independent process and oracle",
+      "status": "PASS",
+      "evidence": "Distinct PID and downstream plan, process exit, root reopen and exact original-source results."
+    },
+    "G16": {
+      "label": "Detached verification",
+      "status": "PASS",
+      "evidence": "Sealed executable/source/fixtures and eight separately resealed semantic mutations."
+    },
+    "G17": {
+      "label": "Economics",
+      "status": "PASS",
+      "evidence": "Both fixed whole-sequence thresholds pass on one Apple M3 host, with a confirmation."
+    },
+    "G18": {
+      "label": "Crash and fault",
+      "status": "PASS",
+      "evidence": "Reached process kills, real ENOSPC, source drift, quota, cancellation and restart."
+    },
+    "G19": {
+      "label": "Local release checks",
+      "status": "PASS",
+      "evidence": "Workspace fmt, check, Clippy, all-feature tests, smoke, standalone consumer and Rust 1.94.0."
+    },
+    "G20": {
+      "label": "Exact-commit hosted CI",
+      "status": "NOT_RUN",
+      "evidence": "Requires hosted rust, msrv, phase22-interop and phase23-local receipts for this commit."
+    },
+    "G21": {
+      "label": "Reporting",
+      "status": "PASS",
+      "evidence": "ADR, guide, experiment, source-bound support matrix and detached evidence."
+    }
+  },
+  "supported": [
+    "native Scan → UInt64 Filter → optional Project",
+    "native GroupSumCount and optional downstream projections",
+    "one immutable pinned local Parquet catalog",
+    "one private cache root per trusted effective UID",
+    "source and payload independently verified on hit",
+    "bounded adaptive admission and physical eviction"
+  ],
+  "deferred": [
+    "arbitrary DAG/subgraph matching",
+    "joins and sorting or limiting suffixes",
+    "other formats and sources",
+    "remote or multi-principal cache service",
+    "host-loss/power-loss guarantee",
+    "online learned demand"
+  ]
+}

@@ -331,6 +331,63 @@ pub fn execute_with_map(
         lower(plan, catalog, batch_size)?
     };
     catalog.verify(plan, &token, deadline, true)?;
+    let postflight_token = token.clone();
+    during_execution(&postflight_token, deadline, move || {
+        crate::execute_in_bounded(
+            local,
+            config,
+            token,
+            None,
+            Some((plan.max_output_rows, plan.max_output_bytes)),
+        )
+    })
+    .and_then(|output| {
+        check(&postflight_token, deadline)?;
+        catalog.verify(plan, &postflight_token, deadline, false)?;
+        Ok(output)
+    })
+}
+
+/// Stream a verified local physical plan to a private staging sink.
+///
+/// The sink must discard staged output on error, including postflight failure.
+/// # Errors
+/// Refuses invalid sources, exceeded caps, cancellation, timeout and sink failure.
+#[cfg(feature = "shared-materialization-v1")]
+pub fn execute_to_staging_sink(
+    plan: &PlanV1,
+    catalog: &Catalog,
+    config: ExecutionConfig,
+    batch_size: usize,
+    token: &CancellationToken,
+    deadline: Instant,
+    mut stage: impl FnMut(arrow::record_batch::RecordBatch) -> Result<()>,
+) -> Result<crate::ExecutionMetrics> {
+    check(token, deadline)?;
+    config.validate()?;
+    if config.output_batch_rows > 8192 || deadline > Instant::now() + Duration::from_secs(120) {
+        return Err(invalid("physical staging execution bounds"));
+    }
+    let local = lower(plan, catalog, batch_size)?;
+    catalog.verify(plan, token, deadline, true)?;
+    during_execution(token, deadline, || {
+        let mut bounds = crate::OutputBounds::default();
+        let metrics = crate::execute_to_sink(local, config, token.clone(), |batch| {
+            check(token, deadline)?;
+            bounds.observe(&batch, Some((plan.max_output_rows, plan.max_output_bytes)))?;
+            stage(batch)
+        })?;
+        check(token, deadline)?;
+        catalog.verify(plan, token, deadline, false)?;
+        Ok(metrics)
+    })
+}
+
+fn during_execution<T>(
+    token: &CancellationToken,
+    deadline: Instant,
+    run: impl FnOnce() -> Result<T>,
+) -> Result<T> {
     std::thread::scope(|scope| {
         let (tx, rx) = std::sync::mpsc::channel();
         let timer_token = token.clone();
@@ -342,19 +399,9 @@ pub fn execute_with_map(
                 timer_token.cancel();
             }
         });
-        let postflight_token = token.clone();
-        let output = crate::execute_in_bounded(
-            local,
-            config,
-            token,
-            None,
-            Some((plan.max_output_rows, plan.max_output_bytes)),
-        );
+        let output = run();
         let _ = tx.send(());
-        let output = output?;
-        check(&postflight_token, deadline)?;
-        catalog.verify(plan, &postflight_token, deadline, false)?;
-        Ok(output)
+        output
     })
 }
 

@@ -1,0 +1,50 @@
+{
+  "receipts": 308,
+  "original_source_oracle_results": 207,
+  "economics": {
+    "wall": {
+      "selective": {
+        "always": {
+          "p50_ms": 1921.270042,
+          "p95_ms": 1930.714083
+        },
+        "expected_value_v1": {
+          "p50_ms": 1922.855291,
+          "p95_ms": 1943.703167
+        },
+        "disabled": {
+          "p50_ms": 2935.58,
+          "p95_ms": 2943.27225
+        }
+      },
+      "no-reuse": {
+        "always": {
+          "p50_ms": 64.571375,
+          "p95_ms": 67.455334
+        },
+        "expected_value_v1": {
+          "p50_ms": 13.977917,
+          "p95_ms": 14.318417
+        },
+        "disabled": {
+          "p50_ms": 13.55275,
+          "p95_ms": 13.763833
+        }
+      }
+    },
+    "adaptive_ratio": {
+      "selective": 0.6550171656027088,
+      "no-reuse": 1.0313712715131615
+    },
+    "passes": true
+  },
+  "supplements": {
+    "build_inputs_sha256": "266a68081bf7d9784232549ea5caf495cbae970277f4944dade798c79d0ff7ba",
+    "files": 239,
+    "disk_full": 28,
+    "uid": [
+      501,
+      65534
+    ]
+  }
+}

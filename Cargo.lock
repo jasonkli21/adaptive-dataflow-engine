@@ -28,6 +28,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ade-cache"
+version = "0.1.0"
+dependencies = [
+ "ade-exec",
+ "ade-physical",
+ "arrow",
+ "blake3",
+ "clap",
+ "ctrlc",
+ "parquet",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "ade-connectors"
 version = "0.1.0"
 dependencies = [

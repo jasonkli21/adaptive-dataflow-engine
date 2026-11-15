@@ -1,0 +1,8 @@
+forged_result: original-source result oracle: hit-beta
+wrong_prefix_key: derived prefix key
+wrong_rewrite: derived native suffix identity
+missing_prefix_work: genuine prefix scan/filter audit
+payload_mutated: artifact digest or rows
+catalog_reordered: plan catalog identity
+fake_victim: policy selection
+same_process_hit: independent cross-job hit

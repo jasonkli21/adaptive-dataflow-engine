@@ -549,3 +549,11 @@ The optional `filter-kernels-v1` feature exposes the native ARM64 NEON
 `UInt64 < threshold` mask and scalar and Arrow controls through ADE-local.
 The default path stays scalar. See the [operator guide](docs/phase-25-hardware-guide.md)
 and the [source-bound support matrix](docs/reports/phase-25-support.json).
+
+### Phase 26 shared materialization
+
+The optional `ade-cache/shared-v1` CLI retains a validated native scan/filter
+prefix across independent local jobs. A pinned snapshot, private root and
+expected-value policy control reuse and eviction. See the
+[operator guide](docs/phase-26-shared-materialization-guide.md) and
+[source-bound support matrix](docs/reports/phase-26-support.json).

@@ -69,3 +69,6 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0031 — Bounded specialized extension SDK v1](0031-specialized-extension-sdk-v1.md)
 
 - [ADR-0032 — Opt-in native CPU filter specialization](0032-measured-cpu-specialization-v1.md)
+
+Phase 26 local materialization and native lineage are governed by
+[ADR-0033](0033-cross-job-shared-materialization-v1.md).

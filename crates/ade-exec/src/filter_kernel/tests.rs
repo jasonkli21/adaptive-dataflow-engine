@@ -168,6 +168,10 @@ fn limits_refusal_and_retry() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the end-to-end fixture and its ordered oracle together."
+)]
 fn native_plan_preserves_order_across_parquet_files_and_batches() {
     use parquet::arrow::ArrowWriter;
     use std::{fs::File, path::PathBuf};

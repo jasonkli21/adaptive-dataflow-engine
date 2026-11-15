@@ -1,0 +1,37 @@
+[package]
+name = "ade-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+shared-v1 = [
+    "dep:ade-exec", "dep:ade-physical", "dep:arrow", "dep:blake3", "dep:clap",
+    "dep:ctrlc", "dep:parquet", "dep:rustix", "dep:serde", "dep:serde_json", "dep:thiserror",
+]
+fault-injection = ["shared-v1"]
+
+[dependencies]
+ade-exec = { path = "../ade-exec", features = ["shared-materialization-v1"], optional = true }
+ade-physical = { path = "../ade-physical", optional = true }
+arrow = { workspace = true, optional = true }
+blake3 = { version = "1", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+ctrlc = { version = "3", optional = true }
+parquet = { workspace = true, optional = true }
+rustix = { version = "1", features = ["fs", "process"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "ade-cache"
+path = "src/main.rs"
+required-features = ["shared-v1"]

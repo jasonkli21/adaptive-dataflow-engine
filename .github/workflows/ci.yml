@@ -49,6 +49,14 @@ jobs:
           seal="$(python scripts/phase24/campaign.py --binary target/debug/examples/phase24-native --output "$output" --no-benchmarks)"
           python scripts/phase24/verify.py "$output" --mode historical-archive --seal-pin "$seal"
           python scripts/phase24/tamper.py "$output" --seal-pin "$seal"
+      - name: Phase 26 native cross-job cache correctness
+        run: |
+          python -m pip install -r scripts/phase26/requirements.txt
+          cargo build --locked -p ade-cache --features fault-injection --bin ade-cache
+          output="$RUNNER_TEMP/ade26-native"
+          python scripts/phase26/campaign.py target/debug/ade-cache "$output" --no-economics
+          pin="$(python scripts/phase26/verify.py "$output" --seal)"
+          python scripts/phase26/verify.py "$output" --pin "$pin"
       - name: Build CLI
         run: cargo build --workspace --locked
       - name: Benchmark correctness smoke (no timing gate)

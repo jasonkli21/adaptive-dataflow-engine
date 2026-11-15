@@ -11,6 +11,7 @@ workspace = true
 [features]
 cyclic-v1 = []
 filter-kernels-v1 = []
+shared-materialization-v1 = []
 
 [dependencies]
 ade-physical = { path = "../ade-physical" }

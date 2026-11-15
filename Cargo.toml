@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/ade-cache",
     "crates/ade-ext-sdk",
     "crates/ade-ext-vector",
     "crates/ade-ext-graph",

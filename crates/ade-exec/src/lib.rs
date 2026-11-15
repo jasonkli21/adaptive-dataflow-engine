@@ -1008,26 +1008,41 @@ pub fn execute_with_filter_kernel(
     ))
 }
 
+#[derive(Default)]
+struct OutputBounds {
+    rows: u64,
+    bytes: u64,
+}
+
+impl OutputBounds {
+    fn observe(&mut self, batch: &RecordBatch, bounds: Option<(u64, u64)>) -> Result<()> {
+        self.rows = self
+            .rows
+            .checked_add(batch.num_rows() as u64)
+            .ok_or(Error::Overflow("output rows"))?;
+        self.bytes = self
+            .bytes
+            .checked_add(batch.get_array_memory_size() as u64 + 128)
+            .ok_or(Error::Overflow("output bytes"))?;
+        if bounds.is_some_and(|(r, b)| self.rows > r || self.bytes > b) {
+            return Err(Error::Invalid(
+                "physical output cap exceeded; no committed output".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn collect_output(
     plan: LocalPlan,
     cx: &mut ExecContext,
     bounds: Option<(u64, u64)>,
 ) -> Result<(Vec<RecordBatch>, Reservation)> {
-    let (mut rows, mut bytes) = (0u64, 0u64);
+    let mut observed = OutputBounds::default();
     let mut batches = Vec::new();
     let mut retained = cx.memory.reservation(OperatorId(u32::MAX));
     drive(plan, cx, |batch, cx| {
-        rows = rows
-            .checked_add(batch.num_rows() as u64)
-            .ok_or(Error::Overflow("output rows"))?;
-        bytes = bytes
-            .checked_add(batch.get_array_memory_size() as u64 + 128)
-            .ok_or(Error::Overflow("output bytes"))?;
-        if bounds.is_some_and(|(r, b)| rows > r || bytes > b) {
-            return Err(Error::Invalid(
-                "physical output cap exceeded; no committed output".into(),
-            ));
-        }
+        observed.observe(&batch, bounds)?;
         retained.grow(
             batch
                 .get_array_memory_size()

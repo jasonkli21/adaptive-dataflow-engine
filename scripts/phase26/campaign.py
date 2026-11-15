@@ -125,6 +125,7 @@ class Campaign:
         return path
 
     def preserve(self, cache, key, name):
+        assert json.loads((cache / key / "entry.json").read_bytes())["version"] == 2
         shutil.copytree(cache / key, self.artifacts / name)
 
     def semantic_and_fault(self):
@@ -219,10 +220,74 @@ class Campaign:
 
         self.source_drift(source, root, a, b)
         self.corruption(source, root, b, key)
+        self.poison_recovery(source)
+        self.policy_regressions(source, a, b)
         self.crashes(source, a, b)
         self.eviction(source, a, b)
         self.security(source, a)
         self.call("final-main-hit", self.args(b, source, root))
+
+    def policy_regressions(self, source, a, b):
+        forecast = self.offer("negative-write-positive-hit", uses_milli=1000,
+                              survival_bps=10000, recompute_us=100000,
+                              restore_us=20000, write_us=100000,
+                              hold_us=0, invalidation_us=0)
+        populated = self.cache("f01-populated")
+        self.call("f01-seed", self.args(a, source, populated))
+        hit = self.call("f01-profitable-hit-negative-write", self.args(
+            b, source, populated, mode="expected_value_v1", offer=forecast))
+        assert hit["audit"]["actions"] == ["hit"] and not hit["audit"]["prefix"]
+
+        empty = self.cache("f01-empty")
+        bypass = self.call("f01-empty-negative-write", self.args(
+            a, source, empty, mode="expected_value_v1", offer=forecast))
+        assert bypass["audit"]["actions"] == ["skip"]
+        assert self.call("f01-empty-inventory", ["inspect", "--cache", empty])["entries"] == []
+
+        slow = self.offer("restore-slower-than-recompute", uses_milli=1000,
+                          survival_bps=10000, recompute_us=10000,
+                          restore_us=20000, write_us=0,
+                          hold_us=0, invalidation_us=0)
+        refused = self.call("f01-slow-restore", self.args(
+            b, source, populated, mode="expected_value_v1", offer=slow))
+        assert refused["audit"]["actions"] == ["skip"]
+
+    def poison_recovery(self, source):
+        a = self.native("f04-a", source, 4000)
+        b = self.native("f04-b", source, 3999)
+        c = self.native("f04-c", source, 3998)
+        root = self.cache("f04-poison")
+        first = self.call("f04-seed-a", self.args(a, source, root))
+        healthy = self.call("f04-seed-b", self.args(b, source, root))
+        bad_key = first["audit"]["prefix_key"]
+        good_key = healthy["audit"]["prefix_key"]
+        manifest = root / bad_key / "entry.json"
+        original = manifest.read_bytes()
+        write(manifest, json.loads(original) | {"version": 1})
+        self.call("f04-unrelated-hit", self.args(b, source, root))
+        self.call("f04-new-fill-blocked", self.args(c, source, root), status=1,
+                  error="cache integrity")
+        self.call("f04-gc-blocked", ["gc", "--cache", root], status=1,
+                  error="cache integrity")
+        self.call("f04-invalid-purge-key", ["purge", "--cache", root, "--key", "../"],
+                  status=1, error="exact lowercase cache key")
+        symlink_key = "f" * 64
+        (root / symlink_key).symlink_to(good_key, target_is_directory=True)
+        self.call("f04-symlink-purge", ["purge", "--cache", root, "--key", symlink_key],
+                  status=1, error="access refused")
+        (root / symlink_key).unlink()
+        release = self.roots / "f04-reader-release"
+        pending = self.pause(self.args(b, source, root), "reader_pinned", release=release)
+        self.call("f04-purge-pinned-refused", ["--timeout-ms", 80, "purge", "--cache", root,
+                                               "--key", good_key], status=1, error="deadline")
+        release.touch()
+        self.finish("f04-reader-released", pending, 0)
+        self.call("f04-purge-corrupt-key", ["purge", "--cache", root, "--key", bad_key])
+        self.call("f04-healthy-hit-after-purge", self.args(b, source, root))
+        rebuilt = self.call("f04-fill-after-purge", self.args(c, source, root))
+        assert rebuilt["audit"]["actions"] == ["miss", "publish"]
+        inventory = self.call("f04-final-inventory", ["inspect", "--cache", root])
+        assert {entry["key"] for entry in inventory["entries"]} == {good_key, rebuilt["audit"]["prefix_key"]}
 
     @staticmethod
     def repin(root, index):
@@ -285,7 +350,7 @@ class Campaign:
             ("manifest-key", None, {"key": "f" * 64}),
             ("manifest-rows", None, {"rows": 0}),
             ("manifest-schema", None, {"schema": "1" * 64}),
-            ("manifest-version", None, {"version": 2}),
+            ("manifest-version", None, {"version": 3}),
             ("operator-version", None, {"semantics": "wrong-native-version"}),
             ("manifest-snapshot", None, {"snapshot": "2" * 64}),
             ("missing-payload", False, None),
@@ -423,6 +488,9 @@ class Campaign:
         alias = self.roots / "symlink-root"
         alias.symlink_to(root.name, target_is_directory=True)
         self.call("symlink-root", self.args(a, source, alias), status=1, error="access refused")
+        # Preserve the refusal receipt, then remove this intentionally hostile fixture so
+        # the evidence-owned output tree can be sealed under the verifier's no-symlink rule.
+        alias.unlink()
         self.call("traversal-root", self.args(a, source, child / ".." / root.name), status=1, error="access refused")
         out = self.call("security-fill", self.args(a, source, root))
         payload = root / out["audit"]["prefix_key"] / "payload.parquet"

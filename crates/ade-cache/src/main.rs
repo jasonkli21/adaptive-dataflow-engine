@@ -14,7 +14,9 @@ fn main() -> std::process::ExitCode {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod cli {
     use ade_cache::policy::{Calibration, Mode};
-    use ade_cache::{Control, Error, Job, Limits, collect_expired, initialize, inspect, run};
+    use ade_cache::{
+        Control, Error, Job, Limits, collect_expired, initialize, inspect, purge_entry, run,
+    };
     use ade_exec::CancellationToken;
     use ade_physical::{MAX_PLAN_BYTES, PlanV1};
     use arrow::array::{Int64Array, UInt64Array};
@@ -95,6 +97,12 @@ mod cli {
             #[arg(long)]
             cache: PathBuf,
         },
+        Purge {
+            #[arg(long)]
+            cache: PathBuf,
+            #[arg(long)]
+            key: String,
+        },
     }
 
     pub(super) fn main() -> ExitCode {
@@ -153,6 +161,10 @@ mod cli {
             Command::Inspect { cache } => serde_json::to_value(inspect(&cache, &control)?)?,
             Command::Gc { cache } => {
                 json!({"version": 1, "evicted": collect_expired(&cache, &control)?})
+            }
+            Command::Purge { cache, key } => {
+                purge_entry(&cache, &key, &control)?;
+                json!({"version": 1, "purged": key})
             }
             Command::Run {
                 plan,

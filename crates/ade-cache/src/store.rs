@@ -89,7 +89,7 @@ struct Entry {
 
 impl Entry {
     fn validate(&self, root: &Root<'_>, key: &str) -> Result<()> {
-        if self.version != 1
+        if self.version != 2
             || self.semantics != SEMANTICS
             || self.scope != root.scope
             || self.key != key
@@ -218,10 +218,14 @@ impl<'a> Root<'a> {
             entries.push(policy::Alternative {
                 key,
                 bytes,
-                remaining_us: entry.calibration.map(|c| c.value(false)).transpose()?,
+                remaining_us: entry
+                    .calibration
+                    .map(|c| policy::remaining_value(c, now, entry.created_ms, entry.expires_ms))
+                    .transpose()?,
                 expired: now >= entry.expires_ms,
                 created_ms: entry.created_ms,
                 expires_ms: entry.expires_ms,
+                observed_ms: now,
             });
         }
         Ok(entries)
@@ -394,6 +398,36 @@ pub fn collect_expired(path: &Path, control: &Control) -> Result<Vec<String>> {
     Ok(removed)
 }
 
+/// Remove exactly one operator-selected committed entry without interpreting its manifest.
+/// A malformed directory, symlink, unexpected child or active reader is refused.
+///
+/// # Errors
+/// Returns an error for invalid keys, unsafe roots/entries, active readers, or I/O failure.
+pub fn purge_entry(path: &Path, key: &str, control: &Control) -> Result<()> {
+    control.check()?;
+    if !is_digest(key) {
+        return Err(Error::Request(
+            "purge requires an exact lowercase cache key",
+        ));
+    }
+    let root = Root::open(path, false)?;
+    fs::lock(&root.lease, false, control)?;
+    root.attest()?;
+    root.limits(control)?;
+    root.clean(TRASH, control)?;
+    let target = fs::private_dir(&root.dir, key).map_err(|_| Error::Access)?;
+    if fs::names(&target, 2, control)? != [MANIFEST, PAYLOAD] {
+        return Err(Error::Integrity("purge entry inventory"));
+    }
+    fs::data(&target, MANIFEST, OFlags::RDONLY, true)?;
+    fs::data(&target, PAYLOAD, OFlags::RDONLY, true)?;
+    root.attest()?;
+    control.check()?;
+    fs::move_dir(&root.dir, key, TRASH)?;
+    root.dir.sync_all()?;
+    root.clean(TRASH, control)
+}
+
 /// One finite native job. The external catalog pin and calibration are operator inputs.
 pub struct Job<'a> {
     pub plan: &'a PlanV1,
@@ -475,28 +509,32 @@ pub struct JobOutput {
 /// Execute a bounded local job, releasing output only after source and cache checks.
 /// # Errors
 /// Refuses invalid plans, cache/snapshot drift, authorization and resource failures.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Source authorization, adaptive admission and native result release share one job boundary."
+)]
 pub fn run(job: &Job<'_>, control: &Control) -> Result<JobOutput> {
     control.check()?;
     job.plan.validate().map_err(|_| Error::Request("PlanV1"))?;
     if job.plan.sources.len() != 1 || job.plan.sources[0].table != "input" {
         return Err(Error::Request("local input plan required"));
     }
-    let estimate = if job.mode.uses_root() {
-        job.calibration.map(|value| value.value(true)).transpose()?
-    } else {
-        None
-    };
-    let declined = job.mode == Mode::ExpectedValueV1 && estimate.is_none_or(|score| score <= 0);
-    let root = if job.mode.uses_root() && !declined {
-        if !(META_CAP as u64 + 12..=MAX_SOURCE_BYTES + META_CAP as u64).contains(&job.stage_bytes)
-            || !(1..=MAX_TTL_MS).contains(&job.ttl_ms)
-        {
-            return Err(Error::Request("stage reservation or retention horizon"));
-        }
-        Some(Root::open(
-            job.cache_dir.ok_or(Error::Request("cache root required"))?,
-            false,
-        )?)
+    if job.mode == Mode::ExpectedValueV1
+        && let Some(calibration) = job.calibration
+    {
+        calibration.value(false)?;
+    }
+    let possible_hit = policy::hit_is_worthwhile(job.calibration);
+    let declined = job.mode == Mode::ExpectedValueV1 && !possible_hit;
+    if job.mode.uses_root()
+        && !declined
+        && (!(META_CAP as u64 + 12..=MAX_SOURCE_BYTES + META_CAP as u64).contains(&job.stage_bytes)
+            || !(1..=MAX_TTL_MS).contains(&job.ttl_ms))
+    {
+        return Err(Error::Request("stage reservation or retention horizon"));
+    }
+    let cut = if job.mode.uses_root() && !declined {
+        Some(Cut::new(job.plan, job.cut)?)
     } else {
         None
     };
@@ -526,12 +564,36 @@ pub fn run(job: &Job<'_>, control: &Control) -> Result<JobOutput> {
     let started = Instant::now();
     let original = Original::open(job.source_dir, job.catalog_pin, job.plan, control)?;
     audit.ledger.source_catalog_us = elapsed_us(started);
+    let source_preverified = job.mode == Mode::ExpectedValueV1 && !declined;
+    if source_preverified {
+        let started = Instant::now();
+        original.verify(job.plan, control, true)?;
+        audit.ledger.source_verify_us = elapsed_us(started);
+        audit.ledger.source_fingerprint_bytes = source_bytes(job.plan);
+    }
+    let root = if job.mode.uses_root() && !declined {
+        Some(Root::open(
+            job.cache_dir.ok_or(Error::Request("cache root required"))?,
+            false,
+        )?)
+    } else {
+        None
+    };
     let result = if let Some(root) = root {
-        let cut = Cut::new(job.plan, job.cut)?;
+        let cut = cut.ok_or(Error::Request("cache cut unavailable"))?;
         let key = cut.key(&root.scope)?;
         audit.prefix_key = Some(key.clone());
         audit.scope = Some(root.scope.clone());
-        reuse_or_populate(job, &original, &root, &cut, &key, &mut audit, control)?
+        reuse_or_populate(
+            job,
+            &original,
+            &root,
+            &cut,
+            &key,
+            source_preverified,
+            &mut audit,
+            control,
+        )?
     } else {
         if declined {
             audit.actions.push("skip");
@@ -574,7 +636,7 @@ fn execute_original(
         control.remaining()?,
     )?;
     audit.ledger.native_result_us = elapsed_us(started);
-    audit.ledger.source_fingerprint_bytes = source_bytes(job.plan) * 2;
+    audit.ledger.source_fingerprint_bytes += source_bytes(job.plan) * 2;
     original.attest(control)?;
     Ok(result)
 }
@@ -584,12 +646,17 @@ fn source_bytes(plan: &PlanV1) -> u64 {
     plan.sources[0].files.iter().map(|f| f.bytes).sum()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Source preflight state is explicit at the cache authorization boundary."
+)]
 fn reuse_or_populate(
     job: &Job<'_>,
     original: &Original<'_>,
     root: &Root<'_>,
     cut: &Cut,
     key: &str,
+    source_preverified: bool,
     audit: &mut Audit,
     control: &Control,
 ) -> Result<ExecutionOutput> {
@@ -603,7 +670,29 @@ fn reuse_or_populate(
             && wall_ms()? < entry.expires_ms
         {
             audit.ledger.cache_lookup_us = elapsed_us(lookup);
-            return hit(job, original, root, cut, &entry, audit, control);
+            if job.mode == Mode::ExpectedValueV1 && !policy::hit_is_worthwhile(job.calibration) {
+                audit.actions.push("skip");
+                audit.decision = Some(policy::select(
+                    job.mode,
+                    job.calibration,
+                    job.stage_bytes,
+                    0,
+                    0,
+                    vec![],
+                )?);
+                root.lease.unlock()?;
+                return execute_original(job, original, audit, control);
+            }
+            return hit(
+                job,
+                original,
+                root,
+                cut,
+                &entry,
+                source_preverified,
+                audit,
+                control,
+            );
         }
         root.lease.unlock()?;
     }
@@ -618,7 +707,29 @@ fn reuse_or_populate(
     let expired = if let Some((entry, bytes)) = entry {
         if now < entry.expires_ms {
             audit.ledger.cache_lookup_us += elapsed_us(lookup);
-            return hit(job, original, root, cut, &entry, audit, control);
+            if job.mode == Mode::ExpectedValueV1 && !policy::hit_is_worthwhile(job.calibration) {
+                root.lease.unlock()?;
+                audit.actions.push("skip");
+                audit.decision = Some(policy::select(
+                    job.mode,
+                    job.calibration,
+                    job.stage_bytes,
+                    0,
+                    0,
+                    vec![],
+                )?);
+                return execute_original(job, original, audit, control);
+            }
+            return hit(
+                job,
+                original,
+                root,
+                cut,
+                &entry,
+                source_preverified,
+                audit,
+                control,
+            );
         }
         Some(bytes)
     } else {
@@ -631,18 +742,25 @@ fn reuse_or_populate(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The pinned source-preflight state controls one cache-hit verification path."
+)]
 fn hit(
     job: &Job<'_>,
     original: &Original<'_>,
     root: &Root<'_>,
     cut: &Cut,
     entry: &Entry,
+    source_preverified: bool,
     audit: &mut Audit,
     control: &Control,
 ) -> Result<ExecutionOutput> {
-    let started = Instant::now();
-    original.verify(job.plan, control, true)?;
-    audit.ledger.source_verify_us = elapsed_us(started);
+    if !source_preverified {
+        let started = Instant::now();
+        original.verify(job.plan, control, true)?;
+        audit.ledger.source_verify_us += elapsed_us(started);
+    }
     // A visible rename may precede its publisher's directory sync if that process died.
     root.dir.sync_all()?;
     control.fault("reader_pinned")?;
@@ -703,9 +821,9 @@ fn populate(
     // Before removing retained entries, prove the candidate still refers to an admitted snapshot.
     if expired.is_some() || !decision.victims.is_empty() {
         original.verify(job.plan, control, false)?;
-        audit.ledger.source_fingerprint_bytes = source_bytes(job.plan);
+        audit.ledger.source_fingerprint_bytes += source_bytes(job.plan);
     }
-    audit.ledger.source_verify_us = elapsed_us(verify_time);
+    audit.ledger.source_verify_us += elapsed_us(verify_time);
     if let Some(bytes) = expired {
         root.evict(key, control)?;
         audit.evicted_bytes += bytes;
@@ -809,7 +927,7 @@ fn fill_and_commit(
     audit.ledger.cache_payload_hash_bytes = bytes;
     let now = wall_ms()?;
     let entry = Entry {
-        version: 1,
+        version: 2,
         semantics: SEMANTICS.into(),
         scope: root.scope.clone(),
         key: key.into(),

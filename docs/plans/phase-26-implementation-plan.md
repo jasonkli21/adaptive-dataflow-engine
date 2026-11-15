@@ -1,6 +1,6 @@
 # Phase 26 Implementation Plan — Bounded Cross-Job Adaptive Shared Materialization v1
 
-**Status:** Implemented bounded v1. Local acceptance passed. Exact-commit hosted CI pending.
+**Status:** Bounded v1 implementation retained as historical evidence. The additive policy and recovery remediation is reconciled below; current-source reacceptance is pending.
 
 **Date:** 2026-11-14 (America/Los_Angeles)
 
@@ -143,13 +143,13 @@ A model is a declared proxy, not accurate cloud billing or infallible demand for
 - expected invalidation/expiry risk and future storage opportunity cost;
 - entry bytes, pinned status, exact quota headroom and competing candidates.
 
-A simple first model is `expected_net_value = E[eligible_uses] * max(0, C_recompute - C_restore) - C_store - C_hold - C_invalidation`; if an uncalibrated dimension materially changes the decision, conservatively **skip** and explain. If evidence shows a better bounded model, document it in ADR-0033 (if unallocated) before recording release results. No learned model/online feedback loop unless explicitly designed and tested.
+A simple first model is `expected_net_value = E[eligible_uses] * max(0, C_recompute - C_restore) - C_store - C_hold - C_invalidation`; if an uncalibrated dimension materially changes the decision, conservatively **skip** and explain. Current verified-hit use is evaluated separately using immediate recompute-versus-restore savings because write cost is sunk; a miss uses the write-inclusive score. For v1 incumbents, the declared stationary-use heuristic scales the nonnegative retained value (excluding write) by the unexpired TTL fraction. A clock rollback yields zero value and malformed horizons refuse. No learned model/online feedback loop unless explicitly designed and tested.
 
 Admission/verification work occurs on both cache/no-cache paths and must **not** be omitted from end-to-end economics. A hit's source snapshot rehash may dominate its savings; report this honestly. Record a decomposed work-time and byte ledger (source admission, cache lookup/verify, native prefix, materialization write/sync, native suffix, GC/eviction, postflight) to distinguish observed vs estimated and prevent double counting. No pre-decision leak of private tenant/cached-entry facts.
 
 ### 5.2 Expected-value eviction is a **mandatory** demonstration
 
-When quota is insufficient, score the candidate plus all **eligible** incumbents under the same bounded pure value function, account for bytes and expected net future benefit (and optionally value density for greedy selection), produce deterministic action/order/tie behavior, then run actual removal under reader pin/lease constraints. Existing live readers and staged entries are never evictable. A valid candidate may be **rejected** when existing inventory is worth more. Expiration/TTL is a safety/pruning constraint, **not** a substitute for expected-value eviction. If pure policy chooses an action that is infeasible at commit time, re-admit/replan or refuse; never evict blind.
+When quota is insufficient, score the candidate plus all **eligible** incumbents under the same bounded pure value function, account for bytes and expected net future benefit, and produce deterministic action/tie behavior. The reconciled v1 mechanism exactly selects the least-value feasible victim subset using bounded meet-in-the-middle enumeration for the declared maximum of 32 entries. Existing live readers and staged entries are never evictable. A valid candidate may be **rejected** when existing inventory is worth at least as much. Expiration/TTL is both a safety/pruning constraint and an input to the remaining-horizon forecast. If pure policy chooses an action that is infeasible at commit time, re-admit/replan or refuse; never evict blind.
 
 Test at least: two entries competing for a tight quota; expected-value ordering opposite LRU ordering; changed reuse demand; identical/tied values; zero reuse; expired but pinned; overflow; missing calibration; a protected in-flight reader; concurrent publisher conflict; restart with retained decision facts. An eviction audit must record alternatives and actual bytes freed without exposing another principal's keys.
 
@@ -250,8 +250,17 @@ original row/byte caps still govern native results.
 
 An exclusive root pin serializes all fills and removals, with eight concurrent
 shared readers. Storage reserves conservatively before staging, so a failed
-fill can follow successful individual quota evictions. Retention forecasts
-remain fixed for each publication horizon and expire before reassessment.
-Actual-byte accounting covers plain file lengths, with filesystem block overhead
-and native allocator state measured separately. A reader invokes original native
-preflight even on a hit. Gates G0–G21 and the economic criteria are unchanged.
+fill can follow successful individual quota evictions. The 2026-11-15 additive
+policy reconciliation separates current verified-hit value from new-write
+admission, linearly decays incumbent retained value over the remaining v1 TTL,
+and chooses the minimum-loss feasible victim subset with bounded
+meet-in-the-middle search at the 32-entry cap. It writes manifest v2 entries;
+existing v1 entries are refused until exact-key purge so their old forecast
+meaning is not silently changed. This is a stationary-use policy
+heuristic with conservative clock rollback handling. The exact-key operator
+purge is the only supported repair for a malformed committed entry; normal
+reads, fills and GC continue to fail closed. Actual-byte accounting covers
+plain file lengths, with filesystem block overhead and native allocator state
+measured separately. A reader invokes original native preflight even on a hit.
+The original G0–G21 criteria are unchanged; historical statuses are not current
+source reacceptance. See the additive review remediation report.

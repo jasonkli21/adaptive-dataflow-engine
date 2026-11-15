@@ -126,3 +126,14 @@ The acceptance envelope is finite local native inputs under one trusted UID
 and an honest filesystem. General DAG matching, nonlocal durability,
 dynamic demand learning and multi-principal shared service operation remain
 deferred.
+
+## Current-source qualification overlay — 2026-11-15
+
+This implementation report and its measurements describe the original source
+only. The independent review found policy and recovery gaps plus a hosted
+evidence-seal failure. Current status is
+`PARTIAL_PHASE26_POLICY_REMEDIATION_PENDING_REACCEPTANCE`; the additive fixes,
+executed local checks, and outstanding acceptance are recorded in the
+[independent-review remediation report](phase-26-independent-review-remediation-2026-11-15.md)
+and [support matrix](phase-26-support.json). Historical G0–G21 values and the
+detached archive above are not current-source acceptance.

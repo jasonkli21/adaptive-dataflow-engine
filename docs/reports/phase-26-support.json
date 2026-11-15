@@ -1,18 +1,19 @@
 {
   "version": 1,
   "phase": 26,
-  "status": "PARTIAL_PHASE26_HOSTED_CI_PENDING",
+  "status": "PARTIAL_PHASE26_POLICY_REMEDIATION_PENDING_REACCEPTANCE",
   "baseline": {
     "commit": "b364f63c27dc866a78116dea832419cd46d1ba46",
     "tree": "ab0e0fc401db93208f94015fb49eadd2e2751d8e"
   },
   "source": {
     "final_revision": "commit containing this matrix",
-    "workspace_input_count": 239,
-    "build_inputs_sha256": "266a68081bf7d9784232549ea5caf495cbae970277f4944dade798c79d0ff7ba",
+    "workspace_input_count": 240,
+    "build_inputs_sha256": "572e36fd9ff857dc16cc0eb32550ba213b196b3404e34bf2ff66570c9983983c",
     "cargo_lock_sha256": "b8708ecef9b5bb264421ed0eb433859ac475d4cb0379ed9fddee735007351593",
-    "macos_arm64_sha256": "e2cc1197af8758f2a00fb78bd628d035ad74fb40695c8f100c28065195e5d1a0",
-    "linux_arm64_sha256": "71bb69844c1e25f912b8ec8c56c276afba37ba6045873ceaef9003d7d49fcdf0"
+    "historical_build_inputs_sha256": "266a68081bf7d9784232549ea5caf495cbae970277f4944dade798c79d0ff7ba",
+    "historical_macos_arm64_sha256": "e2cc1197af8758f2a00fb78bd628d035ad74fb40695c8f100c28065195e5d1a0",
+    "historical_linux_arm64_sha256": "71bb69844c1e25f912b8ec8c56c276afba37ba6045873ceaef9003d7d49fcdf0"
   },
   "release": {
     "hosted_ci": {
@@ -27,6 +28,39 @@
     "evidence_archive": "docs/evidence/phase26/candidate-final.tar.gz",
     "evidence_sha256": "827a17cfb297aa9dce400700984edc53c3306b60aa52de776587b55593592148",
     "evidence_seal_sha256": "a03eb5fcb2e235a02aac30dd57672abefebc192664d2c1cbc3d082fe26a4301f"
+  },
+  "independent_review_remediation": {
+    "reviewed_commit": "9134b4745c33029e27421b4d0a4c57c604c50ef2",
+    "status": "IMPLEMENTED_LOCALLY_REACCEPTANCE_PENDING",
+    "historical_gates_and_economics_apply_to_reviewed_commit_only": true,
+    "report": "docs/reports/phase-26-independent-review-remediation-2026-11-15.md",
+    "findings": {
+      "F01": "IMPLEMENTED_TEST_PENDING",
+      "F02": "IMPLEMENTED_TEST_PENDING",
+      "F03": "IMPLEMENTED_TEST_PENDING",
+      "F04": "IMPLEMENTED_TEST_PENDING",
+      "F05": "FIX_IMPLEMENTED_HOSTED_REACCEPTANCE_PENDING"
+    },
+    "local_checks": {
+      "ade_cache_shared_v1_unit_tests": "PASS_6_TESTS",
+      "ade_cache_feature_off_check": "PASS",
+      "ade_cache_feature_on_all_targets_check": "PASS",
+      "ade_cache_clippy": "PASS",
+      "ade_cache_cli_purge_smoke": "PASS",
+      "evidence_symlink_unit_test": "PASS",
+      "phase26_subprocess_campaign": "NOT_RUN_DEPENDENCIES_UNAVAILABLE",
+      "workspace_fmt_check": "PASS",
+      "workspace_check_all_targets": "PASS",
+      "workspace_clippy_all_features": "PASS",
+      "workspace_all_features_tests": "BLOCKED_SANDBOX_LOOPBACK_PERMISSION_67_PASS_29_FAIL",
+      "exact_final_commit_hosted_ci": "NOT_RUN"
+    },
+    "historical_review_commit_ci": {
+      "rust": "FAIL_ARTIFACT_SYMLINK_DURING_SEAL",
+      "msrv": "PASS",
+      "phase22_interop": "PASS",
+      "phase23_local": "PASS"
+    }
   },
   "confirmed_economics": {
     "wall": {

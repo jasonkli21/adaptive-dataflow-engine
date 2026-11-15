@@ -8,7 +8,8 @@ mod store;
 
 pub use plan::Snapshot;
 pub use store::{
-    Audit, Inventory, Job, JobOutput, Limits, collect_expired, initialize, inspect, run,
+    Audit, Inventory, Job, JobOutput, Limits, collect_expired, initialize, inspect, purge_entry,
+    run,
 };
 
 use ade_exec::CancellationToken;

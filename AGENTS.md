@@ -554,3 +554,16 @@ Preserve earlier formats, qualifications and evidence. Phase26 is a local
 operator-owned cache with no remote, shared-UID isolation or general DAG
 coverage. Full acceptance requires the frozen economic criteria and the
 required hosted jobs on the exact implementation commit.
+
+## Phase26 independent-review remediation — 2026-11-15
+
+The user authorized remediation of the supplied independent review and one
+local commit. Preserve the original Phase26 report, candidate archive, and
+reviewed-source CI failure as historical evidence. F01–F05 remediation is
+recorded additively in
+`docs/reports/phase-26-independent-review-remediation-2026-11-15.md`; current
+status is `PARTIAL_PHASE26_POLICY_REMEDIATION_PENDING_REACCEPTANCE`. Keep
+defaults, PlanV1, cache key semantics, result formats, and Phase18–25
+qualifications unchanged. Do not claim complete reacceptance until focused
+cross-process/oracle, full workspace, detached evidence, economic, and exact
+final-commit hosted CI proofs pass. Do not infer Phase27 authorization.

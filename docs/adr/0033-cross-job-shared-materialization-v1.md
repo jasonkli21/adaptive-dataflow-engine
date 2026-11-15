@@ -18,7 +18,11 @@ Staging uses one private directory. Encoded writes stop before the reserved limi
 
 ## Policy and accounting
 
-The policy evaluates operator forecasts in integer microseconds, reuse milli-uses and survival basis points. Restoring includes original verification, decode and cache read. Admission debits write/sync, rent and invalidation. Retention excludes the sunk write cost. Forecasts are fixed to a publication horizon and may be reassessed by new admission after expiry. Greedy eviction orders eligible entries by remaining value and digest, and requires the candidate's net value to exceed the sum of displaced positive value. Forced uncalibrated entries are eligible only at expiry. An exclusive root pin removes reader races from the decision. Logical charges are actual file lengths plus a single configurable conservative stage reservation including 4 KiB for metadata. Block allocation, directory metadata and process RSS have separate accounting. Quota never authorizes a write past the reserved limit.
+The policy evaluates operator forecasts in integer microseconds, reuse milli-uses and survival basis points. Restoring includes original verification, decode and cache read. A current verified hit is considered from the immediate recompute-versus-restore estimate; it does not pay the already-sunk write cost. A miss is admitted only when its forecast value after write/sync, rent and invalidation is positive. New manifest v2 entries treat the supplied forecast as stationary over their original `created_ms..expires_ms` horizon: remaining value is the nonnegative retained value excluding write cost, multiplied by the remaining-TTL fraction with checked integer arithmetic. Existing v1 manifests are not silently reinterpreted: they fail closed until the operator purges them by exact key. A wall-clock rollback yields zero incumbent value; malformed or zero horizons refuse. This is an explicit heuristic forecast, not a demand-learning claim.
+
+For the root's maximum 32 entries, victim selection uses bounded meet-in-the-middle enumeration to choose the feasible subset with least displaced value under byte and entry constraints. Ties prefer less freed capacity and then deterministic key order. Expected-value admission requires candidate value to be strictly greater than displaced value. Forced uncalibrated entries are eligible only at expiry. An exclusive root pin removes reader races from the decision. Logical charges are actual file lengths plus a single configurable conservative stage reservation including 4 KiB for metadata. Block allocation, directory metadata and process RSS have separate accounting. Quota never authorizes a write past the reserved limit.
+
+An operator may explicitly purge one exact lowercase cache key with `purge_entry`. This takes the exclusive root lock, checks the private directory and exact regular single-link child inventory without trusting the manifest, then moves that exact directory through the bounded trash path and syncs the root. Normal reads, fills and collection remain fail closed on corruption; unknown children, links, unsafe roots or reader pins refuse purge. A killed purge leaves only the bounded trash directory for the normal checked janitor.
 
 ## Architecture impact
 
@@ -30,6 +34,4 @@ The policy evaluates operator forecasts in integer microseconds, reuse milli-use
 
 General DAG matching, remote or multi-user cache services, arrangements, dynamic demand learning, and distributed durability remain deferred.
 
-An uncalibrated or nonpositive adaptive forecast declines before cache lookup.
-That job executes the original plan without opening a root. Forced always and
-positive adaptive requests require an initialized private root.
+The additive 2026-11-15 remediation changes only the adaptive policy and operator recovery behavior above. PlanV1, key semantics, result formats and defaults are unchanged. Current-source reacceptance remains pending in `docs/reports/phase-26-independent-review-remediation-2026-11-15.md`.

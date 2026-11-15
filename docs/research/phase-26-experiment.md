@@ -60,3 +60,14 @@ the first materialization as well as all later opens, verification, reads,
 native suffixes and cleanup, with no claim of host/day repeatability.
 The committed [evidence bundle](../evidence/phase26/README.md) includes
 the unrounded timing samples and per-job native and byte observations.
+
+## 2026-11-15 policy review qualification
+
+The values above belong to the original Phase 26 source and fixed-horizon
+policy. They remain unchanged historical samples. The additive independent
+review remediation separates existing-hit value from candidate-write value,
+decays incumbent value across remaining TTL, and replaces greedy eviction with
+an exact bounded victim subset. Consequently the archived expected-value
+timings do not establish the economics of the remediated policy. A new matched
+source/executable campaign is required; no current-source timing or release
+claim is made. See the [review remediation report](../reports/phase-26-independent-review-remediation-2026-11-15.md).

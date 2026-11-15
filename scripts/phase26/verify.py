@@ -2,6 +2,7 @@
 import argparse
 from functools import lru_cache
 import hashlib
+from itertools import combinations
 import json
 from pathlib import Path
 import re
@@ -12,17 +13,10 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from fixtures import canonical, digest, write
+from evidence_inventory import file_inventory, sha
 
 SEMANTICS = "ade.shared-prefix.v1/scan-filter-lt-project-1/parquet-1"
 MODES = {"disabled", "always", "expected_value_v1"}
-
-
-def sha(path):
-    hasher = hashlib.sha256()
-    with path.open("rb") as file:
-        for block in iter(lambda: file.read(1 << 20), b""):
-            hasher.update(block)
-    return hasher.hexdigest()
 
 
 def load(path):
@@ -32,15 +26,6 @@ def load(path):
 def require(ok, reason):
     if not ok:
         raise ValueError(reason)
-
-
-def file_inventory(root):
-    result = {}
-    for path in sorted(root.rglob("*")):
-        require(not path.is_symlink(), "artifact symlink")
-        if path.is_file() and path != root / "seal.json":
-            result[str(path.relative_to(root))] = sha(path)
-    return result
 
 
 def seal(root):
@@ -145,30 +130,54 @@ def policy_oracle(decision, calibration, mode, reservation, limits, header_bytes
         expected, victims = "missing_calibration", []
     elif mode == "expected_value_v1" and score <= 0:
         expected, victims = "nonpositive_value", []
-    else:
-        expected, victims = "insufficient_capacity", []
-        remaining = {e["key"]: e for e in entries}
-        eligible = [e for e in entries if e["expired"] or
-                    (mode == "expected_value_v1" and e["remaining_us"] is not None)]
-        def penalty(e):
-            return 0 if e["expired"] else max(0, e["remaining_us"])
+    elif entries and "observed_ms" not in entries[0]:
+        # Read-only compatibility for the immutable candidate archive, whose
+        # original selector was greedy and whose receipts predate residual TTL.
+        remaining = {entry["key"]: entry for entry in entries}
+        eligible = [entry for entry in entries if entry["expired"] or
+                    (mode == "expected_value_v1" and entry["remaining_us"] is not None)]
         paid = 0
-        for alternative in [*sorted(eligible, key=lambda e: (penalty(e), e["key"])), None]:
-            charge = sum(e["bytes"] for e in remaining.values()) + reservation + header_bytes
+        victims = []
+        expected = "insufficient_capacity"
+        for alternative in [*sorted(eligible, key=lambda e: (
+                0 if e["expired"] else max(0, e["remaining_us"] or 0), e["key"])), None]:
+            charge = sum(entry["bytes"] for entry in remaining.values()) + reservation + header_bytes
             if charge <= limits["quota_bytes"] and len(remaining) < limits["max_entries"]:
                 expected = "admit"
                 break
             if alternative is None:
                 break
-            paid += penalty(alternative)
+            paid += 0 if alternative["expired"] else max(0, alternative["remaining_us"] or 0)
             if mode == "expected_value_v1" and paid >= score:
                 expected = "protected_value"
                 break
-            key = alternative["key"]
-            del remaining[key]
-            victims.append(key)
+            del remaining[alternative["key"]]
+            victims.append(alternative["key"])
         if expected != "admit":
             victims = []
+    else:
+        eligible = [e for e in entries if e["expired"] or
+                    (mode == "expected_value_v1" and e["remaining_us"] is not None)]
+        byte_need = max(0, sum(e["bytes"] for e in entries) + reservation + header_bytes
+                        - limits["quota_bytes"])
+        count_need = max(0, len(entries) + 1 - limits["max_entries"])
+        options = []
+        for size in range(count_need, len(eligible) + 1):
+            for subset in combinations(eligible, size):
+                freed = sum(e["bytes"] for e in subset)
+                if freed < byte_need:
+                    continue
+                loss = sum(0 if e["expired"] else max(0, e["remaining_us"] or 0) for e in subset)
+                keys = sorted(e["key"] for e in subset)
+                options.append((loss, freed, keys))
+        if not options:
+            expected, victims = "insufficient_capacity", []
+        else:
+            loss, _, keys = min(options)
+            if mode == "expected_value_v1" and loss >= score:
+                expected, victims = "protected_value", []
+            else:
+                expected, victims = "admit", keys
     require(decision["reason"] == expected and decision["victims"] == victims, "policy selection")
 
 
@@ -301,8 +310,21 @@ def verify_jobs(root, events):
             for entry in decision["alternatives"]:
                 prior = fills.get((cli_arg(e, "--cache"), entry["key"]))
                 require(prior is not None, "unobserved retained entry")
-                require(entry["remaining_us"] == value(prior["audit"]["calibration"], False)
-                        and entry["bytes"] > prior["audit"]["payload_bytes"], "retention input binding")
+                calibration_ = prior["audit"]["calibration"]
+                if calibration_ is None:
+                    require(entry["remaining_us"] is None, "uncalibrated retention input")
+                elif "observed_ms" in entry:
+                    horizon = entry["expires_ms"] - entry["created_ms"]
+                    observed = entry["observed_ms"]
+                    remaining_ms = (entry["expires_ms"] - observed
+                                    if entry["created_ms"] <= observed < entry["expires_ms"] else 0)
+                    expected_value = max(0, value(calibration_, False)) * remaining_ms // horizon
+                    require(entry["remaining_us"] == expected_value, "residual retention input")
+                else:
+                    require(entry["remaining_us"] == value(calibration_, False),
+                            "historical full-horizon retention input")
+                require(
+                        entry["bytes"] > prior["audit"]["payload_bytes"], "retention input binding")
             limits = configs.get(cli_arg(e, "--cache"), dict(quota_bytes=0, max_entries=0))
             policy_oracle(decision, calibration, mode, int(cli_arg(e, "--stage-bytes")), limits,
                           len(canonical(dict(version=1, limits=limits))))
@@ -340,6 +362,23 @@ def scenarios(root, events, jobs):
             jobs["fill-alpha"]["audit"]["original_plan"] != jobs["hit-beta"]["audit"]["original_plan"] and
             jobs["fill-alpha"]["audit"]["prefix_key"] == jobs["hit-beta"]["audit"]["prefix_key"],
             "independent cross-job hit")
+    require(jobs["f01-profitable-hit-negative-write"]["audit"]["actions"] == ["hit"]
+            and not jobs["f01-profitable-hit-negative-write"]["audit"]["prefix"],
+            "existing hit incorrectly charged candidate write")
+    require(jobs["f01-empty-negative-write"]["audit"]["actions"] == ["skip"]
+            and jobs["f01-slow-restore"]["audit"]["actions"] == ["skip"],
+            "miss admission or uneconomic hit policy")
+    require(jobs["f04-unrelated-hit"]["audit"]["actions"] == ["hit"]
+            and events["f04-new-fill-blocked"]["exit"] == 1
+            and events["f04-gc-blocked"]["exit"] == 1
+            and events["f04-purge-corrupt-key"]["exit"] == 0
+            and jobs["f04-fill-after-purge"]["audit"]["actions"] == ["miss", "publish"],
+            "explicit corrupt-entry recovery")
+    for name, error in (("f04-invalid-purge-key", "exact lowercase cache key"),
+                        ("f04-symlink-purge", "access refused"),
+                        ("f04-purge-pinned-refused", "deadline")):
+        require(events[name]["exit"] == 1 and error in events[name]["stderr"],
+                f"safe purge refusal: {name}")
     for point in ("data_written", "data_synced", "manifest_synced", "before_suffix", "entry_selected", "entry_synced"):
         kill = events["kill-" + point]
         restore = events["reopen-" + point]

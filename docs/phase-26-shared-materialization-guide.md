@@ -66,9 +66,19 @@ cache lookup. `always` retains a verified prefix when capacity permits.
 `uses_milli`, `survival_bps`, `recompute_us`, `restore_us`, `write_us`,
 `hold_us` and `invalidation_us`. Restore estimates include original-source
 revalidation. Hold and invalidation estimates cover the declared retention
-horizon. Use `--ttl-ms` to set the horizon. Missing and nonpositive forecasts
-skip before opening the cache root. An admission may remove lower-value
-entries before writing. A failed fill can leave completed evictions in place.
+horizon. Use `--ttl-ms` to set the horizon. Expected-value execution verifies
+the original source before opening the cache root. A verified existing entry is
+considered using immediate recompute-versus-restore savings, excluding the
+already-paid write cost. A miss is admitted separately using the forecast after
+write, hold and invalidation costs. Missing forecasts or a restore estimate at
+least as large as recompute skip without opening the root. Incumbent value is
+reduced linearly by the remaining fraction of its original TTL; this assumes
+stationary expected use and does not learn demand. Eviction chooses the
+least-value feasible set under both quota and entry-count limits. Ties preserve
+incumbents. A failed fill can leave completed evictions in place.
+The residual-horizon policy writes manifest v2 entries. Pre-remediation v1
+entries are deliberately refused until explicitly purged by exact key; the
+updated policy does not silently reinterpret their forecast fields.
 
 Use an absolute canonical path and a dedicated effective-UID-owned 0700 cache
 directory on a local filesystem that supports no-replace rename and directory
@@ -84,8 +94,14 @@ contract.
 Run `inspect` after a failure to see approximate inventory by charged file
 length, then `gc` to remove an abandoned stage or trash directory and expired
 entries. These operations use the same pins as jobs. Eight reads may share a
-root pin. An exclusive writer/GC waits no more than two seconds or the request
-deadline. Restarting a process releases its locks. A corrupt entry refuses
-reuse and should be retired under operator control with active jobs stopped.
-The cache requires an honest filesystem and makes a process-crash recovery
-claim. User-visible output is emitted only after native and provenance checks.
+root pin. An exclusive writer/GC/purge waits no more than two seconds or the
+request deadline. Restarting a process releases its locks. A corrupt committed
+entry keeps inventory, new fills and GC fail-closed. After stopping jobs that
+could be affected, use `purge --cache <root> --key <exact-lowercase-key>` to
+remove only that entry. Purge checks the private directory and exact regular
+file inventory without trusting the manifest, takes the exclusive lock, then
+renames through the bounded trash directory and syncs the root. Invalid keys,
+symlinks, unexpected children and active readers are refused; unknown layouts
+require offline operator repair. The cache requires an honest filesystem and
+makes a process-crash recovery claim. User-visible output is emitted only after
+native and provenance checks.

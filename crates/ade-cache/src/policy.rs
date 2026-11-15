@@ -70,6 +70,35 @@ impl Calibration {
     }
 }
 
+pub(crate) fn hit_is_worthwhile(calibration: Option<Calibration>) -> bool {
+    calibration.is_some_and(|estimate| estimate.recompute_us > estimate.restore_us)
+}
+
+/// Remaining stationary-use value over the unexpired part of a v1 forecast horizon.
+/// A clock rollback cannot increase value and is treated as zero remaining value.
+pub(crate) fn remaining_value(
+    calibration: Calibration,
+    now_ms: u64,
+    created_ms: u64,
+    expires_ms: u64,
+) -> Result<i64> {
+    let horizon = expires_ms
+        .checked_sub(created_ms)
+        .filter(|horizon| *horizon > 0)
+        .ok_or(Error::Integrity("invalid forecast horizon"))?;
+    if now_ms < created_ms || now_ms >= expires_ms {
+        return Ok(0);
+    }
+    let full_value =
+        u128::try_from(calibration.value(false)?.max(0)).map_err(|_| Error::Capacity)?;
+    let remaining_ms = u128::from(expires_ms - now_ms);
+    let scaled = full_value
+        .checked_mul(remaining_ms)
+        .ok_or(Error::Capacity)?
+        / u128::from(horizon);
+    i64::try_from(scaled).map_err(|_| Error::Capacity)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Alternative {
     pub(crate) key: String,
@@ -78,6 +107,7 @@ pub(crate) struct Alternative {
     pub(crate) expired: bool,
     pub(crate) created_ms: u64,
     pub(crate) expires_ms: u64,
+    pub(crate) observed_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,21 +152,19 @@ pub(crate) fn select(
         return Ok(decision);
     }
 
-    let mut used = decision
+    let used = decision
         .alternatives
         .iter()
         .try_fold(0u64, |a, e| a.checked_add(e.bytes))
         .ok_or(Error::Capacity)?;
-    let mut count = decision.alternatives.len();
-    let mut displaced = 0i64;
-    let fits = |bytes: u64, entries: usize| {
-        bytes
-            .checked_add(reserved)
-            .is_some_and(|sum| sum <= available)
-            && entries < max_entries
-    };
+    let count = decision.alternatives.len();
+    let byte_need = used
+        .checked_add(reserved)
+        .ok_or(Error::Capacity)?
+        .saturating_sub(available);
+    let count_need = count.saturating_add(1).saturating_sub(max_entries);
     // A forced incumbent with no calibration can only be evicted at expiry.
-    let mut eligible: Vec<_> = decision
+    let eligible: Vec<_> = decision
         .alternatives
         .iter()
         .filter_map(|entry| {
@@ -151,27 +179,118 @@ pub(crate) fn select(
             }
         })
         .collect();
-    eligible.sort_unstable();
-    for (value, key, bytes) in eligible {
-        if fits(used, count) {
-            break;
-        }
-        displaced = displaced.checked_add(value).ok_or(Error::Capacity)?;
-        if mode == Mode::ExpectedValueV1 && decision.candidate_us.is_some_and(|c| displaced >= c) {
+    let selected = least_loss_subset(&eligible, byte_need, count_need)?;
+    if let Some(selected) = selected {
+        let displaced = selected.iter().try_fold(0i64, |sum, index| {
+            sum.checked_add(eligible[*index].0).ok_or(Error::Capacity)
+        })?;
+        if mode == Mode::ExpectedValueV1
+            && decision
+                .candidate_us
+                .is_some_and(|candidate| displaced >= candidate)
+        {
             decision.reason = "protected_value";
-            break;
+        } else {
+            decision.victims = selected
+                .iter()
+                .map(|index| eligible[*index].1.clone())
+                .collect();
+            decision.victims.sort();
         }
-        decision.victims.push(key.clone());
-        used = used.checked_sub(bytes).ok_or(Error::Capacity)?;
-        count -= 1;
-    }
-    if !fits(used, count) && decision.admit() {
+    } else {
         decision.reason = "insufficient_capacity";
     }
     if !decision.admit() {
         decision.victims.clear();
     }
     Ok(decision)
+}
+
+/// Exact bounded meet-in-the-middle selection for the root's <=32 entries.
+/// Select the least retained value that frees both required bytes and slots.
+fn least_loss_subset(
+    entries: &[(i64, &String, u64)],
+    byte_need: u64,
+    count_need: usize,
+) -> Result<Option<Vec<usize>>> {
+    if byte_need == 0 && count_need == 0 {
+        return Ok(Some(Vec::new()));
+    }
+    if entries.len() > 32 {
+        return Err(Error::Capacity);
+    }
+    let mid = entries.len() / 2;
+    let left = subsets(&entries[..mid])?;
+    let right = subsets(&entries[mid..])?;
+    let mut by_count: Vec<Vec<Subset>> = (0..=entries.len() - mid).map(|_| Vec::new()).collect();
+    for item in right {
+        by_count[item.2 as usize].push(item);
+    }
+    // For each exact count, order by freed bytes and keep suffix minima by loss.
+    let mut indexed = Vec::with_capacity(by_count.len());
+    for group in &mut by_count {
+        group.sort_unstable_by_key(|item| item.0);
+        let mut minima = vec![0usize; group.len()];
+        let mut best = None;
+        for i in (0..group.len()).rev() {
+            if best.is_none_or(|j: usize| {
+                (group[i].1, group[i].0, group[i].3) < (group[j].1, group[j].0, group[j].3)
+            }) {
+                best = Some(i);
+            }
+            minima[i] = best.expect("nonempty suffix");
+        }
+        indexed.push((group, minima));
+    }
+    let mut best: Option<(i64, u64, Vec<usize>)> = None;
+    for l in left {
+        let needed = byte_need.saturating_sub(l.0);
+        let need_count = count_need.saturating_sub(l.2 as usize);
+        for (group, minima) in indexed.iter().skip(need_count) {
+            let position = group.partition_point(|item| item.0 < needed);
+            if position >= group.len() {
+                continue;
+            }
+            let r = &group[minima[position]];
+            let loss = l.1.checked_add(r.1).ok_or(Error::Capacity)?;
+            let bytes = l.0.checked_add(r.0).ok_or(Error::Capacity)?;
+            let mut ids = Vec::new();
+            for bit in 0..mid {
+                if l.3 & (1 << bit) != 0 {
+                    ids.push(bit);
+                }
+            }
+            for bit in 0..(entries.len() - mid) {
+                if r.3 & (1 << bit) != 0 {
+                    ids.push(mid + bit);
+                }
+            }
+            let candidate = (loss, bytes, ids);
+            if best.as_ref().is_none_or(|old| candidate < *old) {
+                best = Some(candidate);
+            }
+        }
+    }
+    Ok(best.map(|(_, _, ids)| ids))
+}
+
+#[derive(Clone, Copy)]
+struct Subset(u64, i64, u32, u32);
+
+fn subsets(entries: &[(i64, &String, u64)]) -> Result<Vec<Subset>> {
+    let mut result = vec![Subset(0, 0, 0, 0)];
+    for (index, (value, _, bytes)) in entries.iter().enumerate() {
+        let current = result.clone();
+        for Subset(total_bytes, total_value, count, mask) in current {
+            result.push(Subset(
+                total_bytes.checked_add(*bytes).ok_or(Error::Capacity)?,
+                total_value.checked_add(*value).ok_or(Error::Capacity)?,
+                count.checked_add(1).ok_or(Error::Capacity)?,
+                mask | (1 << index),
+            ));
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -215,6 +334,7 @@ mod tests {
             expired: false,
             created_ms: 0,
             expires_ms: 10,
+            observed_ms: 0,
         };
         let decision = select(
             Mode::ExpectedValueV1,
@@ -229,5 +349,170 @@ mod tests {
         assert_eq!(decision.victims, Vec::<String>::new());
         let decision = select(Mode::ExpectedValueV1, None, 10, 100, 1, vec![]).unwrap();
         assert_eq!(decision.reason, "missing_calibration");
+    }
+
+    fn alt(key: &str, bytes: u64, value: i64) -> Alternative {
+        Alternative {
+            key: key.into(),
+            bytes,
+            remaining_us: Some(value),
+            expired: false,
+            created_ms: 0,
+            expires_ms: 100,
+            observed_ms: 0,
+        }
+    }
+
+    #[test]
+    fn remaining_value_decays_and_clock_anomalies_are_conservative() {
+        let c = Calibration {
+            uses_milli: 1000,
+            survival_bps: 10_000,
+            recompute_us: 100,
+            restore_us: 0,
+            write_us: 0,
+            hold_us: 0,
+            invalidation_us: 0,
+        };
+        assert_eq!(remaining_value(c, 0, 0, 100).unwrap(), 100);
+        assert_eq!(remaining_value(c, 50, 0, 100).unwrap(), 50);
+        assert_eq!(remaining_value(c, 99, 0, 100).unwrap(), 1);
+        assert_eq!(remaining_value(c, 100, 0, 100).unwrap(), 0);
+        assert_eq!(remaining_value(c, 0, 10, 100).unwrap(), 0);
+        assert!(remaining_value(c, 0, 10, 10).is_err());
+    }
+
+    #[test]
+    fn an_existing_hit_does_not_pay_the_sunk_write_cost() {
+        let forecast = Calibration {
+            uses_milli: 1000,
+            survival_bps: 10_000,
+            recompute_us: 100_000,
+            restore_us: 20_000,
+            write_us: 100_000,
+            hold_us: 0,
+            invalidation_us: 0,
+        };
+        assert_eq!(forecast.value(true).unwrap(), -20_000);
+        assert_eq!(forecast.value(false).unwrap(), 80_000);
+        assert!(hit_is_worthwhile(Some(forecast)));
+        assert!(!hit_is_worthwhile(Some(Calibration {
+            recompute_us: 10,
+            restore_us: 20,
+            ..forecast
+        })));
+        let miss = select(Mode::ExpectedValueV1, Some(forecast), 10, 100, 2, vec![]).unwrap();
+        assert_eq!(miss.reason, "nonpositive_value");
+    }
+
+    #[test]
+    fn exact_subset_finds_profitable_large_victim() {
+        let entries = vec![alt("a", 60, 50), alt("b", 20, 30), alt("c", 20, 31)];
+        let result = select(
+            Mode::ExpectedValueV1,
+            Some(Calibration {
+                uses_milli: 1000,
+                survival_bps: 10_000,
+                recompute_us: 55,
+                restore_us: 0,
+                write_us: 0,
+                hold_us: 0,
+                invalidation_us: 0,
+            }),
+            40,
+            100,
+            4,
+            entries,
+        )
+        .unwrap();
+        assert_eq!(result.reason, "admit");
+        assert_eq!(result.victims, ["a"]);
+    }
+
+    #[test]
+    fn exact_subset_keeps_incumbents_on_equal_value_and_handles_entry_cap() {
+        let equal = select(
+            Mode::ExpectedValueV1,
+            Some(Calibration {
+                uses_milli: 1000,
+                survival_bps: 10_000,
+                recompute_us: 50,
+                restore_us: 0,
+                write_us: 0,
+                hold_us: 0,
+                invalidation_us: 0,
+            }),
+            40,
+            90,
+            4,
+            vec![alt("a", 60, 50)],
+        )
+        .unwrap();
+        assert_eq!(equal.reason, "protected_value");
+        assert_eq!(equal.victims, Vec::<String>::new());
+        let slot = select(
+            Mode::ExpectedValueV1,
+            Some(Calibration {
+                uses_milli: 1000,
+                survival_bps: 10_000,
+                recompute_us: 100,
+                restore_us: 0,
+                write_us: 0,
+                hold_us: 0,
+                invalidation_us: 0,
+            }),
+            1,
+            100,
+            2,
+            vec![alt("a", 10, 100), alt("b", 10, 20)],
+        )
+        .unwrap();
+        assert_eq!(slot.victims, ["b"]);
+    }
+
+    #[test]
+    fn exact_subset_is_bounded_at_the_root_entry_cap_and_checks_capacity_overflow() {
+        let entries: Vec<_> = (0..32)
+            .map(|index| alt(&format!("{index:02}"), 1, i64::from(index + 1)))
+            .collect();
+        let selected = select(
+            Mode::ExpectedValueV1,
+            Some(Calibration {
+                uses_milli: 1000,
+                survival_bps: 10_000,
+                recompute_us: 100_000,
+                restore_us: 0,
+                write_us: 0,
+                hold_us: 0,
+                invalidation_us: 0,
+            }),
+            1,
+            22,
+            32,
+            entries,
+        )
+        .unwrap();
+        assert_eq!(
+            selected.victims,
+            (0..11).map(|i| format!("{i:02}")).collect::<Vec<_>>()
+        );
+
+        let overflow = select(
+            Mode::ExpectedValueV1,
+            Some(Calibration {
+                uses_milli: 1000,
+                survival_bps: 10_000,
+                recompute_us: 100,
+                restore_us: 0,
+                write_us: 0,
+                hold_us: 0,
+                invalidation_us: 0,
+            }),
+            u64::MAX,
+            u64::MAX,
+            2,
+            vec![alt("huge", u64::MAX, 1)],
+        );
+        assert!(overflow.is_err());
     }
 }

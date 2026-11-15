@@ -1,0 +1,71 @@
+//! Release mask and full-filter comparison on fixed, offset nullable batches.
+use arrow::{
+    array::{Array, BooleanArray, Int64Array, UInt64Array},
+    compute::{filter_record_batch, kernels::cmp},
+    record_batch::RecordBatch,
+};
+use std::{hint::black_box, sync::Arc, time::Instant};
+
+fn main() {
+    let args: Vec<_> = std::env::args().collect();
+    let [_, mode, input_rows, null_pct, threshold, layout] = args.as_slice() else {
+        panic!("usage: phase25-study scalar|arrow ROWS NULL_PCT THRESHOLD uniform|skew");
+    };
+    let rows: usize = input_rows.parse().unwrap();
+    let null_pct: u64 = null_pct.parse().unwrap();
+    let threshold: u64 = threshold.parse().unwrap();
+    let mut state = 1307u64;
+    let input: UInt64Array = (0..rows + 3)
+        .map(|row| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let random = state >> 32;
+            let sample = if layout == "skew" && row % 5 != 0 {
+                3
+            } else {
+                random % 100
+            };
+            (random / 100 % 100 >= null_pct).then_some(sample)
+        })
+        .collect();
+    let row_id = Int64Array::from_iter_values(0..i64::try_from(rows + 3).unwrap());
+    let batch = RecordBatch::try_from_iter([
+        ("predicate", Arc::new(input) as _),
+        ("row_id", Arc::new(row_id) as _),
+    ])
+    .unwrap()
+    .slice(3, rows);
+    let values = batch.column(0).as_any().downcast_ref::<UInt64Array>().unwrap();
+    let scalar = UInt64Array::new_scalar(threshold);
+    let mask = || match mode.as_str() {
+        "scalar" => BooleanArray::from_iter(
+            (0..values.len()).map(|i| Some(!values.is_null(i) && values.value(i) < threshold)),
+        ),
+        "arrow" => cmp::lt(black_box(values), black_box(&scalar)).unwrap(),
+        _ => panic!("unknown study arm"),
+    };
+    let expected: Vec<_> = values
+        .iter()
+        .enumerate()
+        .filter_map(|(i, value)| value.filter(|v| *v < threshold).map(|_| i64::try_from(i + 3).unwrap()))
+        .collect();
+    let selected = filter_record_batch(&batch, &mask()).unwrap();
+    let ids = selected.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(ids.values().as_ref(), expected);
+    let iterations = (2_000_000 / rows).max(50);
+    let measure = |full: bool| {
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let selection = black_box(mask());
+            if full {
+                black_box(filter_record_batch(black_box(&batch), &selection).unwrap());
+            }
+        }
+        start.elapsed().as_nanos()
+    };
+    let mask_ns = measure(false);
+    let filter_ns = measure(true);
+    println!(
+        "{{\"iterations\":{iterations},\"output_rows\":{},\"mask_ns\":{mask_ns},\"filter_ns\":{filter_ns}}}",
+        ids.len()
+    );
+}

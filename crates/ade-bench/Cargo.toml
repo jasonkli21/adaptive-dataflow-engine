@@ -11,6 +11,7 @@ workspace = true
 
 [features]
 default = []
+filter-kernels-v1 = ["ade-exec/filter-kernels-v1"]
 remote-s3 = ["ade-distributed/remote-s3"]
 
 [dependencies]

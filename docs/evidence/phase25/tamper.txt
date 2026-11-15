@@ -1,0 +1,16 @@
+binary: pinned original executable mismatch
+source: pinned runtime source or criteria changed
+dataset: fixture external SHA-256 inventory
+stale: runner build metadata or stale source
+threshold: threshold/spec differs from frozen criteria
+case-omitted: missing, duplicate or relabelled process case
+case-duplicated: missing, duplicate or relabelled process case
+false-forced-isa: negative stage did not refuse
+forged-output: result differs from direct Parquet oracle
+forged-request: child requested kernel provenance
+forged-query-time: inconsistent query/process timings
+forged-kernel: incorrect effective kernel
+removed-fallback: incorrect kernel decision or fallback
+sample: profile calibration source
+cost: profile costs disagree with raw observations
+confidence: prediction or confidence disagrees with raw observations

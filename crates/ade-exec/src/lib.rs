@@ -2,6 +2,8 @@
 #[cfg(test)]
 use arrow::array::UInt64Array;
 mod aggregate;
+#[cfg(feature = "filter-kernels-v1")]
+pub mod filter_kernel;
 mod ipc_scan;
 #[cfg(feature = "cyclic-v1")]
 pub mod iterative;
@@ -80,6 +82,12 @@ pub enum Error {
     BatchMap(&'static str),
     #[error("execution cancelled")]
     Cancelled,
+    #[cfg(feature = "filter-kernels-v1")]
+    #[error("unsupported native filter ISA: {0}")]
+    UnsupportedFilterIsa(filter_kernel::Isa),
+    #[cfg(feature = "filter-kernels-v1")]
+    #[error("native filter input exceeds the kernel batch limit")]
+    FilterInputLimit,
 }
 /// Pull boundary for live external input. Implementations must bound retention and
 /// check the supplied token while waiting. Shutdown must release input ownership.
@@ -182,6 +190,8 @@ pub struct ExecContext {
     memory: MemoryManager,
     spill: SpillManager,
     external: Option<Box<dyn BatchSource>>,
+    #[cfg(feature = "filter-kernels-v1")]
+    filter: Option<filter_kernel::Filter>,
 }
 /// Finite managed budget, not an allocator or RSS cap.
 #[derive(Debug, Clone)]
@@ -237,6 +247,8 @@ impl ExecContext {
                 SpillManager::new(parent)?
             },
             external: None,
+            #[cfg(feature = "filter-kernels-v1")]
+            filter: None,
             config,
             cancellation,
             metrics: ExecutionMetrics::default(),
@@ -722,7 +734,22 @@ impl Node {
                 };
                 cx.input(self.id, &batch);
                 let start = Instant::now();
-                let result = stateless::filter_u64_lt(&batch, *column, *threshold)?;
+                let legacy = || stateless::filter_u64_lt(&batch, *column, *threshold);
+                #[cfg(feature = "filter-kernels-v1")]
+                let result = if let Some(filter) = &mut cx.filter {
+                    filter.apply(
+                        &batch,
+                        *column,
+                        *threshold,
+                        &cx.memory,
+                        self.id,
+                        &cx.cancellation,
+                    )?
+                } else {
+                    legacy()?
+                };
+                #[cfg(not(feature = "filter-kernels-v1"))]
+                let result = legacy()?;
                 cx.work(self.id, start);
                 Some(result)
             }
@@ -940,10 +967,56 @@ fn execute_in_bounded(
 ) -> Result<ExecutionOutput> {
     let lazy_spill = !config.spill_enabled;
     let mut cx = ExecContext::new_with_spill(config, cancellation, parent, lazy_spill)?;
+    let (batches, retained) = collect_output(plan, &mut cx, bounds)?;
+    cx.spill.close()?;
+    Ok(ExecutionOutput {
+        batches,
+        metrics: cx.metrics,
+        _retained: retained,
+    })
+}
+
+/// Bounded local execution with explicit `UInt64` kernel selection.
+/// # Errors
+/// Refuses unavailable forced ISA before source access and propagates plan,
+/// cancellation, I/O, batch-cap and managed resource failures.
+#[cfg(feature = "filter-kernels-v1")]
+pub fn execute_with_filter_kernel(
+    plan: LocalPlan,
+    config: ExecutionConfig,
+    cancellation: CancellationToken,
+    request: filter_kernel::Request,
+) -> Result<(ExecutionOutput, filter_kernel::Audit)> {
+    let filter = filter_kernel::Filter::new(request)?;
+    let lazy_spill = !config.spill_enabled;
+    let mut cx = ExecContext::new_with_spill(config, cancellation, None, lazy_spill)?;
+    cx.filter = Some(filter);
+    let (batches, retained) = collect_output(plan, &mut cx, None)?;
+    cx.spill.close()?;
+    let audit = cx
+        .filter
+        .take()
+        .ok_or_else(|| Error::Invalid("missing installed filter audit".into()))?
+        .audit;
+    Ok((
+        ExecutionOutput {
+            batches,
+            metrics: cx.metrics,
+            _retained: retained,
+        },
+        audit,
+    ))
+}
+
+fn collect_output(
+    plan: LocalPlan,
+    cx: &mut ExecContext,
+    bounds: Option<(u64, u64)>,
+) -> Result<(Vec<RecordBatch>, Reservation)> {
     let (mut rows, mut bytes) = (0u64, 0u64);
     let mut batches = Vec::new();
     let mut retained = cx.memory.reservation(OperatorId(u32::MAX));
-    drive(plan, &mut cx, |batch, cx| {
+    drive(plan, cx, |batch, cx| {
         rows = rows
             .checked_add(batch.num_rows() as u64)
             .ok_or(Error::Overflow("output rows"))?;
@@ -968,12 +1041,7 @@ fn execute_in_bounded(
         batches.push(batch);
         Ok(())
     })?;
-    cx.spill.close()?;
-    Ok(ExecutionOutput {
-        batches,
-        metrics: cx.metrics,
-        _retained: retained,
-    })
+    Ok((batches, retained))
 }
 
 /// A suspended original aggregate task with one input batch already ingested.

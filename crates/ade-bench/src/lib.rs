@@ -8,6 +8,8 @@ pub mod dataset;
 pub mod engine;
 pub mod environment;
 pub mod join_dataset;
+#[cfg(feature = "filter-kernels-v1")]
+mod local_filter;
 pub mod result;
 pub mod runner;
 pub mod spec;

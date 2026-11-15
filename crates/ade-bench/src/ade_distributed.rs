@@ -26,6 +26,8 @@ impl AdeDistributedConfig {
     #[must_use]
     pub fn info(&self) -> EngineInfo {
         let local = crate::ade_local::AdeLocalConfig {
+            #[cfg(feature = "filter-kernels-v1")]
+            filter: crate::local_filter::Options::default(),
             batch_size: self.task.batch_size,
             execution: self.task.execution(),
         };

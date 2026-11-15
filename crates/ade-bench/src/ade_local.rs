@@ -15,12 +15,15 @@ use std::{collections::BTreeMap, path::Path};
 pub struct AdeLocalConfig {
     pub batch_size: usize,
     pub execution: ExecutionConfig,
+    #[cfg(feature = "filter-kernels-v1")]
+    pub(crate) filter: crate::local_filter::Options,
 }
 impl AdeLocalConfig {
     /// Describes the effective local configuration without executing a plan.
     #[must_use]
     pub fn info(&self) -> EngineInfo {
-        EngineInfo {
+        #[allow(unused_mut, reason = "Only the filter feature adds metadata.")]
+        let mut info = EngineInfo {
             name: "ade-local".into(),
             version: env!("CARGO_PKG_VERSION").into(),
             configuration: BTreeMap::from([
@@ -38,13 +41,25 @@ impl AdeLocalConfig {
                     self.execution.prefetch_batches.to_string(),
                 ),
             ]),
+        };
+        #[cfg(feature = "filter-kernels-v1")]
+        if let Some(label) = self.filter.label() {
+            info.configuration
+                .insert("kernel_policy".into(), label.into());
+            if let Some(pin) = &self.filter.digest {
+                info.configuration
+                    .insert("kernel_profile_blake3".into(), pin.clone());
+            }
         }
+        info
     }
 }
 /// Prepared provisional ADE local plan.
 pub struct AdeLocalEngine {
     plan: LocalPlan,
     config: AdeLocalConfig,
+    #[cfg(feature = "filter-kernels-v1")]
+    filter: Option<ade_exec::filter_kernel::Request>,
 }
 #[allow(
     clippy::unused_async_trait_impl,
@@ -56,6 +71,8 @@ impl BenchmarkEngine for AdeLocalEngine {
         let mut config = AdeLocalConfig {
             batch_size: 8192,
             execution: ExecutionConfig::default(),
+            #[cfg(feature = "filter-kernels-v1")]
+            filter: crate::local_filter::Options::default(),
         };
         let mut seen = std::collections::BTreeSet::new();
         for option in options {
@@ -87,6 +104,10 @@ impl BenchmarkEngine for AdeLocalEngine {
                         .parse()
                         .map_err(|_| Error::Invalid("invalid prefetch_batches".into()))?;
                 }
+                #[cfg(feature = "filter-kernels-v1")]
+                "kernel_policy" | "kernel_profile" | "kernel_profile_blake3" => {
+                    config.filter.set(key, value)?;
+                }
                 _ => {
                     return Err(Error::Invalid(format!(
                         "unsupported ade-local option: {key}"
@@ -96,6 +117,15 @@ impl BenchmarkEngine for AdeLocalEngine {
         }
         require(config.batch_size > 0, "batch_size must be positive")?;
         config.execution.validate()?;
+        #[cfg(feature = "filter-kernels-v1")]
+        {
+            config.filter.validate()?;
+            require(
+                config.filter.label().is_none()
+                    || config.batch_size <= ade_exec::filter_kernel::MAX_ROWS,
+                "batch_size exceeds native filter batch limit",
+            )?;
+        }
         Ok(config)
     }
     async fn prepare(
@@ -115,6 +145,17 @@ impl BenchmarkEngine for AdeLocalEngine {
             "ade-local requires synthetic-events-v1",
         )?;
         require(config.batch_size > 0, "batch_size must be positive")?;
+        #[cfg(feature = "filter-kernels-v1")]
+        let filter = {
+            require(
+                config.filter.label().is_none()
+                    || matches!(case.query, Query::ScanFilterProject { .. }),
+                "kernel_policy requires scan_filter_project",
+            )?;
+            config
+                .filter
+                .prepare(root, manifest, case, config.batch_size, &config.execution)
+        };
         let files = manifest
             .files
             .iter()
@@ -164,14 +205,43 @@ impl BenchmarkEngine for AdeLocalEngine {
         Ok(Self {
             plan,
             config: config.clone(),
+            #[cfg(feature = "filter-kernels-v1")]
+            filter,
         })
     }
     async fn execute(&self) -> Result<Vec<RecordBatch>> {
-        let output = ade_exec::execute_with_config(
-            self.plan.clone(),
-            self.config.execution.clone(),
-            CancellationToken::default(),
-        )?;
+        let legacy = || {
+            ade_exec::execute_with_config(
+                self.plan.clone(),
+                self.config.execution.clone(),
+                CancellationToken::default(),
+            )
+        };
+        #[cfg(feature = "filter-kernels-v1")]
+        let output = if let Some(request) = &self.filter {
+            let (output, audit) = ade_exec::execute_with_filter_kernel(
+                self.plan.clone(),
+                self.config.execution.clone(),
+                CancellationToken::default(),
+                request.clone(),
+            )?;
+            eprintln!(
+                "phase25-filter-v1 {}",
+                serde_json::json!({
+                    "audit": audit,
+                    "profile_blake3": self.config.filter.digest,
+                    "managed_limit_bytes": output.metrics.managed.limit,
+                    "managed_peak_bytes": output.metrics.managed.peak,
+                    "managed_retained_bytes": output.metrics.managed.current,
+                    "output_rows": output.metrics.output_rows,
+                }),
+            );
+            output
+        } else {
+            legacy()?
+        };
+        #[cfg(not(feature = "filter-kernels-v1"))]
+        let output = legacy()?;
         tracing::debug!(
             managed_limit = output.metrics.managed.limit,
             managed_current = output.metrics.managed.current,

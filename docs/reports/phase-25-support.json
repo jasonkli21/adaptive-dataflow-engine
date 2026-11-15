@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "status": "PARTIAL_PHASE25_LOCAL_NEON_NO_CALIBRATED_WIN_HOSTED_CI_PENDING",
+  "baseline": "4e0f298b4b0dae7f6ab7398e3f4f590c1a33b4d8",
+  "local_candidate": "docs/evidence/phase25/candidate.tar.gz",
+  "candidate_seal_sha256": "5867fb8fb93b1032987e2755a28948c927f3e2be7c9c424631544044b6255db0",
+  "executable_sha256": "c1ac7f414d0e014bf17ecccd379bc59407e1aaf0f5da5dd90dfe42c118fdf529",
+  "final_commit_hosted_ci": {
+    "status": "NOT_RUN",
+    "required_jobs": [
+      "rust",
+      "msrv",
+      "phase22-interop",
+      "phase23-local"
+    ]
+  },
+  "gates": {
+    "G0": {
+      "status": "PASS",
+      "evidence": "Baseline and runtime input inventory, executable and fixtures pinned. Final Git IDs verified separately."
+    },
+    "G1": {
+      "status": "PASS",
+      "evidence": "Native ownership, static default and ADR-0032 boundaries."
+    },
+    "G2": {
+      "status": "PARTIAL",
+      "evidence": "Legacy path and feature-off regressions checked locally. Hosted cross-platform verification remains open."
+    },
+    "G3": {
+      "status": "PASS",
+      "evidence": "Exact ordered Arrow differential and original-Parquet oracle."
+    },
+    "G4": {
+      "status": "PASS",
+      "evidence": "Physical ARM64 NEON and typed unavailable AVX2 refusal."
+    },
+    "G5": {
+      "status": "PASS",
+      "evidence": "NEON differential matrix and release packed-mask disassembly."
+    },
+    "G6": {
+      "status": "PASS",
+      "evidence": "Actual LocalPlan filter and ADE-local child and parent harness."
+    },
+    "G7": {
+      "status": "PASS",
+      "evidence": "Managed reservation refusal, lifetime cleanup and bounded cancellation."
+    },
+    "G8": {
+      "status": "PASS",
+      "evidence": "Exact profile binding, seven paired observations, conservative fallback and semantic refusals."
+    },
+    "G9": {
+      "status": "PASS",
+      "evidence": "Effective kernel, vector counts, alternative estimates and scoped elapsed/resource observations."
+    },
+    "G10": {
+      "status": "PASS",
+      "evidence": "209 fresh children and 16 substantively rejected re-sealed mutations."
+    },
+    "G11": {
+      "status": "PASS",
+      "evidence": "Predeclared local economics campaign documented a negative result for the auto guard."
+    },
+    "G12": {
+      "status": "PASS",
+      "evidence": "Apple M3 ARM64. AC power observed. Thermal and energy counters unavailable."
+    },
+    "G13": {
+      "status": "PASS",
+      "evidence": "Detached verification with actual executable, source, original fixtures and separate local seal."
+    },
+    "G14": {
+      "status": "PASS",
+      "evidence": "Required local checks and smoke. See complete local logs."
+    },
+    "G15": {
+      "status": "NOT_RUN",
+      "evidence": "The exact final commit is local. No hosted Linux receipt."
+    },
+    "G16": {
+      "status": "PASS",
+      "evidence": "Operator guide, ADR, per-gate matrix and raw evidence."
+    },
+    "G17": {
+      "status": "PASS",
+      "evidence": "Unmeasured placement, GPU, code generation and cross-architecture lanes explicitly deferred."
+    }
+  },
+  "lanes": {
+    "CPU_SPECIALIZATION": {
+      "status": "SUPPORTED_WITH_EVIDENCE",
+      "qualification": "Opt-in force-neon on Apple M3 ARM64."
+    },
+    "AUTOMATIC_ACCELERATION": {
+      "status": "PARTIAL",
+      "qualification": "Matched profile used scalar."
+    },
+    "NUMA": {
+      "status": "DEFERRED",
+      "qualification": "No multi-node placement campaign."
+    },
+    "ARM_X86_ECONOMICS": {
+      "status": "NOT_RUN",
+      "qualification": "Only Apple M3 physical measurements."
+    },
+    "GPU": {
+      "status": "DEFERRED",
+      "qualification": "No measured device transfer crossover."
+    },
+    "JIT_FUSION": {
+      "status": "DEFERRED",
+      "qualification": "No measured compile and cache crossover."
+    },
+    "HETEROGENEOUS_FLEET": {
+      "status": "DEFERRED",
+      "qualification": "Placement, quotas and lease contracts remain separate."
+    }
+  }
+}

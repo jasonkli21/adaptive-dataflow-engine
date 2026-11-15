@@ -1,0 +1,29 @@
+use std::arch::aarch64::*;
+
+#[target_feature(enable = "neon")]
+pub unsafe fn packed(values: &[u64], threshold: u64, output: &mut [u8]) {
+    let threshold_vector = vdupq_n_u64(threshold);
+    let weights = vcreate_u8(0x8040_2010_0804_0201);
+    let mut groups = values.chunks_exact(8);
+    for (lanes, byte) in groups.by_ref().zip(output.iter_mut()) {
+        let base = lanes.as_ptr();
+        // SAFETY: each group has eight u64s, and NEON loads allow SIMD-unaligned addresses.
+        let (a, b, c, d) = unsafe {
+            (
+                vcgtq_u64(threshold_vector, vld1q_u64(base)),
+                vcgtq_u64(threshold_vector, vld1q_u64(base.add(2))),
+                vcgtq_u64(threshold_vector, vld1q_u64(base.add(4))),
+                vcgtq_u64(threshold_vector, vld1q_u64(base.add(6))),
+            )
+        };
+        let low = vuzp1q_u32(vreinterpretq_u32_u64(a), vreinterpretq_u32_u64(b));
+        let high = vuzp1q_u32(vreinterpretq_u32_u64(c), vreinterpretq_u32_u64(d));
+        let packed = vmovn_u16(vcombine_u16(vmovn_u32(low), vmovn_u32(high)));
+        *byte = vaddv_u8(vand_u8(packed, weights));
+    }
+    if let Some(byte) = output.get_mut(values.len() / 8) {
+        for (i, &value) in groups.remainder().iter().enumerate() {
+            *byte |= u8::from(value < threshold) << i;
+        }
+    }
+}

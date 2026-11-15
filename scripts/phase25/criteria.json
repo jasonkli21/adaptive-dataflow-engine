@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "seed": 1307,
+  "warmups": 1,
+  "trials": 7,
+  "minimum_gain_pct": 5,
+  "study_arms": [
+    "scalar",
+    "arrow"
+  ],
+  "micro_shapes": [
+    [
+      257,
+      0,
+      0,
+      "uniform"
+    ],
+    [
+      257,
+      10,
+      1,
+      "uniform"
+    ],
+    [
+      1024,
+      50,
+      50,
+      "uniform"
+    ],
+    [
+      8192,
+      0,
+      50,
+      "uniform"
+    ],
+    [
+      8192,
+      10,
+      99,
+      "uniform"
+    ],
+    [
+      8192,
+      50,
+      100,
+      "uniform"
+    ],
+    [
+      32768,
+      0,
+      50,
+      "skew"
+    ]
+  ],
+  "macro_shapes": [
+    [
+      "uniform",
+      1024,
+      0
+    ],
+    [
+      "uniform",
+      1024,
+      10
+    ],
+    [
+      "uniform",
+      8192,
+      250
+    ],
+    [
+      "uniform",
+      8192,
+      500
+    ],
+    [
+      "uniform",
+      8192,
+      990
+    ],
+    [
+      "hot-key",
+      32768,
+      1000
+    ]
+  ],
+  "dataset_rows": 524288,
+  "dataset_files": 4,
+  "row_group_rows": 32768,
+  "key_cardinality": 16384,
+  "native_arms": [
+    "scalar",
+    "arrow",
+    "force-neon",
+    "measured-auto"
+  ],
+  "calibration_shape": 2,
+  "maximum_raw_stream_bytes": 262144
+}

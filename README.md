@@ -542,3 +542,10 @@ Phase 24 adds optional finite local Rust row extensions, vector preparation
 and fixed affine scoring, and native weak component sizes. See the
 [extension guide](docs/phase-24-extensions-guide.md) and
 [release support matrix](docs/reports/phase-24-support.json).
+
+### Phase 25 native filter experiment
+
+The optional `filter-kernels-v1` feature exposes the native ARM64 NEON
+`UInt64 < threshold` mask and scalar and Arrow controls through ADE-local.
+The default path stays scalar. See the [operator guide](docs/phase-25-hardware-guide.md)
+and the [source-bound support matrix](docs/reports/phase-25-support.json).

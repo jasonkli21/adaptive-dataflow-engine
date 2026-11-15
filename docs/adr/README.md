@@ -67,3 +67,5 @@ An ADR should not duplicate a large plan. Keep it focused on the decision and ra
 - [ADR-0030: Bounded local multi-tenant resource manager v1](0030-bounded-local-multitenant-resource-manager-v1.md) — tenant scheduling above two separately leased native operations stores.
 
 - [ADR-0031 — Bounded specialized extension SDK v1](0031-specialized-extension-sdk-v1.md)
+
+- [ADR-0032 — Opt-in native CPU filter specialization](0032-measured-cpu-specialization-v1.md)

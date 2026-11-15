@@ -525,3 +525,20 @@ authorization is inferred.
 The current qualification is `PARTIAL_PHASE24_HOSTED_CI_PENDING`. The
 source-bound local campaign and mutation tests are recorded in the Phase24
 implementation report. The exact-commit hosted CI receipt remains outstanding.
+
+## Phase25 authorization — 2026-11-14
+
+The user authorized the supplied Phase25 plan and handoff in this session
+without subagents and with one local project commit. Follow ADR-0032 and the
+Phase25 plan and support matrix. The opt-in local filter specializes
+UInt64 mask generation on supported little-endian ARM64. Preserve legacy
+entry points, PlanV1, benchmark identity and predecessor qualifications.
+Acceptance needs a measured gain, detached source-bound evidence and hosted
+CI for the exact final commit. The user authorized a local commit. Phase26,
+physical heterogeneous placement, GPU and broader code generation require
+separate authorization and evidence.
+
+The measured local Phase25 candidate is recorded under
+`docs/reports/phase-25-implementation-report.md`. The forced NEON path has
+physical M3 evidence. The whole-query gain and exact-commit hosted CI gates
+remain open. Measured-auto selects scalar with the recorded profile.

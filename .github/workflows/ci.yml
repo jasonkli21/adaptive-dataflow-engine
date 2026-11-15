@@ -24,6 +24,8 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - name: Check
         run: cargo check --workspace --all-targets --locked
+      - name: Phase 25 portable filter correctness and capability refusal
+        run: cargo test --locked -p ade-exec --features filter-kernels-v1 filter_kernel
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Build feature-matched native worker for process tests

@@ -8,16 +8,23 @@ gather. Keep the legacy scalar entry points and offer an explicit Arrow public
 comparison control. Refuse forced capabilities unless the compiled mechanism and
 executing CPU both support them.
 
-Use exact shape calibration from paired native child observations. Bind trusted
-profiles to verified dataset bytes, workload, executable and observable CPU class.
-No profile, an incompatible profile or insufficient evidence selects scalar. The
-local optimization makes no placement or recovery decisions.
+Keep `measured-auto` as an explicitly trusted, operator-supplied research hint.
+Its current policy compares scalar with NEON only; Arrow is an explicit control,
+not an auto-selectable candidate. A profile digest checks file integrity and is
+not an issuer signature or evidence that the claimed measurements occurred.
+Profile admission rehashes the data and executable on each run, so its cost is
+part of the decision. No profile, an incompatible profile or insufficient
+evidence selects scalar. The checked-in campaign found no robust whole-query
+gain and the policy selected scalar. This is a negative research result, not a
+completed measured-economics outcome. The local optimization makes no placement
+or recovery decisions.
 
 ## Alternatives
 
 Arrow's comparison already vectorizes on the calibration host. It remains a
-portable control and the reference for how much extra value the explicit packed
-mask provides. The native pilot justified evaluating the narrow specialization.
+portable measured control, but the current auto policy does not choose among
+all three mechanisms. The native pilot justified evaluating the narrow
+specialization, not promoting it or claiming Arrow-aware adaptive economics.
 A standalone engine or extension bypass would leave native ownership unproven.
 There is no measured crossover justifying GPU transfer, executable code
 generation, arbitrary fusion or scheduler changes.

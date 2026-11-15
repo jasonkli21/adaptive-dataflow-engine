@@ -315,8 +315,8 @@ pub async fn execute(cli: Cli) -> Result<()> {
 }
 async fn execute_case(case: &CaseArgs, full_inspection: bool) -> Result<()> {
     let request = engine_request(case);
-    // Resolve before touching the dataset so unsupported adapters fail clearly and early.
-    request.resolve()?;
+    // Parse effective adapter settings before touching the dataset so bad options fail early.
+    request.info()?;
     let manifest = dataset::inspect(&case.dataset, full_inspection)?;
     let spec = BenchmarkCase::load(&case.spec)?;
     json(&engine::execute_validated_request(&case.dataset, &manifest, &spec, &request).await?)

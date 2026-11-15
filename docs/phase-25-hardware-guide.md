@@ -40,6 +40,12 @@ validation.
 
 ## Calibrated policy
 
+`kernel_policy=measured-auto` is a trusted-operator research hint. It currently
+compares scalar with NEON; it does not consider Arrow as an automatic candidate.
+The recorded campaign found no robust whole-query gain, so the admitted profile
+selected scalar. Do not describe this as an economically validated adaptive
+choice.
+
 Select `kernel_policy=measured-auto` with optional paired
 `kernel_profile=/path/to/profile.json` and `kernel_profile_blake3=<hex>`.
 The detached campaign creates a sample-bound profile for the original
@@ -49,7 +55,9 @@ executable, public Mac model, OS release, dataset bytes, workload, and
 execution settings. The executable pin also binds the Rust and Arrow build.
 The caller is responsible for controlling the executable, profile and source
 files during execution. A caller-supplied digest checks integrity within that
-trust boundary.
+trust boundary; it is not an issuer signature or proof that the observations
+were collected on the claimed machine. Admission rehashes the executable and
+dataset bytes for each run, and that full cost is included in the decision.
 
 Auto requires all seven paired comparisons against both controls to show at
 least 5% filter and query gains. The candidate process wall time has to fit

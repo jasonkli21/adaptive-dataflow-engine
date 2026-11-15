@@ -79,7 +79,7 @@ pub fn run(
     config: RunConfig,
 ) -> Result<BenchmarkResultV1> {
     crate::require(config.iterations > 0, "iterations must be positive")?;
-    let engine = engine_request.resolve()?.info();
+    let engine = engine_request.info()?;
     let case = BenchmarkCase::load(spec_path)?;
     let manifest = crate::dataset::inspect(
         root,

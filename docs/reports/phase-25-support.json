@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "PARTIAL_PHASE25_LOCAL_NEON_NO_CALIBRATED_WIN_HOSTED_CI_PENDING",
+  "status": "PARTIAL_PHASE25_REVIEW_REMEDIATION_PENDING_REACCEPTANCE",
   "baseline": "4e0f298b4b0dae7f6ab7398e3f4f590c1a33b4d8",
   "local_candidate": "docs/evidence/phase25/candidate.tar.gz",
   "candidate_seal_sha256": "5867fb8fb93b1032987e2755a28948c927f3e2be7c9c424631544044b6255db0",
@@ -16,76 +16,96 @@
   },
   "gates": {
     "G0": {
-      "status": "PASS",
-      "evidence": "Baseline and runtime input inventory, executable and fixtures pinned. Final Git IDs verified separately."
+      "status": "PARTIAL",
+      "evidence": "Reviewed baseline recorded; no current-source release inventory or candidate."
     },
     "G1": {
       "status": "PASS",
-      "evidence": "Native ownership, static default and ADR-0032 boundaries."
+      "evidence": "Static default and native ownership remain; policy claims narrowed in ADR-0032."
     },
     "G2": {
       "status": "PARTIAL",
-      "evidence": "Legacy path and feature-off regressions checked locally. Hosted cross-platform verification remains open."
+      "evidence": "Legacy config shape passes a feature-on external consumer test; hosted cross-platform and full default behavior verification remain open."
     },
     "G3": {
-      "status": "PASS",
-      "evidence": "Exact ordered Arrow differential and original-Parquet oracle."
+      "status": "PARTIAL",
+      "evidence": "Ordered two-file/multi-batch native regression passes locally; independent detached ordered process oracle remains pending."
     },
     "G4": {
-      "status": "PASS",
-      "evidence": "Physical ARM64 NEON and typed unavailable AVX2 refusal."
+      "status": "PARTIAL",
+      "evidence": "Physical ARM evidence belongs to historical source; current-source ARM execution not rerun."
     },
     "G5": {
-      "status": "PASS",
-      "evidence": "NEON differential matrix and release packed-mask disassembly."
+      "status": "PARTIAL",
+      "evidence": "Historical differential evidence preserved; current-source full ISA matrix not rerun."
     },
     "G6": {
       "status": "PASS",
-      "evidence": "Actual LocalPlan filter and ADE-local child and parent harness."
+      "evidence": "Current feature-on ADE-local process smoke passed scalar/Arrow output identity and forced-AVX2 refusal through LocalPlan::Filter."
     },
     "G7": {
-      "status": "PASS",
-      "evidence": "Managed reservation refusal, lifetime cleanup and bounded cancellation."
+      "status": "PARTIAL",
+      "evidence": "Historical bound/cancellation checks preserved; current-source complete failure matrix not rerun."
     },
     "G8": {
-      "status": "PASS",
-      "evidence": "Exact profile binding, seven paired observations, conservative fallback and semantic refusals."
+      "status": "PARTIAL",
+      "evidence": "Trusted-operator and scalar/NEON-only auto limitations documented; held-out and Arrow-aware policy proof absent."
     },
     "G9": {
-      "status": "PASS",
-      "evidence": "Effective kernel, vector counts, alternative estimates and scoped elapsed/resource observations."
+      "status": "PARTIAL",
+      "evidence": "Historical audit remains; current-source evidence and economics reacceptance are pending."
     },
     "G10": {
-      "status": "PASS",
-      "evidence": "209 fresh children and 16 substantively rejected re-sealed mutations."
+      "status": "PARTIAL",
+      "evidence": "Historical re-sealed mutations preserved; current-source process and detached tamper campaign not run."
     },
     "G11": {
       "status": "PASS",
-      "evidence": "Predeclared local economics campaign documented a negative result for the auto guard."
+      "evidence": "Historical campaign is a negative result; no automatic acceleration or completion claim is made."
     },
     "G12": {
-      "status": "PASS",
-      "evidence": "Apple M3 ARM64. AC power observed. Thermal and energy counters unavailable."
+      "status": "PARTIAL",
+      "evidence": "Historical Apple M3 producer evidence only; no independent current-source hardware run."
     },
     "G13": {
-      "status": "PASS",
-      "evidence": "Detached verification with actual executable, source, original fixtures and separate local seal."
+      "status": "PARTIAL",
+      "evidence": "Archive integrity pin exists, but the archive omits the original executable and Parquet fixtures."
     },
     "G14": {
-      "status": "PASS",
-      "evidence": "Required local checks and smoke. See complete local logs."
+      "status": "PARTIAL",
+      "evidence": "Feature-on check and focused filter tests pass; full workspace/MSRV/smoke matrix not run in this remediation."
     },
     "G15": {
       "status": "NOT_RUN",
-      "evidence": "The exact final commit is local. No hosted Linux receipt."
+      "evidence": "Exact final-commit hosted CI receipt is pending."
     },
     "G16": {
       "status": "PASS",
-      "evidence": "Operator guide, ADR, per-gate matrix and raw evidence."
+      "evidence": "Review findings, limitations, and new gates are recorded in the remediation report and plan."
     },
     "G17": {
       "status": "PASS",
-      "evidence": "Unmeasured placement, GPU, code generation and cross-architecture lanes explicitly deferred."
+      "evidence": "NUMA, dual-architecture economics, GPU, and JIT/fusion remain explicitly deferred/not run."
+    },
+    "G18": {
+      "status": "PASS",
+      "evidence": "External feature-on consumer compiled and tested the original AdeLocalConfig two-field literal shape; runner metadata regression passed."
+    },
+    "G19": {
+      "status": "PARTIAL",
+      "evidence": "Native ordered multi-batch Parquet regression added; independent original-fixture process oracle remains open."
+    },
+    "G20": {
+      "status": "PARTIAL",
+      "evidence": "No trusted held-out evaluation; auto remains a trusted scalar/NEON hint and excludes Arrow."
+    },
+    "G21": {
+      "status": "NOT_RUN",
+      "evidence": "No exact-final-SHA hosted CI or independently pinned final-source artifacts yet."
+    },
+    "G22": {
+      "status": "NOT_RUN",
+      "evidence": "Historical executable and fixture bundle is absent; no detached fresh-checkout replay is claimed."
     }
   },
   "lanes": {
@@ -117,5 +137,106 @@
       "status": "DEFERRED",
       "qualification": "Placement, quotas and lease contracts remain separate."
     }
+  },
+  "historical_candidate_status": "PARTIAL_PHASE25_LOCAL_NEON_NO_CALIBRATED_WIN_HOSTED_CI_PENDING",
+  "historical_candidate_gates": {
+    "G0": {
+      "status": "PARTIAL",
+      "evidence": "Reviewed baseline recorded; no current-source release inventory or candidate."
+    },
+    "G1": {
+      "status": "PASS",
+      "evidence": "Static default and native ownership remain; policy claims narrowed in ADR-0032."
+    },
+    "G2": {
+      "status": "PARTIAL",
+      "evidence": "Legacy config shape restored; external consumer test and full feature-on regression are pending."
+    },
+    "G3": {
+      "status": "PARTIAL",
+      "evidence": "Ordered two-file/multi-batch native regression passes locally; independent detached ordered process oracle remains pending."
+    },
+    "G4": {
+      "status": "PARTIAL",
+      "evidence": "Physical ARM evidence belongs to historical source; current-source ARM execution not rerun."
+    },
+    "G5": {
+      "status": "PARTIAL",
+      "evidence": "Historical differential evidence preserved; current-source full ISA matrix not rerun."
+    },
+    "G6": {
+      "status": "PARTIAL",
+      "evidence": "Current adapter now has separate kernel engine; focused current-source route regression passes, full process campaign pending."
+    },
+    "G7": {
+      "status": "PARTIAL",
+      "evidence": "Historical bound/cancellation checks preserved; current-source complete failure matrix not rerun."
+    },
+    "G8": {
+      "status": "PARTIAL",
+      "evidence": "Trusted-operator and scalar/NEON-only auto limitations documented; held-out and Arrow-aware policy proof absent."
+    },
+    "G9": {
+      "status": "PARTIAL",
+      "evidence": "Historical audit remains; current-source evidence and economics reacceptance are pending."
+    },
+    "G10": {
+      "status": "PARTIAL",
+      "evidence": "Historical re-sealed mutations preserved; current-source process and detached tamper campaign not run."
+    },
+    "G11": {
+      "status": "PASS",
+      "evidence": "Historical campaign is a negative result; no automatic acceleration or completion claim is made."
+    },
+    "G12": {
+      "status": "PARTIAL",
+      "evidence": "Historical Apple M3 producer evidence only; no independent current-source hardware run."
+    },
+    "G13": {
+      "status": "PARTIAL",
+      "evidence": "Archive integrity pin exists, but the archive omits the original executable and Parquet fixtures."
+    },
+    "G14": {
+      "status": "PARTIAL",
+      "evidence": "Feature-on check and focused filter tests pass; full workspace/MSRV/smoke matrix not run in this remediation."
+    },
+    "G15": {
+      "status": "NOT_RUN",
+      "evidence": "Exact final-commit hosted CI receipt is pending."
+    },
+    "G16": {
+      "status": "PASS",
+      "evidence": "Review findings, limitations, and new gates are recorded in the remediation report and plan."
+    },
+    "G17": {
+      "status": "PASS",
+      "evidence": "NUMA, dual-architecture economics, GPU, and JIT/fusion remain explicitly deferred/not run."
+    },
+    "G18": {
+      "status": "PASS",
+      "evidence": "External consumer literal-shape test added; its current-source run is recorded after completion."
+    },
+    "G19": {
+      "status": "PARTIAL",
+      "evidence": "Native ordered multi-batch Parquet regression added; independent original-fixture process oracle remains open."
+    },
+    "G20": {
+      "status": "PARTIAL",
+      "evidence": "No trusted held-out evaluation; auto remains a trusted scalar/NEON hint and excludes Arrow."
+    },
+    "G21": {
+      "status": "NOT_RUN",
+      "evidence": "No exact-final-SHA hosted CI or independently pinned final-source artifacts yet."
+    },
+    "G22": {
+      "status": "NOT_RUN",
+      "evidence": "Historical executable and fixture bundle is absent; no detached fresh-checkout replay is claimed."
+    }
+  },
+  "artifact_availability": {
+    "historical_archive": "PROCESS_RECORDS_AND_PROFILES_ONLY",
+    "original_executable": "NOT_INCLUDED",
+    "original_parquet_fixtures": "NOT_INCLUDED",
+    "detached_replay_from_fresh_checkout": "NOT_AVAILABLE_FROM_CHECKED_IN_ARCHIVE"
   }
 }

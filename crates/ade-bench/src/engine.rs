@@ -118,6 +118,19 @@ pub enum ResolvedEngine {
 }
 
 impl EngineRequest {
+    #[cfg(feature = "filter-kernels-v1")]
+    fn uses_filter_kernel(&self) -> bool {
+        self.name == "ade-local"
+            && self.options.iter().any(|option| {
+                option.split_once('=').is_some_and(|(key, _)| {
+                    matches!(
+                        key,
+                        "kernel_policy" | "kernel_profile" | "kernel_profile_blake3"
+                    )
+                })
+            })
+    }
+
     /// Resolves a known adapter and lets that adapter parse its own options.
     ///
     /// # Errors
@@ -133,11 +146,44 @@ impl EngineRequest {
             "ade-distributed" => Ok(ResolvedEngine::AdeDistributed(Box::new(
                 crate::ade_distributed::AdeDistributedEngine::parse_config(&self.options)?,
             ))),
-            "ade-local" => Ok(ResolvedEngine::AdeLocal(
-                crate::ade_local::AdeLocalEngine::parse_config(&self.options)?,
-            )),
+            "ade-local" => {
+                #[cfg(feature = "filter-kernels-v1")]
+                if self.uses_filter_kernel() {
+                    return Err(Error::Invalid(
+                        "kernel options require resolve_filter_kernel or execute_validated_request"
+                            .into(),
+                    ));
+                }
+                Ok(ResolvedEngine::AdeLocal(
+                    crate::ade_local::AdeLocalEngine::parse_config(&self.options)?,
+                ))
+            }
             name => Err(Error::UnsupportedEngine(name.into())),
         }
+    }
+
+    /// Resolves an explicit feature-on ADE-local filter-kernel request.
+    ///
+    /// # Errors
+    /// Rejects non-kernel requests and malformed adapter options.
+    #[cfg(feature = "filter-kernels-v1")]
+    pub fn resolve_filter_kernel(&self) -> Result<crate::ade_local::AdeLocalKernelConfig> {
+        if !self.uses_filter_kernel() {
+            return Err(Error::Invalid("request has no filter-kernel option".into()));
+        }
+        crate::ade_local::AdeLocalKernelEngine::parse_config(&self.options)
+    }
+
+    /// Returns resolved effective adapter metadata, including opt-in kernel settings.
+    ///
+    /// # Errors
+    /// Rejects unsupported or malformed engine options.
+    pub fn info(&self) -> Result<EngineInfo> {
+        #[cfg(feature = "filter-kernels-v1")]
+        if self.uses_filter_kernel() {
+            return Ok(self.resolve_filter_kernel()?.info());
+        }
+        Ok(self.resolve()?.info())
     }
 }
 
@@ -587,6 +633,14 @@ pub async fn execute_validated_request(
     case: &BenchmarkCase,
     request: &EngineRequest,
 ) -> Result<ExecutionOutcome> {
+    #[cfg(feature = "filter-kernels-v1")]
+    if request.uses_filter_kernel() {
+        let config = request.resolve_filter_kernel()?;
+        return execute_validated_with::<crate::ade_local::AdeLocalKernelEngine>(
+            root, m, case, &config,
+        )
+        .await;
+    }
     let resolved = request.resolve()?;
     match resolved {
         ResolvedEngine::AdeJoin(config) => {
@@ -661,6 +715,29 @@ mod tests {
         datatypes::{Field, Schema},
     };
     use std::sync::Arc;
+
+    #[cfg(feature = "filter-kernels-v1")]
+    #[test]
+    fn filter_kernel_request_preserves_legacy_resolved_engine_shape_and_metadata() {
+        let request = EngineRequest {
+            name: "ade-local".into(),
+            options: vec!["kernel_policy=scalar".into()],
+        };
+        assert!(request.resolve().is_err());
+        assert_eq!(
+            request.resolve_filter_kernel().unwrap().local.batch_size,
+            8192
+        );
+        assert_eq!(
+            request
+                .info()
+                .unwrap()
+                .configuration
+                .get("kernel_policy")
+                .map(String::as_str),
+            Some("scalar")
+        );
+    }
 
     #[derive(Debug)]
     struct StubConfig {

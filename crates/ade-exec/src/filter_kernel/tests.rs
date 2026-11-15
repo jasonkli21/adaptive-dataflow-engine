@@ -1,7 +1,7 @@
 use super::*;
 use crate::{ExecutionConfig, LocalPlan, execute_with_filter_kernel};
 use arrow::{
-    array::{Int64Array, StringArray},
+    array::{Int64Array, StringArray, UInt64Array},
     compute::take,
     datatypes::{DataType, Field, Schema},
 };
@@ -165,6 +165,138 @@ fn limits_refusal_and_retry() {
         ),
         Err(Error::UnsupportedFilterIsa(Isa::Avx2))
     ));
+}
+
+#[test]
+fn native_plan_preserves_order_across_parquet_files_and_batches() {
+    use parquet::arrow::ArrowWriter;
+    use std::{fs::File, path::PathBuf};
+
+    let directory = tempfile::tempdir().unwrap();
+    let source = input(41, 1);
+    let paths = ["part-0.parquet", "part-1.parquet"]
+        .into_iter()
+        .map(|name| directory.path().join(name))
+        .collect::<Vec<PathBuf>>();
+    for (file_index, path) in paths.iter().enumerate() {
+        let mut writer =
+            ArrowWriter::try_new(File::create(path).unwrap(), source.schema(), None).unwrap();
+        let start = file_index * 20;
+        let end = if file_index == 0 { 20 } else { 41 };
+        for offset in (start..end).step_by(5) {
+            writer
+                .write(&source.slice(offset, (end - offset).min(5)))
+                .unwrap();
+        }
+        writer.close().unwrap();
+    }
+
+    let threshold = 1u64 << 63;
+    let token = CancellationToken::default();
+    let (actual, _) = execute_with_filter_kernel(
+        LocalPlan::Filter {
+            input: Box::new(LocalPlan::ParquetScan {
+                files: paths,
+                batch_size: 7,
+            }),
+            column: "u".into(),
+            threshold,
+        },
+        ExecutionConfig::default(),
+        token,
+        Request::Scalar,
+    )
+    .unwrap();
+
+    let expected = source
+        .column(0)
+        .as_any()
+        .downcast_ref::<UInt64Array>()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| value.filter(|value| *value < threshold).map(|_| index))
+        .collect::<Vec<_>>();
+    let output_u = actual
+        .batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .iter()
+        })
+        .collect::<Vec<_>>();
+    let output_i = actual
+        .batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .iter()
+        })
+        .collect::<Vec<_>>();
+    let output_s = actual
+        .batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .iter()
+        })
+        .collect::<Vec<_>>();
+    let expected_u = expected
+        .iter()
+        .map(|&index| {
+            source
+                .column(0)
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .value(index)
+        })
+        .collect::<Vec<_>>();
+    let expected_i = expected
+        .iter()
+        .map(|&index| {
+            source
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .value(index)
+        })
+        .collect::<Vec<_>>();
+    let expected_s = expected
+        .iter()
+        .map(|&index| {
+            source
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .iter()
+                .nth(index)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        output_u,
+        expected_u.into_iter().map(Some).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        output_i,
+        expected_i.into_iter().map(Some).collect::<Vec<_>>()
+    );
+    assert_eq!(output_s, expected_s);
 }
 
 #[cfg(all(target_arch = "aarch64", target_endian = "little"))]

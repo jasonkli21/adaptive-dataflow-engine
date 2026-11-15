@@ -228,6 +228,32 @@ The verifier must be reproducible from a **fresh checkout** with only pinned dep
 - `Cargo.toml` / `crates/ade-exec/Cargo.toml`, `.github/workflows/ci.yml` only for minimal optional feature/correctness-target additions, not arbitrary C++/CUDA/LLVM toolchains.
 - `docs/adr/0032-measured-cpu-specialization-v1.md` if free; `docs/phase-25-hardware-guide.md`, `docs/research/phase-25-experiment.md`, `docs/reports/phase-25-implementation-report.md`, `docs/reports/phase-25-support.json`, `scripts/phase25/*` and small integration notes in README/AGENTS.
 
+## 7. Independent review reconciliation — 2026-11-14
+
+The independent handoff for target `e237d55` found no demonstrated whole-query
+win and identified compatibility, oracle, calibration-authority, portability,
+and detached-artifact gaps. The Phase 25 exit therefore remains **partial**.
+The current implementation's `measured-auto` is only an operator-trusted
+scalar/NEON research hint; Arrow is not an auto candidate. Hash pins provide
+integrity, not issuer authenticity. No economic or independently attested
+measurement claim is authorized by the existing candidate archive.
+
+Remediation restores the original feature-on `AdeLocalConfig` literal shape
+through a separate kernel config/engine and adds an ordered, multi-file native
+Parquet regression plus a feature-on external consumer check. The latter is
+portable and will run in hosted CI, but an exact-final-SHA receipt remains
+required. Keep G18 (external API), G19 (ordered process oracle), G20 (trusted
+held-out policy), G21 (hosted final-source release) and G22 (detached historical
+artifact retrieval) as separate gates. Existing candidate measurements remain
+historical. G19 still requires the independent ordered process oracle; G20
+still requires held-out evidence and an Arrow-aware policy or a narrower API
+claim; G21 and G22 remain pending until independently witnessed.
+
+The original archive, seal, observations, and implementation report are
+immutable. Keep the negative performance disposition, static default, and all
+predecessor qualifications. No broader Phase 25 feature lane or later phase is
+authorized by this reconciliation.
+
 **Avoid:** modifying ADR-0031 or prior evidence to make Phase 25's source look accepted; introducing new transport protocols, generic bytecode formats, GPU crates or an arbitrary distributed CPU-place scheduler without a demonstrated interface and feasibility gate.
 
 ---

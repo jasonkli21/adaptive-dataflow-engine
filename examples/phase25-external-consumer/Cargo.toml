@@ -1,0 +1,12 @@
+[package]
+name = "phase25-external-consumer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[workspace]
+
+[dependencies]
+ade-bench = { path = "../../crates/ade-bench", features = ["filter-kernels-v1"] }
+ade-exec = { path = "../../crates/ade-exec" }

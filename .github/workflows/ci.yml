@@ -26,10 +26,14 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - name: Phase 25 portable filter correctness and capability refusal
         run: cargo test --locked -p ade-exec --features filter-kernels-v1 filter_kernel
+      - name: Phase 25 feature-on external API compatibility
+        run: cargo test --manifest-path examples/phase25-external-consumer/Cargo.toml --locked
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Build feature-matched native worker for process tests
         run: cargo build --workspace --all-features --locked
+      - name: Phase 25 portable native process and refusal smoke
+        run: bash scripts/phase25/portable-smoke.sh target/debug/ade-bench
       - name: Test
         run: cargo test --workspace --all-features --locked
       - uses: actions/setup-python@v5
